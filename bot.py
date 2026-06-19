@@ -47,21 +47,17 @@ PRODUCT_CONFIG = {
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
-# 🔢 Outil pour convertir les durées (ex: 10m, 2h, 3d) en secondes
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
-    if not match:
-        return None
+    if not match: return None
     amount = int(match.group(1))
     unit = match.group(2) or "m"
-    
     if unit == "m": return amount * 60
     if unit == "h": return amount * 3600
     if unit == "d": return amount * 86400
     if unit == "s": return amount
     return None
 
-# 🔢 Compteur de commandes
 def get_next_order_number():
     filename = "order_count.json"
     if os.path.exists(filename):
@@ -69,19 +65,14 @@ def get_next_order_number():
             with open(filename, "r") as f:
                 data = json.load(f)
                 count = data.get("count", 0) + 1
-        except:
-            count = 1
-    else:
-        count = 1
-    
-    with open(filename, "w") as f:
-        json.dump({"count": count}, f)
+        except: count = 1
+    else: count = 1
+    with open(filename, "w") as f: json.dump({"count": count}, f)
     return count
 
 def reset_order_counter():
     filename = "order_count.json"
-    with open(filename, "w") as f:
-        json.dump({"count": 0}, f)
+    with open(filename, "w") as f: json.dump({"count": 0}, f)
 
 class ProductSelect(discord.ui.Select):
     def __init__(self):
@@ -101,7 +92,6 @@ class ProductSelect(discord.ui.Select):
 
         cfg = PRODUCT_CONFIG.get(product_chosen)
         category = guild.get_channel(cfg["cat"])
-
         if category is None:
             await interaction.response.send_message("❌ Erreur : Catégorie introuvable.", ephemeral=True)
             return
@@ -125,7 +115,6 @@ class ProductSelect(discord.ui.Select):
             ),
             color=discord.Color.from_rgb(255, 192, 203)
         )
-        
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket)
         await interaction.response.send_message(f"✅ Ton ticket a été créé ici : {ticket_channel.mention}", ephemeral=True)
 
@@ -166,24 +155,18 @@ async def cmd_purge_all(ctx):
     status_msg = await ctx.send("🔄 **PinkySoftware initialise la purge complète des tickets et commandes...**")
     order_prefixes = [v["emoji_ch"] for v in PRODUCT_CONFIG.values()]
     deleted_count = 0
-    
     for channel in ctx.guild.text_channels:
         is_ticket = channel.name.startswith("ticket-")
         is_processed_order = any(channel.name.startswith(prefix.lower()) or channel.name.startswith(prefix) for prefix in order_prefixes)
-        
         if is_ticket or is_processed_order:
             try:
                 await channel.delete(reason="Purge complète demandée.")
                 deleted_count += 1
                 await asyncio.sleep(0.5)
-            except:
-                pass
-                
+            except: pass
     reset_order_counter()
-    try:
-        await status_msg.edit(content=f"✅ **Purge terminée avec succès !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur réinitialisé à `0`.")
-    except:
-        pass
+    try: await status_msg.edit(content=f"✅ **Purge terminée avec succès !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur réinitialisé à `0`.")
+    except: pass
 
 @bot.command(name="clear", aliases=["purge"])
 @commands.has_role(PURGE_ROLE_ID)
@@ -191,17 +174,13 @@ async def cmd_clear_messages(ctx, amount: int):
     if amount <= 0:
         await ctx.send("❌ Veuillez indiquer un nombre de messages supérieur à 0.", delete_after=3)
         return
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+    try: await ctx.message.delete()
+    except: pass
     deleted = await ctx.channel.purge(limit=amount)
     msg = await ctx.send(f"🗑️ **{len(deleted)}** messages ont été effacés avec succès par l'administration.")
     await asyncio.sleep(4)
-    try:
-        await msg.delete()
-    except:
-        pass
+    try: await msg.delete()
+    except: pass
 
 # =========================================================
 # 🛡️ COMMANDES DE MODÉRATION (STAFF)
@@ -222,10 +201,8 @@ async def cmd_tempban(ctx, member: discord.Member, duration: str, *, reason: str
     await member.ban(reason=f"[Tempban {duration}] {reason}")
     await ctx.send(f"⏳ **{member.name}** a été banni temporairement pour **{duration}**. (Raison : {reason})")
     await asyncio.sleep(seconds)
-    try:
-        await ctx.guild.unban(member, reason="Fin du tempban.")
-    except:
-        pass
+    try: await ctx.guild.unban(member, reason="Fin du tempban.")
+    except: pass
 
 @bot.command(name="tempmute")
 @commands.has_role(STAFF_ROLE_ID)
@@ -234,13 +211,12 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     if not seconds:
         await ctx.send("❌ Format de temps invalide. Utilisez par exemple `10m`, `2h`.")
         return
-    
     td = datetime.timedelta(seconds=seconds)
     await member.timeout(td, reason=reason)
     await ctx.send(f"🔇 **{member.name}** a été réduit au silence pendant **{duration}**. (Raison : {reason})")
 
 # =========================================================
-# 📜 REPERTOIRE GÉNÉRAL DE TOUTES LES COMMANDES (INDEX MIS À JOUR)
+# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À JOUR)
 # =========================================================
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
@@ -273,21 +249,20 @@ async def cmd_directory(ctx):
     )
     
     embed.add_field(
-        name="📦 Traitement des Commandes (Rôle Staff requis)",
+        name="📦 Traitement des Cartes Cadeaux (Rôle Staff requis)",
         value=(
-            "**Syntaxe globale :** `!<nom_commande> <montant_payé>`\n"
-            "Permet de valider un achat, calcule le drop, renomme le salon et crée l'embed vert.\n"
+            "**Nouvelle Syntaxe :** `!<nom_du_magasin> <montant> <code_carte_cadeau>`\n"
+            "Valide l'achat, renomme le salon et ping le client avec l'embed contenant le code de la carte.\n"
             "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
         ),
         inline=False
     )
-    
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (NEW EMBED & ARGUMENTS)
 # =========================================================
-async def process_order(ctx, product_name, amount_paid):
+async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
     except: pass
 
@@ -300,9 +275,11 @@ async def process_order(ctx, product_name, amount_paid):
         if drop_val == "Sur-mesure":
             drop_val = f"{round(amount_paid * 1.3)}~{round(amount_paid * 1.7)}€"
 
+    # Changement du nom du salon
     new_name = f"{cfg['emoji_ch']}-{product_name.lower()}-{drop_val}".replace("~", "-")
     await ctx.channel.edit(name=new_name)
 
+    # Recherche du client du ticket
     client_user = ctx.author
     async for msg in ctx.channel.history(oldest_first=True, limit=5):
         if msg.author != bot.user and not msg.author.bot:
@@ -312,38 +289,49 @@ async def process_order(ctx, product_name, amount_paid):
     cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
 
-    embed_desc = f"{client_user.mention}\n💵 **Payé : {amount_paid}€**\n🚨 **Drop : {drop_val}**"
-    embed = discord.Embed(title=f"{cfg['emoji']} #CC-{cc_num} - {clean_name}", description=embed_desc, color=discord.Color.from_rgb(46, 204, 113))
-    await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est en cours de traitement.", embed=embed)
+    # Génération du nouvel embed pro avec la case code de carte
+    embed = discord.Embed(
+        title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
+        description=f"Merci pour votre confiance {client_user.mention} ! Votre commande a été traitée avec succès par l'équipe.",
+        color=discord.Color.from_rgb(46, 204, 113)
+    )
+    embed.add_field(name="🏪 Magasin", value=f"**{clean_name}**", inline=True)
+    embed.add_field(name="💵 Prix payé", value=f"`{amount_paid}€`", inline=True)
+    embed.add_field(name="🚨 Drop reçu", value=f"**{drop_val}**", inline=True)
+    embed.add_field(name="🔑 Carte Cadeau / Code", value=f"```\n{card_code}\n
+```", inline=False)
+    embed.set_footer(text="PinkySoftware — Livraison Instantanée")
 
-# Enregistrement des commandes cadeaux
+    await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !", embed=embed)
+
+# Gestion des commandes cadeaux avec récupération optionnelle du code
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_amazon(ctx, amount: int): await process_order(ctx, "AMAZON", amount)
+async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
 
 @bot.command(name="carrefour")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_carrefour(ctx, amount: int): await process_order(ctx, "CARREFOUR", amount)
+async def cmd_carrefour(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "CARREFOUR", amount, code)
 
 @bot.command(name="intermarche")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_intermarche(ctx, amount: int): await process_order(ctx, "INTERMARCHE", amount)
+async def cmd_intermarche(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "INTERMARCHE", amount, code)
 
 @bot.command(name="zara")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_zara(ctx, amount: int): await process_order(ctx, "ZARA", amount)
+async def cmd_zara(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "ZARA", amount, code)
 
 @bot.command(name="sephora")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_sephora(ctx, amount: int): await process_order(ctx, "SEPHORA", amount)
+async def cmd_sephora(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "SEPHORA", amount, code)
 
 @bot.command(name="xbox")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_xbox(ctx, amount: int): await process_order(ctx, "XB/PL", amount)
+async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "XB/PL", amount, code)
 
 @bot.command(name="ubereats")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_ubereats(ctx, amount: int): await process_order(ctx, "UBEREATS", amount)
+async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
 
 @bot.event
 async def on_command_error(ctx, error):
