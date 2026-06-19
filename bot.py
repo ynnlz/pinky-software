@@ -216,7 +216,7 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     await ctx.send(f"🔇 **{member.name}** a été réduit au silence pendant **{duration}**. (Raison : {reason})")
 
 # =========================================================
-# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À JOUR)
+# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES
 # =========================================================
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
@@ -251,7 +251,7 @@ async def cmd_directory(ctx):
     embed.add_field(
         name="📦 Traitement des Cartes Cadeaux (Rôle Staff requis)",
         value=(
-            "**Nouvelle Syntaxe :** `!<nom_du_magasin> <montant> <code_carte_cadeau>`\n"
+            "**Syntaxe :** `!<nom_du_magasin> <montant> <code_carte_cadeau>`\n"
             "Valide l'achat, renomme le salon et ping le client avec l'embed contenant le code de la carte.\n"
             "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
         ),
@@ -260,7 +260,7 @@ async def cmd_directory(ctx):
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (NEW EMBED & ARGUMENTS)
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (CORRIGÉE)
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
@@ -275,11 +275,9 @@ async def process_order(ctx, product_name, amount_paid, card_code):
         if drop_val == "Sur-mesure":
             drop_val = f"{round(amount_paid * 1.3)}~{round(amount_paid * 1.7)}€"
 
-    # Changement du nom du salon
     new_name = f"{cfg['emoji_ch']}-{product_name.lower()}-{drop_val}".replace("~", "-")
     await ctx.channel.edit(name=new_name)
 
-    # Recherche du client du ticket
     client_user = ctx.author
     async for msg in ctx.channel.history(oldest_first=True, limit=5):
         if msg.author != bot.user and not msg.author.bot:
@@ -289,22 +287,23 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
 
-    # Génération du nouvel embed pro avec la case code de carte
+    # Correction de l'affichage sécurisé du bloc de code
+    formatted_code = f"```\n{card_code}\n```"
+
     embed = discord.Embed(
         title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
-        description=f"Merci pour votre confiance {client_user.mention} ! Votre commande a été traitée avec succès par l'équipe.",
+        description=f"Merci pour votre confiance {client_user.mention} ! Votre commande a été traitée avec succès.",
         color=discord.Color.from_rgb(46, 204, 113)
     )
     embed.add_field(name="🏪 Magasin", value=f"**{clean_name}**", inline=True)
     embed.add_field(name="💵 Prix payé", value=f"`{amount_paid}€`", inline=True)
     embed.add_field(name="🚨 Drop reçu", value=f"**{drop_val}**", inline=True)
-    embed.add_field(name="🔑 Carte Cadeau / Code", value=f"```\n{card_code}\n
-```", inline=False)
+    embed.add_field(name="🔑 Carte Cadeau / Code", value=formatted_code, inline=False)
     embed.set_footer(text="PinkySoftware — Livraison Instantanée")
 
     await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !", embed=embed)
 
-# Gestion des commandes cadeaux avec récupération optionnelle du code
+# Gestion des commandes cadeaux
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
