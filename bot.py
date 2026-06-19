@@ -3,7 +3,7 @@ from discord.ext import commands
 from flask import Flask
 from threading import Thread
 import os
-import random
+import json
 
 # =========================================================
 # 🌐 SERVEUR WEB (Pour éviter que Render coupe le bot)
@@ -29,6 +29,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ✅ ID du rôle Staff requis pour les commandes
 STAFF_ROLE_ID = 1517487833886228550
 
 PRODUCT_CONFIG = {
@@ -40,6 +41,23 @@ PRODUCT_CONFIG = {
     "XB/PL": {"cat": 1517488548964466819, "emoji": "🎮", "emoji_ch": "🎮", "rates": {}}, 
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
+
+# 🔢 Gestion du compteur de commandes persistant
+def get_next_order_number():
+    filename = "order_count.json"
+    if os.path.exists(filename):
+        try:
+            with open(filename, "r") as f:
+                data = json.load(f)
+                count = data.get("count", 0) + 1
+        except:
+            count = 1
+    else:
+        count = 1
+    
+    with open(filename, "w") as f:
+        json.dump({"count": count}, f)
+    return count
 
 class ProductSelect(discord.ui.Select):
     def __init__(self):
@@ -71,14 +89,16 @@ class ProductSelect(discord.ui.Select):
             reason=f"Ouverture ticket PinkGift pour {product_chosen}"
         )
 
+        # ✅ Embed d'ouverture modifié avec l'instruction PayPal obligatoire
         embed_ticket = discord.Embed(
             title=f"🎫 Ticket d'achat — {product_chosen}",
             description=(
                 f"Bonjour {user.mention} !\n\n"
                 f"Merci de l'intérêt que tu portes à **PinkGift**.\n"
                 f"Tu as sélectionné le produit : **{product_chosen}**.\n\n"
-                f"Le <@&{STAFF_ROLE_ID}> a été prévenu et va te prendre en charge rapidement. "
-                "En attendant, tu peux préciser le montant souhaité ainsi que ton moyen de paiement."
+                f"Le <@&{STAFF_ROLE_ID}> a été prévenu et va te prendre en charge rapidement.\n"
+                f"En attendant, tu peux préciser le montant souhaité.\n\n"
+                f"⚠️ **Les seuls moyens de paiement acceptés sont PayPal.**"
             ),
             color=discord.Color.from_rgb(255, 192, 203)
         )
@@ -114,7 +134,7 @@ async def send_tarifs(ctx):
     await ctx.send(embed=embed, view=ProductView())
 
 # =========================================================
-# 🛠️ COMMANDES DE TRAITEMENT
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE
 # =========================================================
 async def process_order(ctx, product_name, amount_paid):
     try:
@@ -141,14 +161,12 @@ async def process_order(ctx, product_name, amount_paid):
             client_user = msg.author
             break
 
-    cc_num = random.randint(10, 99)
+    cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
 
-    # Utilisation de chaînes simples concaténées pour éviter tout conflit d'f-string multiligne
     embed_desc = f"{client_user.mention}\n"
     embed_desc += f"💵 **Payé : {amount_paid}€**\n"
-    embed_desc += f"🚨 **Drop : {drop_val}**\n\n"
-    embed_desc += f"```[FINAL] {clean_name} credit issued. status=ACTIVE.```"
+    embed_desc += f"🚨 **Drop : {drop_val}**"
 
     embed = discord.Embed(
         title=f"{cfg['emoji']} #CC-{cc_num} - {clean_name}",
@@ -158,33 +176,79 @@ async def process_order(ctx, product_name, amount_paid):
     
     await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est en cours de traitement.", embed=embed)
 
+# =========================================================
+# 📜 RÉPERTOIRE DES COMMANDES (STAFF UNIQUEMENT)
+# =========================================================
+@bot.command(name="commandes")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_directory(ctx):
+    embed = discord.Embed(
+        title="📜 Répertoire des Commandes de Traitement",
+        description=(
+            "Ces commandes permettent de valider les commandes et de renommer automatiquement les salons de tickets.\n\n"
+            "**Syntaxe :** `!<nom_de_la_commande> <montant_payé>`\n\n"
+            "📦 **`!amazon <montant>`** : Traite une commande Amazon\n"
+            "🛒 **`!carrefour <montant>`** : Traite une commande Carrefour\n"
+            "🏬 **`!intermarche <montant>`** : Traite une commande Intermarché\n"
+            "👕 **`!zara <montant>`** : Traite une commande Zara\n"
+            "💄 **`!sephora <montant>`** : Traite une commande Sephora\n"
+            "🎮 **`!xbox <montant>`** : Traite une commande Xbox / PSN\n"
+            "🍔 **`!ubereats <montant>`** : Traite une commande Uber Eats\n\n"
+            "ℹ️ *Note : Le numéro #CC s'incrémente tout seul à chaque commande passée.*"
+        ),
+        color=discord.Color.from_rgb(52, 152, 219)
+    )
+    await ctx.send(embed=embed)
+
+# =========================================================
+# 🔒 COMMANDES DE TRAITEMENT PROTÉGÉES PAR RÔLE
+# =========================================================
 @bot.command(name="amazon")
+@commands.has_role(STAFF_ROLE_ID)
 async def cmd_amazon(ctx, amount: int):
     await process_order(ctx, "AMAZON", amount)
 
 @bot.command(name="carrefour")
+@commands.has_role(STAFF_ROLE_ID)
 async def cmd_carrefour(ctx, amount: int):
     await process_order(ctx, "CARREFOUR", amount)
 
 @bot.command(name="intermarche")
+@commands.has_role(STAFF_ROLE_ID)
 async def cmd_intermarche(ctx, amount: int):
     await process_order(ctx, "INTERMARCHE", amount)
 
 @bot.command(name="zara")
+@commands.has_role(STAFF_ROLE_ID)
 async def cmd_zara(ctx, amount: int):
     await process_order(ctx, "ZARA", amount)
 
 @bot.command(name="sephora")
+@commands.has_role(STAFF_ROLE_ID)
 async def cmd_sephora(ctx, amount: int):
     await process_order(ctx, "SEPHORA", amount)
 
 @bot.command(name="xbox")
+@commands.has_role(STAFF_ROLE_ID)
 async def cmd_xbox(ctx, amount: int):
     await process_order(ctx, "XB/PL", amount)
 
 @bot.command(name="ubereats")
+@commands.has_role(STAFF_ROLE_ID)
 async def cmd_ubereats(ctx, amount: int):
     await process_order(ctx, "UBEREATS", amount)
+
+# =========================================================
+# ⚠️ GESTION DES ERREURS DE PERMISSION
+# =========================================================
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+        await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission d'utiliser cette commande (Rôle Staff requis).", delete_after=5)
 
 token_discord = os.environ.get("TOKEN")
 bot.run(token_discord)
