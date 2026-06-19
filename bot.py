@@ -185,6 +185,24 @@ async def cmd_purge_all(ctx):
     except:
         pass
 
+@bot.command(name="clear", aliases=["purge"])
+@commands.has_role(PURGE_ROLE_ID)
+async def cmd_clear_messages(ctx, amount: int):
+    if amount <= 0:
+        await ctx.send("❌ Veuillez indiquer un nombre de messages supérieur à 0.", delete_after=3)
+        return
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    deleted = await ctx.channel.purge(limit=amount)
+    msg = await ctx.send(f"🗑️ **{len(deleted)}** messages ont été effacés avec succès par l'administration.")
+    await asyncio.sleep(4)
+    try:
+        await msg.delete()
+    except:
+        pass
+
 # =========================================================
 # 🛡️ COMMANDES DE MODÉRATION (STAFF)
 # =========================================================
@@ -217,13 +235,12 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
         await ctx.send("❌ Format de temps invalide. Utilisez par exemple `10m`, `2h`.")
         return
     
-    # Utilise l'exclusion temporaire native de Discord (Timeout)
     td = datetime.timedelta(seconds=seconds)
     await member.timeout(td, reason=reason)
     await ctx.send(f"🔇 **{member.name}** a été réduit au silence pendant **{duration}**. (Raison : {reason})")
 
 # =========================================================
-# 📜 REPERTOIRE GÉNÉRAL DE TOUTES LES COMMANDES
+# 📜 REPERTOIRE GÉNÉRAL DE TOUTES LES COMMANDES (INDEX MIS À JOUR)
 # =========================================================
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
@@ -238,7 +255,8 @@ async def cmd_directory(ctx):
         name="👑 Administration (Rôle Responsable requis)",
         value=(
             "`!tarifs` : Génère l'embed des prix avec le menu déroulant d'ouverture de ticket.\n"
-            "`!purge_all` : Supprime l'intégralité des salons tickets (actifs et traités) et remet le compteur `#CC` à zéro."
+            "`!purge_all` : Supprime l'intégralité des salons tickets et remet le compteur à zéro.\n"
+            "`!clear <nombre>` : Efface un nombre précis de messages dans le salon actuel (Ex: `!clear 20`)."
         ),
         inline=False
     )
@@ -258,7 +276,7 @@ async def cmd_directory(ctx):
         name="📦 Traitement des Commandes (Rôle Staff requis)",
         value=(
             "**Syntaxe globale :** `!<nom_commande> <montant_payé>`\n"
-            "Permet de valider un achat, calcule le drop, renomme le salon et crée l'embed de traitement.\n"
+            "Permet de valider un achat, calcule le drop, renomme le salon et crée l'embed vert.\n"
             "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
         ),
         inline=False
@@ -298,7 +316,7 @@ async def process_order(ctx, product_name, amount_paid):
     embed = discord.Embed(title=f"{cfg['emoji']} #CC-{cc_num} - {clean_name}", description=embed_desc, color=discord.Color.from_rgb(46, 204, 113))
     await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est en cours de traitement.", embed=embed)
 
-# Boucle d'enregistrement automatique des commandes cadeaux
+# Enregistrement des commandes cadeaux
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_amazon(ctx, amount: int): await process_order(ctx, "AMAZON", amount)
