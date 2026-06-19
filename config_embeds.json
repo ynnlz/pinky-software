@@ -1,12 +1,1 @@
-{
-  "tarifs_embed": {
-    "title": "[CARTE CADEAUX]",
-    "description": "**📦 AMAZON** `-72h`\n*60€* -> **75~120€**\n*180€* -> **225~310€**\n*420€* -> **525~730€**\n*600€* -> **750~1200€**\n⁠—\n**🛒 CARREFOUR** `-72h`\n*120€* -> **150~200€**\n*300€* -> **375~500€**\n*600€* -> **750~1000€**\n*900€* -> **1125~1500€**\n⁠—\n**🏬 INTERMARCHE** `-72h`\n*60€* -> **75~100€**\n*180€* -> **225~300€**\n*360€* -> **450~600€**\n*600€* -> **750~1000€**\n⁠—\n**👕 ZARA** `-48h`\n*35€* -> **45~60€**\n*90€* -> **112~150€**\n*180€* -> **225~300€**\n*360€* -> **450~600€**\n⁠—\n**💄 SEPHORA** `-48h`\n*30€* -> **38~50€**\n*60€* -> **75~100€**\n*120€* -> **150~200€**\n*240€* -> **300~400€**\n⁠—\n**🎮 XB/PL** `-24h`\n*All* -> **-30%**\n⁠—\n**🍔 UBEREATS** `-2h`\n*20€* -> **28~42€**\n*65€* -> **85~115€**\n*130€* -> **165~225€**\n*400€* -> **501~680€**\n⁠—\n└  __**Livraison automatique.**__",
-    "color_rgb": [255, 192, 203]
-  },
-  "ticket_bienvenue": {
-    "title": "🎫 Ticket d'achat — {product}",
-    "description": "Bonjour {user} !\n\nMerci de l'intérêt que tu portes à **PinkGift**.\nTu as sélectionné le produit : **{product}**.\n\nLe <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.\nEn attendant, tu peux préciser le montant souhaité.\n\n⚠️ **Les seuls moyens de paiement acceptés sont PayPal.**"
-    "color_rgb": [255, 192, 203]
-  },
-}
+{"tarifs_embed": {"title": "[CARTE CADEAUX]","description": ["📦 AMAZON -72h","60€ -> 75~120€","180€ -> 225~310€","420€ -> 525~730€","600€ -> 750~1200€","⁠—","🛒 CARREFOUR -72h","120€ -> 150~200€","300€ -> 375~500€","600€ -> 750~1000€","900€ -> 1125~1500€","⁠—","🏬 INTERMARCHE -72h","60€ -> 75~100€","180€ -> 225~300€","360€ -> 450~600€","600€ -> 750~1000€","⁠—","👕 ZARA -48h","35€ -> 45~60€","90€ -> 112~150€","180€ -> 225~300€","360€ -> 450~600€","⁠—","💄 SEPHORA -48h","30€ -> 38~50€","60€ -> 75~100€","120€ -> 150~200€","240€ -> 300~400€","⁠—","🎮 XB/PL -24h","All -> -30%","⁠—","🍔 UBEREATS -2h","20€ -> 28~42€","65€ -> 85~115€","130€ -> 165~225€","400€ -> 501~680€","⁠—","└  Livraison automatique."],"color_rgb": [255, 192, 203]},"ticket_bienvenue": {"title": "🎫 Ticket d'achat — {product}","description": ["Bonjour {user} !","","Merci de l'intérêt que tu portes à PinkGift.","Tu as sélectionné le produit : {product}.","","Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.","En attendant, tu peux préciser le montant souhaité.","","⚠️ Les seuls moyens de paiement acceptés sont PayPal."],"color_rgb": [255, 192, 203]}}
