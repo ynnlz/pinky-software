@@ -33,7 +33,10 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ ID des rôles
+# ✅ CONFIGURATION DES ÉMOJIS ET RÔLES
+# Remplace "💳" par ton émoji personnalisé obtenu avec \:paypal:
+PAYPAL_EMOJI = "💳" 
+
 STAFF_ROLE_ID = 1517487833886228550
 PURGE_ROLE_ID = 1517495087825817691
 
@@ -277,8 +280,8 @@ async def cmd_paypal(ctx):
     embed = discord.Embed(
         title="💳 Moyen de Paiement — PayPal",
         description=(
-            "Pour finaliser votre achat chez **PinkySoftware**, veuillez noter la règle suivante :\n\n"
-            "<:paypal:1517517069061456102> **Nous n'acceptons uniquement PayPal comme moyen de paiement.**\n\n"
+            f"Pour finaliser votre achat chez **PinkySoftware**, veuillez noter la règle suivante :\n\n"
+            f"<:paypal:1517582845315649751> **Nous n'acceptons uniquement PayPal comme moyen de paiement.**\n\n"
             "Veuillez préparer votre compte ainsi que votre adresse e-mail de paiement, et la communiquer au staff dans ce ticket."
         ),
         color=discord.Color.from_rgb(0, 112, 186) # Bleu PayPal officiel
@@ -309,7 +312,7 @@ async def cmd_directory(ctx):
     embed.add_field(
         name="🛡️ Modération & Informations (Rôle Staff requis)",
         value=(
-            "`!paypal` : Envoie l'embed spécifiant que seul PayPal est accepté <:paypal:1517517069061456102>.\n"
+            f"`!paypal` : Envoie l'embed spécifiant que seul PayPal est accepté {PAYPAL_EMOJI}.\n"
             "`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n"
             "`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: `10m`, `2h`, `5d`).\n"
             "`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n"
