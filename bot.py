@@ -14,11 +14,9 @@ def home():
     return "PinkySoftware est en ligne !"
 
 def run_web():
-    # Render attribue un port dynamiquement via la variable d'environnement PORT
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# Lance le serveur Flask dans un thread séparé pour ne pas bloquer le bot Discord
 Thread(target=run_web).start()
 
 
@@ -30,8 +28,19 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ Ton identifiant de catégorie a été configuré ici :
-CATEGORY_TICKET_ID = 1418873021615308850  
+# ✅ ID du rôle Staff à pinger lors de l'ouverture d'un ticket
+STAFF_ROLE_ID = 1517487833886228550
+
+# ✅ Dictionnaire qui associe chaque produit à l'ID de sa catégorie dédiée
+PRODUCT_CATEGORIES = {
+    "AMAZON": 1517488377744593057,
+    "CARREFOUR": 1517488444769833011,
+    "INTERMARCHE": 1517488466600919153,
+    "ZARA": 1517488486783910008,
+    "SEPHORA": 1517488524180455484,
+    "XB/PL": 1517488548964466819,
+    "UBEREATS": 1517488572083470386
+}
 
 # Définition du menu déroulant interactif
 class ProductSelect(discord.ui.Select):
@@ -60,17 +69,18 @@ class ProductSelect(discord.ui.Select):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
 
-        # Récupération de la catégorie configurée
-        category = guild.get_channel(CATEGORY_TICKET_ID)
+        # Récupération de l'ID de la catégorie correspondante au produit
+        category_id = PRODUCT_CATEGORIES.get(product_chosen)
+        category = guild.get_channel(category_id)
 
         if category is None:
             await interaction.response.send_message(
-                "❌ Erreur : La catégorie des tickets est introuvable. Contacte un administrateur.", 
+                f"❌ Erreur : La catégorie pour {product_chosen} est introuvable. Contacte un administrateur.", 
                 ephemeral=True
             )
             return
 
-        # Création du salon de ticket privé
+        # Création du salon de ticket privé sous la bonne catégorie
         ticket_channel = await guild.create_text_channel(
             name=f"ticket-{user.name}",
             category=category,
@@ -85,13 +95,14 @@ class ProductSelect(discord.ui.Select):
                 f"Bonjour {user.mention} !\n\n"
                 f"Merci de l'intérêt que tu portes à **PinkGift**.\n"
                 f"Tu as sélectionné le produit : **{product_chosen}**.\n\n"
-                "Le staff de **PinkySoftware** a été prévenu et va te prendre en charge rapidement. "
+                f"Le <@&{STAFF_ROLE_ID}> a été prévenu et va te prendre en charge rapidement. "
                 "En attendant, tu peux préciser le montant souhaité ainsi que ton moyen de paiement."
             ),
             color=discord.Color.from_rgb(255, 192, 203)
         )
         
-        await ticket_channel.send(content=f"{user.mention} | @here", embed=embed_ticket)
+        # Envoi du message avec le ping du client et du rôle Staff configuré
+        await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket)
 
         # Confirmation invisible pour le client
         await interaction.response.send_message(
@@ -106,7 +117,7 @@ class ProductView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f"Le bot PinkySoftware est en ligne et prêt à l'emploi !")
+    print(f"Le bot PinkySoftware est en ligne et trie les tickets par catégorie !")
 
 @bot.command(name="tarifs")
 async def send_tarifs(ctx):
@@ -157,11 +168,6 @@ async def send_tarifs(ctx):
         color=discord.Color.from_rgb(255, 192, 203)
     )
     
-    # Remplis ces liens plus tard si tu veux ajouter des images
-    # embed.set_thumbnail(url="LIEN_DE_TON_LOGO")
-    # embed.set_image(url="LIEN_DE_TON_GIF")
-    
-    # Envoi de l'embed combiné avec le menu déroulant
     await ctx.send(embed=embed, view=ProductView())
 
 # Récupération sécurisée du token via les variables d'environnement de Render
