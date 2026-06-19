@@ -53,7 +53,6 @@ def load_embed_texts():
     if os.path.exists(filename):
         with open(filename, "r", encoding="utf-8") as f:
             return json.load(f)
-    # Textes de secours si le fichier est manquant
     return {
         "tarifs_embed": {"title": "[CARTE CADEAUX]", "description": "Tarifs non configurés.", "color_rgb": [255, 192, 203]},
         "ticket_bienvenue": {"title": "🎫 Ticket — {product}", "description": "Bonjour {user} !"}
@@ -115,7 +114,6 @@ class ProductSelect(discord.ui.Select):
             reason=f"Ouverture ticket PinkGift pour {product_chosen}"
         )
 
-        # 🔄 Utilisation des textes dynamiques du JSON
         texts = load_embed_texts()["ticket_bienvenue"]
         title_formatted = texts["title"].format(product=product_chosen)
         desc_formatted = texts["description"].format(user=user.mention, product=product_chosen)
@@ -143,7 +141,6 @@ async def on_ready():
 @bot.command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
-    # 🔄 Chargement dynamique du texte depuis le fichier JSON
     texts = load_embed_texts()["tarifs_embed"]
     rgb = texts["color_rgb"]
 
@@ -262,7 +259,7 @@ async def cmd_directory(ctx):
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (CORRIGÉE SANS F-STRING RIGIDE)
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
@@ -288,7 +285,9 @@ async def process_order(ctx, product_name, amount_paid, card_code):
 
     cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
-    formatted_code = f"```\n{card_code}\n
+    
+    # Sécurisation totale ici : plus aucune f-string risquée pour le bloc de code
+    formatted_code = "```\n" + str(card_code) + "\n
 ```"
 
     embed = discord.Embed(
