@@ -291,6 +291,8 @@ async def cmd_directory(ctx):
             "`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n"
             "`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: `10m`, `2h`, `5d`).\n"
             "`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n"
+            "`!finish <code_carte>` : Finalise la commande en remplaçant `En attente...` par le code de carte et met à jour l'embed.\n"
+            "`Bouton Close` : Ferme le ticket et retire l'accès au client.\n"
             "`!commandes` : Affiche ce répertoire d'aide complet."
         ),
         inline=False
@@ -298,8 +300,11 @@ async def cmd_directory(ctx):
     embed.add_field(
         name="📦 Traitement des Cartes Cadeaux (Rôle Staff requis)",
         value=(
-            "**Syntaxe :** `!<nom_du_magasin> <montant> <code_carte_cadeau>`\n"
-            "Valide l'achat, renomme automatiquement le salon avec le drop calculé, et envoie l'embed de livraison avec le code au client.\n"
+            "**Syntaxe prise en charge :** `!<nom_du_magasin> <montant>`\n"
+            "Crée une commande en attente, renomme automatiquement le salon avec le drop calculé et affiche l'embed de commande reçue.\n"
+            "**Finalisation :** `!finish <code_carte>`\n"
+            "Remplace le code `En attente...` par le vrai code carte, change le message de validation et affiche l'image de commande finalisée.\n"
+            "⚠️ Ces commandes ne doivent être utilisées que dans les salons tickets.\n"
             "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
         ),
         inline=False
