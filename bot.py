@@ -284,7 +284,7 @@ async def cmd_paypal(ctx):
             f"<:paypal:1517582845315649751> **Nous n'acceptons uniquement PayPal comme moyen de paiement.**\n\n"
             "Veuillez préparer votre compte ainsi que votre adresse e-mail de paiement, et la communiquer au staff dans ce ticket."
         ),
-        color=discord.Color.from_rgb(0, 112, 186) # Bleu PayPal officiel
+        color=discord.Color.from_rgb(255, 192, 203) 
     )
     embed.set_footer(text="PinkGift — Sécurité & Rapidité")
     await ctx.send(embed=embed)
