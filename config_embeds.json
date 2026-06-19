@@ -8,5 +8,5 @@
     "title": "🎫 Ticket d'achat — {product}",
     "description": "Bonjour {user} !\n\nMerci de l'intérêt que tu portes à **PinkGift**.\nTu as sélectionné le produit : **{product}**.\n\nLe <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.\nEn attendant, tu peux préciser le montant souhaité.\n\n⚠️ **Les seuls moyens de paiement acceptés sont PayPal.**"
     "color_rgb": [255, 192, 203]
-  }
+  },
 }
