@@ -61,9 +61,26 @@ def get_next_order_number():
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
-    embed = discord.Embed(title="📜 Répertoire des commandes", color=discord.Color.from_rgb(255, 192, 203))
-    embed.add_field(name="📦 Traitement Cartes", value="`!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`\nSyntaxe: `!magasin <montant> [code]`", inline=False)
-    embed.add_field(name="🛡️ Modération", value="`!ban`, `!tempban`, `!tempmute`", inline=False)
+    embed = discord.Embed(
+        title="📜 RÉPERTOIRE GLOBAL DES COMMANDES — PinkySoftware", 
+        description="Voici la liste exhaustive et l'utilité de chaque commande actuellement active sur le bot.",
+        color=discord.Color.from_rgb(255, 192, 203)
+    )
+    embed.add_field(
+        name="👑 Administration (Rôle Responsable requis)", 
+        value="`!tarifs` : Génère l'embed des prix avec le menu déroulant d'ouverture de ticket.\n`!purge_all` : Supprime l'intégralité des salons tickets et remet le compteur à zéro.\n`!clear <nombre>` : Efface un nombre précis de messages dans le salon actuel (Ex: !clear 20).", 
+        inline=False
+    )
+    embed.add_field(
+        name="🛡️ Modération (Rôle Staff requis)", 
+        value="`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: 10m, 2h, 5d).\n`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n`!commandes` : Affiche ce répertoire d'aide complet.", 
+        inline=False
+    )
+    embed.add_field(
+        name="📦 Traitement des Commandes (Rôle Staff requis)", 
+        value="Syntaxe globale : `!<nom_commande> <montant_payé>`\nPermet de valider un achat, calcule le drop, renomme le salon et crée l'embed vert.\nCommandes : `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`", 
+        inline=False
+    )
     await ctx.send(embed=embed)
 
 # =========================================================
