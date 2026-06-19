@@ -5,6 +5,8 @@ from threading import Thread
 import os
 import json
 import asyncio
+import datetime
+import re
 
 # =========================================================
 # 🌐 SERVEUR WEB (Pour éviter que Render coupe le bot)
@@ -27,12 +29,13 @@ Thread(target=run_web).start()
 # =========================================================
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ✅ ID des rôles
 STAFF_ROLE_ID = 1517487833886228550
-PURGE_ROLE_ID = 1517495087825817691  # Rôle requis pour la purge et la commande !tarifs
+PURGE_ROLE_ID = 1517495087825817691
 
 PRODUCT_CONFIG = {
     "AMAZON": {"cat": 1517488377744593057, "emoji": "📦", "emoji_ch": "📦", "rates": {60: "75~120€", 180: "225~310€", 420: "525~730€", 600: "750~1200€"}},
@@ -44,7 +47,21 @@ PRODUCT_CONFIG = {
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
-# 🔢 Gestion du compteur de commandes persistant
+# 🔢 Outil pour convertir les durées (ex: 10m, 2h, 3d) en secondes
+def parse_duration(duration_str: str):
+    match = re.match(r"(\d+)([mhds])?", duration_str.lower())
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2) or "m"
+    
+    if unit == "m": return amount * 60
+    if unit == "h": return amount * 3600
+    if unit == "d": return amount * 86400
+    if unit == "s": return amount
+    return None
+
+# 🔢 Compteur de commandes
 def get_next_order_number():
     filename = "order_count.json"
     if os.path.exists(filename):
@@ -61,7 +78,6 @@ def get_next_order_number():
         json.dump({"count": count}, f)
     return count
 
-# 🔄 Réinitialisation complète du compteur de commandes
 def reset_order_counter():
     filename = "order_count.json"
     with open(filename, "w") as f:
@@ -122,7 +138,9 @@ class ProductView(discord.ui.View):
 async def on_ready():
     print("Le bot PinkySoftware est en ligne et fonctionnel !")
 
-# 🔒 COMMANDE TARIFS PROTÉGÉE PAR RÔLE SPÉCIFIQUE (1517495087825817691)
+# =========================================================
+# 🔒 COMMANDES ADMINISTRATEUR (RÔLE RESPONSIBLE/PURGE)
+# =========================================================
 @bot.command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
@@ -142,17 +160,120 @@ async def send_tarifs(ctx):
     )
     await ctx.send(embed=embed, view=ProductView())
 
-# =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE
-# =========================================================
-async def process_order(ctx, product_name, amount_paid):
+@bot.command(name="purge_all")
+@commands.has_role(PURGE_ROLE_ID)
+async def cmd_purge_all(ctx):
+    status_msg = await ctx.send("🔄 **PinkySoftware initialise la purge complète des tickets et commandes...**")
+    order_prefixes = [v["emoji_ch"] for v in PRODUCT_CONFIG.values()]
+    deleted_count = 0
+    
+    for channel in ctx.guild.text_channels:
+        is_ticket = channel.name.startswith("ticket-")
+        is_processed_order = any(channel.name.startswith(prefix.lower()) or channel.name.startswith(prefix) for prefix in order_prefixes)
+        
+        if is_ticket or is_processed_order:
+            try:
+                await channel.delete(reason="Purge complète demandée.")
+                deleted_count += 1
+                await asyncio.sleep(0.5)
+            except:
+                pass
+                
+    reset_order_counter()
     try:
-        await ctx.message.delete()
+        await status_msg.edit(content=f"✅ **Purge terminée avec succès !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur réinitialisé à `0`.")
     except:
         pass
 
-    cfg = PRODUCT_CONFIG.get(product_name)
+# =========================================================
+# 🛡️ COMMANDES DE MODÉRATION (STAFF)
+# =========================================================
+@bot.command(name="ban")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_ban(ctx, member: discord.Member, *, reason: str = "Aucune raison fournie"):
+    await member.ban(reason=reason)
+    await ctx.send(f"🔨 **{member.name}** a été banni définitivement du serveur. (Raison : {reason})")
+
+@bot.command(name="tempban")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_tempban(ctx, member: discord.Member, duration: str, *, reason: str = "Aucune raison fournie"):
+    seconds = parse_duration(duration)
+    if not seconds:
+        await ctx.send("❌ Format de temps invalide. Utilisez par exemple `10m`, `2h`, ou `3d`.")
+        return
+    await member.ban(reason=f"[Tempban {duration}] {reason}")
+    await ctx.send(f"⏳ **{member.name}** a été banni temporairement pour **{duration}**. (Raison : {reason})")
+    await asyncio.sleep(seconds)
+    try:
+        await ctx.guild.unban(member, reason="Fin du tempban.")
+    except:
+        pass
+
+@bot.command(name="tempmute")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: str = "Aucune raison fournie"):
+    seconds = parse_duration(duration)
+    if not seconds:
+        await ctx.send("❌ Format de temps invalide. Utilisez par exemple `10m`, `2h`.")
+        return
     
+    # Utilise l'exclusion temporaire native de Discord (Timeout)
+    td = datetime.timedelta(seconds=seconds)
+    await member.timeout(td, reason=reason)
+    await ctx.send(f"🔇 **{member.name}** a été réduit au silence pendant **{duration}**. (Raison : {reason})")
+
+# =========================================================
+# 📜 REPERTOIRE GÉNÉRAL DE TOUTES LES COMMANDES
+# =========================================================
+@bot.command(name="commandes")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_directory(ctx):
+    embed = discord.Embed(
+        title="📜 RÉPERTOIRE GLOBAL DES COMMANDES — PinkySoftware",
+        description="Voici la liste exhaustive et l'utilité de chaque commande actuellement active sur le bot.",
+        color=discord.Color.from_rgb(255, 192, 203)
+    )
+    
+    embed.add_field(
+        name="👑 Administration (Rôle Responsable requis)",
+        value=(
+            "`!tarifs` : Génère l'embed des prix avec le menu déroulant d'ouverture de ticket.\n"
+            "`!purge_all` : Supprime l'intégralité des salons tickets (actifs et traités) et remet le compteur `#CC` à zéro."
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🛡️ Modération (Rôle Staff requis)",
+        value=(
+            "`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n"
+            "`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: `10m`, `2h`, `5d`).\n"
+            "`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n"
+            "`!commandes` : Affiche ce répertoire d'aide complet."
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="📦 Traitement des Commandes (Rôle Staff requis)",
+        value=(
+            "**Syntaxe globale :** `!<nom_commande> <montant_payé>`\n"
+            "Permet de valider un achat, calcule le drop, renomme le salon et crée l'embed de traitement.\n"
+            "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
+        ),
+        inline=False
+    )
+    
+    await ctx.send(embed=embed)
+
+# =========================================================
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
+# =========================================================
+async def process_order(ctx, product_name, amount_paid):
+    try: await ctx.message.delete()
+    except: pass
+
+    cfg = PRODUCT_CONFIG.get(product_name)
     if product_name == "XB/PL":
         val_recue = round(amount_paid / 0.7)
         drop_val = f"{val_recue}€"
@@ -173,121 +294,45 @@ async def process_order(ctx, product_name, amount_paid):
     cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
 
-    embed_desc = f"{client_user.mention}\n"
-    embed_desc += f"💵 **Payé : {amount_paid}€**\n"
-    embed_desc += f"🚨 **Drop : {drop_val}**"
-
-    embed = discord.Embed(
-        title=f"{cfg['emoji']} #CC-{cc_num} - {clean_name}",
-        description=embed_desc,
-        color=discord.Color.from_rgb(46, 204, 113)
-    )
-    
+    embed_desc = f"{client_user.mention}\n💵 **Payé : {amount_paid}€**\n🚨 **Drop : {drop_val}**"
+    embed = discord.Embed(title=f"{cfg['emoji']} #CC-{cc_num} - {clean_name}", description=embed_desc, color=discord.Color.from_rgb(46, 204, 113))
     await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est en cours de traitement.", embed=embed)
 
-# =========================================================
-# 📜 RÉPERTOIRE DES COMMANDES (STAFF UNIQUEMENT)
-# =========================================================
-@bot.command(name="commandes")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_directory(ctx):
-    embed = discord.Embed(
-        title="📜 Répertoire des Commandes de Traitement",
-        description=(
-            "Ces commandes permettent de valider les commandes et de renommer automatiquement les salons de tickets.\n\n"
-            "**Syntaxe :** `!<nom_de_la_commande> <montant_payé>`\n\n"
-            "📦 **`!amazon <montant>`** : Traite une commande Amazon\n"
-            "🛒 **`!carrefour <montant>`** : Traite une commande Carrefour\n"
-            "🏬 **`!intermarche <montant>`** : Traite une commande Intermarché\n"
-            "👕 **`!zara <montant>`** : Traite une commande Zara\n"
-            "💄 **`!sephora <montant>`** : Traite une commande Sephora\n"
-            "🎮 **`!xbox <montant>`** : Traite une commande Xbox / PSN\n"
-            "🍔 **`!ubereats <montant>`** : Traite une commande Uber Eats\n\n"
-            "ℹ️ *Note : Le numéro #CC s'incrémente tout seul à chaque commande passée.*"
-        ),
-        color=discord.Color.from_rgb(52, 152, 219)
-    )
-    await ctx.send(embed=embed)
-
-# =========================================================
-# 🛑 COMMANDE DE PURGE GÉNÉRALE (RÔLE CRITICAL UNIQUEMENT)
-# =========================================================
-@bot.command(name="purge_all")
-@commands.has_role(PURGE_ROLE_ID)
-async def cmd_purge_all(ctx):
-    status_msg = await ctx.send("🔄 **PinkySoftware initialise la purge complète des tickets et commandes...**")
-    
-    order_prefixes = [v["emoji_ch"] for v in PRODUCT_CONFIG.values()]
-    deleted_count = 0
-    
-    for channel in ctx.guild.text_channels:
-        is_ticket = channel.name.startswith("ticket-")
-        is_processed_order = any(channel.name.startswith(prefix.lower()) or channel.name.startswith(prefix) for prefix in order_prefixes)
-        
-        if is_ticket or is_processed_order:
-            try:
-                await channel.delete(reason="Purge complète demandée.")
-                deleted_count += 1
-                await asyncio.sleep(0.5)
-            except:
-                pass
-                
-    reset_order_counter()
-    
-    try:
-        await status_msg.edit(content=f"✅ **Purge terminée avec succès !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur de commandes réinitialisé à `0`.")
-    except:
-        await ctx.author.send(f"✅ **Purge terminée sur le serveur !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur réinitialisé.")
-
-# =========================================================
-# 🔒 COMMANDES DE TRAITEMENT PROTÉGÉES PAR RÔLE STAFF
-# =========================================================
+# Boucle d'enregistrement automatique des commandes cadeaux
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_amazon(ctx, amount: int):
-    await process_order(ctx, "AMAZON", amount)
+async def cmd_amazon(ctx, amount: int): await process_order(ctx, "AMAZON", amount)
 
 @bot.command(name="carrefour")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_carrefour(ctx, amount: int):
-    await process_order(ctx, "CARREFOUR", amount)
+async def cmd_carrefour(ctx, amount: int): await process_order(ctx, "CARREFOUR", amount)
 
 @bot.command(name="intermarche")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_intermarche(ctx, amount: int):
-    await process_order(ctx, "INTERMARCHE", amount)
+async def cmd_intermarche(ctx, amount: int): await process_order(ctx, "INTERMARCHE", amount)
 
 @bot.command(name="zara")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_zara(ctx, amount: int):
-    await process_order(ctx, "ZARA", amount)
+async def cmd_zara(ctx, amount: int): await process_order(ctx, "ZARA", amount)
 
 @bot.command(name="sephora")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_sephora(ctx, amount: int):
-    await process_order(ctx, "SEPHORA", amount)
+async def cmd_sephora(ctx, amount: int): await process_order(ctx, "SEPHORA", amount)
 
 @bot.command(name="xbox")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_xbox(ctx, amount: int):
-    await process_order(ctx, "XB/PL", amount)
+async def cmd_xbox(ctx, amount: int): await process_order(ctx, "XB/PL", amount)
 
 @bot.command(name="ubereats")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_ubereats(ctx, amount: int):
-    await process_order(ctx, "UBEREATS", amount)
+async def cmd_ubereats(ctx, amount: int): await process_order(ctx, "UBEREATS", amount)
 
-# =========================================================
-# ⚠️ GESTION DES ERREURS DE PERMISSION
-# =========================================================
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRole):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission requise pour cette commande.", delete_after=5)
+        try: await ctx.message.delete()
+        except: pass
+        await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission requise.", delete_after=5)
 
 token_discord = os.environ.get("TOKEN")
 bot.run(token_discord)
