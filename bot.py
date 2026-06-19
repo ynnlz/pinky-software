@@ -15,7 +15,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "PinkySoftware est en ligne !"
+    return "PinkSoftware est en ligne !"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -87,6 +87,7 @@ def get_next_order_number():
 def reset_order_counter():
     filename = "order_count.json"
     with open(filename, "w") as f: json.dump({"count": 0}, f)
+
 
 class CloseTicketView(discord.ui.View):
     def __init__(self, client_id: int):
@@ -171,6 +172,7 @@ class ProductSelect(discord.ui.Select):
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket a été créé ici : {ticket_channel.mention}", ephemeral=True)
 
+
 class ProductView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -182,7 +184,7 @@ class ProductView(discord.ui.View):
 # =========================================================
 @bot.event
 async def on_ready():
-    print("Le bot PinkySoftware est en ligne et fonctionnel !")
+    print("Le bot PinkSoftware est en ligne et fonctionnel !")
 
 @bot.event
 async def on_member_join(member):
@@ -191,7 +193,7 @@ async def on_member_join(member):
     role = guild.get_role(NEW_MEMBER_ROLE_ID)
     if role:
         try:
-            await member.add_roles(role, reason="Attribution automatique nouveau membre (PinkySoftware)")
+            await member.add_roles(role, reason="Attribution automatique nouveau membre (PinkSoftware)")
             print(f"✅ Rôle attribué avec succès à {member.name}")
         except discord.Forbidden:
             print(f"❌ Erreur de permissions : impossible d'attribuer le rôle à {member.name}")
@@ -226,7 +228,7 @@ async def send_tarifs(ctx):
 @bot.command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
 async def cmd_purge_all(ctx):
-    status_msg = await ctx.send("🔄 **PinkySoftware initialise la purge complète des tickets et commandes...**")
+    status_msg = await ctx.send("🔄 **PinkSoftware initialise la purge complète des tickets et commandes...**")
     order_prefixes = [v["emoji_ch"] for v in PRODUCT_CONFIG.values()]
     deleted_count = 0
     for channel in ctx.guild.text_channels:
@@ -302,7 +304,7 @@ async def cmd_paypal(ctx):
     embed = discord.Embed(
         title="💳 Moyen de Paiement — PayPal",
         description=(
-            f"Pour finaliser votre achat chez **PinkySoftware**, veuillez noter la règle suivante :\n\n"
+            f"Pour finaliser votre achat chez **PinkSoftware**, veuillez noter la règle suivante :\n\n"
             f"<:paypal:1517582845315649751> **Nous n'acceptons uniquement PayPal comme moyen de paiement.**\n\n"
             "Veuillez préparer votre compte ainsi que votre adresse e-mail de paiement, et la communiquer au staff dans ce ticket."
         ),
@@ -319,7 +321,7 @@ async def cmd_paypal(ctx):
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
     embed = discord.Embed(
-        title="📜 RÉPERTOIRE GLOBAL DES COMMANDES — PinkySoftware",
+        title="📜 RÉPERTOIRE GLOBAL DES COMMANDES — PinkSoftware",
         description="Voici la liste exhaustive et l'utilité de chaque commande actuellement active sur le bot.",
         color=discord.Color.from_rgb(255, 192, 203)
     )
@@ -409,7 +411,7 @@ async def process_order(ctx, product_name, amount_paid, card_code):
         embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069657309204/Commande_recu.png?ex=6a369167&is=6a353fe7&hm=5a401706a47f8c7571510f5112ea122b3061eca7382f31d077c7bdbe7c690d9a&=&format=webp&quality=lossless")
         content = f"{client_user.mention} Votre commande a bien été prise en charge !"
 
-    embed.set_footer(text="PinkySoftware — Livraison Instantanée")
+    embed.set_footer(text="PinkSoftware — Livraison Instantanée")
 
     await ctx.send(content=content, embed=embed)
 
@@ -499,7 +501,7 @@ async def cmd_finish(ctx, *, code_carte: str):
             )
 
     new_embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless")
-    new_embed.set_footer(text="PinkySoftware — Livraison Instantanée")
+    new_embed.set_footer(text="PinkSoftware — Livraison Instantanée")
 
     await embed_message.edit(embed=new_embed)
     await ctx.send("✅ Commande finalisée avec succès.", delete_after=5)
