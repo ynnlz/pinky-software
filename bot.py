@@ -147,18 +147,26 @@ async def send_tarifs(ctx):
     texts = load_embed_texts()["tarifs_embed"]
     rgb = texts["color_rgb"]
 
-    embed = discord.Embed(
+    # Embed 1 : image Produits en grand
+    embed_produits = discord.Embed(
+        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
+    )
+    embed_produits.set_image(
+        url="https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
+    )
+
+    # Embed 2 : tarifs + image d'accueil en grand
+    embed_tarifs = discord.Embed(
         title=texts["title"],
         description=texts["description"],
         color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
     )
-    embed.set_thumbnail(
-        url="https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
-    )
-    embed.set_image(
+    embed_tarifs.set_image(
         url="https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
     )
-    await ctx.send(embed=embed, view=ProductView())
+    embed_tarifs.set_footer(text="PinkySoftware — Cartes Cadeaux")
+
+    await ctx.send(embeds=[embed_produits, embed_tarifs], view=ProductView())
 
 @bot.command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
@@ -271,8 +279,10 @@ async def cmd_directory(ctx):
 # 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
-    try: await ctx.message.delete()
-    except: pass
+    try:
+        await ctx.message.delete()
+    except:
+        pass
 
     cfg = PRODUCT_CONFIG.get(product_name)
     if product_name == "XB/PL":
@@ -293,9 +303,9 @@ async def process_order(ctx, product_name, amount_paid, card_code):
             break
 
     cc_num = get_next_order_number()
-    clean_name = product_name.replace('UBEREATS', 'Uber Eats')
-    
-    # Correction définitive : concaténation simple et propre, impossible à faire planter
+    clean_name = product_name.replace("UBEREATS", "Uber Eats")
+
+    code_fourni = card_code and card_code.strip().lower() not in ["en attente...", "en attente", "attente", "none", "null"]
     formatted_code = f"```\n{card_code}\n```"
 
     embed = discord.Embed(
@@ -306,10 +316,27 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     embed.add_field(name="🏪 Magasin", value=f"**{clean_name}**", inline=True)
     embed.add_field(name="💵 Prix payé", value=f"`{amount_paid}€`", inline=True)
     embed.add_field(name="🚨 Drop reçu", value=f"**{drop_val}**", inline=True)
-    embed.add_field(name="🔑 Carte Cadeau / Code", value=formatted_code, inline=False)
+
+    if code_fourni:
+        embed.add_field(name="🔑 Carte Cadeau / Code", value=formatted_code, inline=False)
+        embed.set_image(
+            url="https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless"
+        )
+        message = f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !"
+    else:
+        embed.add_field(
+            name="📥 Statut",
+            value="Commande prise en charge. Le code sera envoyé dès qu'il sera disponible.",
+            inline=False
+        )
+        embed.set_image(
+            url="https://media.discordapp.net/attachments/1517516946390908949/1517517069657309204/Commande_recu.png?ex=6a369167&is=6a353fe7&hm=5a401706a47f8c7571510f5112ea122b3061eca7382f31d077c7bdbe7c690d9a&=&format=webp&quality=lossless"
+        )
+        message = f"{client_user.mention} Votre commande **#CC-{cc_num}** a bien été prise en charge !"
+
     embed.set_footer(text="PinkySoftware — Livraison Instantanée")
 
-    await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !", embed=embed)
+    await ctx.send(content=message, embed=embed)
 
 # Commandes cadeaux
 @bot.command(name="amazon")
