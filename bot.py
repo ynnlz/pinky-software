@@ -6,7 +6,7 @@ import os
 import random
 
 # =========================================================
-# 🌐 CONFIGURATION SERVEUR WEB (Pour l'hébergement gratuit)
+# 🌐 SERVEUR WEB (Pour éviter que Render coupe le bot)
 # =========================================================
 app = Flask('')
 
@@ -22,14 +22,13 @@ Thread(target=run_web).start()
 
 
 # =========================================================
-# 🤖 CONFIGURATION DU BOT DISCORD (PinkySoftware)
+# 🤖 CONFIGURATION DU BOT DISCORD
 # =========================================================
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ Configuration des IDs
 STAFF_ROLE_ID = 1517487833886228550
 
 PRODUCT_CONFIG = {
@@ -94,7 +93,7 @@ class ProductView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f"Le bot PinkySoftware est en ligne et prêt !")
+    print("Le bot PinkySoftware est en ligne et fonctionnel !")
 
 @bot.command(name="tarifs")
 async def send_tarifs(ctx):
@@ -115,7 +114,7 @@ async def send_tarifs(ctx):
     await ctx.send(embed=embed, view=ProductView())
 
 # =========================================================
-# 🛠️ COMMANDES DE TRAITEMENT DES COMMANDES POUR L'ÉQUIPE
+# 🛠️ COMMANDES DE TRAITEMENT
 # =========================================================
 async def process_order(ctx, product_name, amount_paid):
     try:
@@ -133,11 +132,9 @@ async def process_order(ctx, product_name, amount_paid):
         if drop_val == "Sur-mesure":
             drop_val = f"{round(amount_paid * 1.3)}~{round(amount_paid * 1.7)}€"
 
-    # Renommer le salon textuel
     new_name = f"{cfg['emoji_ch']}-{product_name.lower()}-{drop_val}".replace("~", "-")
     await ctx.channel.edit(name=new_name)
 
-    # Recherche du client du ticket
     client_user = ctx.author
     async for msg in ctx.channel.history(oldest_first=True, limit=5):
         if msg.author != bot.user and not msg.author.bot:
@@ -147,14 +144,11 @@ async def process_order(ctx, product_name, amount_paid):
     cc_num = random.randint(10, 99)
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
 
-    # Descriptif de l'embed totalement nettoyé des guillemets superflus
-    embed_desc = (
-        f"{client_user.mention}\n"
-        f"💵 **Payé : {amount_paid}€**\n"
-        f"🚨 **Drop : {drop_val}**\n\n"
-        f"```[FINAL] {clean_name} credit issued. status=ACTIVE.
-```"
-    )
+    # Utilisation de chaînes simples concaténées pour éviter tout conflit d'f-string multiligne
+    embed_desc = f"{client_user.mention}\n"
+    embed_desc += f"💵 **Payé : {amount_paid}€**\n"
+    embed_desc += f"🚨 **Drop : {drop_val}**\n\n"
+    embed_desc += f"```[FINAL] {clean_name} credit issued. status=ACTIVE.```"
 
     embed = discord.Embed(
         title=f"{cfg['emoji']} #CC-{cc_num} - {clean_name}",
