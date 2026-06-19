@@ -311,55 +311,33 @@ async def process_order(ctx, product_name, amount_paid, card_code):
 
     await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !", embed=embed)
 
-
-def is_ticket_channel():
-    async def predicate(ctx):
-        if ctx.channel and ctx.channel.name.startswith("ticket-"):
-            return True
-
-        await ctx.send("❌ Cette commande ne peut être utilisée que dans un salon ticket.", delete_after=5)
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        return False
-
-    return commands.check(predicate)
-
 # Commandes cadeaux
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
-@is_ticket_channel()
 async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
 
 @bot.command(name="carrefour")
 @commands.has_role(STAFF_ROLE_ID)
-@is_ticket_channel()
 async def cmd_carrefour(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "CARREFOUR", amount, code)
 
 @bot.command(name="intermarche")
 @commands.has_role(STAFF_ROLE_ID)
-@is_ticket_channel()
 async def cmd_intermarche(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "INTERMARCHE", amount, code)
 
 @bot.command(name="zara")
 @commands.has_role(STAFF_ROLE_ID)
-@is_ticket_channel()
 async def cmd_zara(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "ZARA", amount, code)
 
 @bot.command(name="sephora")
 @commands.has_role(STAFF_ROLE_ID)
-@is_ticket_channel()
 async def cmd_sephora(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "SEPHORA", amount, code)
 
 @bot.command(name="xbox")
 @commands.has_role(STAFF_ROLE_ID)
-@is_ticket_channel()
 async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "XB/PL", amount, code)
 
 @bot.command(name="ubereats")
 @commands.has_role(STAFF_ROLE_ID)
-@is_ticket_channel()
 async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
 
 @bot.event
