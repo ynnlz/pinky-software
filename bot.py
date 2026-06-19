@@ -145,15 +145,16 @@ async def process_order(ctx, product_name, amount_paid):
             break
 
     cc_num = random.randint(10, 99)
+    clean_name = product_name.replace('UBEREATS', 'Uber Eats')
 
-    # Embed modifié : la ligne contenant la barre de chargement et le 99% a été retirée
+    # Correction de l'erreur f-string
     embed = discord.Embed(
-        title=f"{cfg['emoji']} #CC-{cc_num} - {product_name.replace('UBEREATS', 'Uber Eats')}",
+        title=f"{cfg['emoji']} #CC-{cc_num} - {clean_name}",
         description=(
             f"{client_user.mention}\n"
             f"💵 **Payé : {amount_paid}€**\n"
             f"🚨 **Drop : {drop_val}**\n\n"
-            f"```[FINAL] {product_name.replace('UBEREATS', 'Uber Eats')} credit issued. status=ACTIVE.
+            f"```[FINAL] {clean_name} credit issued. status=ACTIVE.
 ```"
         ),
         color=discord.Color.from_rgb(46, 204, 113)
