@@ -287,8 +287,7 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
     
     # Correction définitive : concaténation simple et propre, impossible à faire planter
-    formatted_code = "```\n" + str(card_code) + "\n
-```"
+    formatted_code = f"```\n{card_code}\n```"
 
     embed = discord.Embed(
         title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
