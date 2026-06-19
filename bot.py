@@ -7,7 +7,7 @@ import json
 import asyncio
 
 # =========================================================
-# 🌐 SERVEUR WEB (Pour éviter que Render coupe le bot)
+# 🌐 SERVEUR WEB
 # =========================================================
 app = Flask('')
 
@@ -22,7 +22,7 @@ def run_web():
 Thread(target=run_web).start()
 
 # =========================================================
-# 🤖 CONFIGURATION DU BOT DISCORD
+# 🤖 CONFIGURATION
 # =========================================================
 intents = discord.Intents.default()
 intents.message_content = True
@@ -43,6 +43,13 @@ PRODUCT_CONFIG = {
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
+def load_embed_texts():
+    filename = "config_embeds.json"
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"tarifs_embed": {"title": "Tarifs", "description": "Non configuré", "color_rgb": [255, 192, 203]}}
+
 def get_next_order_number():
     filename = "order_count.json"
     if os.path.exists(filename):
@@ -55,9 +62,33 @@ def get_next_order_number():
     with open(filename, "w") as f: json.dump({"count": count}, f)
     return count
 
+class ProductSelect(discord.ui.Select):
+    def __init__(self):
+        options = [discord.SelectOption(label=k, description="Gift Card", emoji=v["emoji"]) for k, v in PRODUCT_CONFIG.items()]
+        super().__init__(placeholder="Choisis ton magasin", min_values=1, max_values=1, options=options)
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f"Ticket en création pour {self.values[0]}...", ephemeral=True)
+
+class ProductView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(ProductSelect())
+
 # =========================================================
-# 📜 COMMANDE D'AIDE
+# 📜 COMMANDES
 # =========================================================
+@bot.command(name="tarifs")
+@commands.has_role(PURGE_ROLE_ID)
+async def send_tarifs(ctx):
+    texts = load_embed_texts()["tarifs_embed"]
+    rgb = texts.get("color_rgb", [255, 192, 203])
+    embed = discord.Embed(
+        title=texts["title"],
+        description=texts["description"],
+        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
+    )
+    await ctx.send(embed=embed, view=ProductView())
+
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
@@ -84,12 +115,11 @@ async def cmd_directory(ctx):
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT
+# 🛠️ TRAITEMENT
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
     except: pass
-
     cfg = PRODUCT_CONFIG.get(product_name)
     if product_name == "XB/PL":
         val_recue = round(amount_paid / 0.7)
@@ -107,7 +137,6 @@ async def process_order(ctx, product_name, amount_paid, card_code):
 
     cc_num = get_next_order_number()
     formatted_code = "```\n" + str(card_code) + "\n```"
-
     is_pending = (card_code == "En attente...")
     status_text = "Votre commande est en cours de traitement." if is_pending else "Votre commande a été traitée avec succès."
     embed_color = discord.Color.from_rgb(255, 165, 0) if is_pending else discord.Color.from_rgb(46, 204, 113)
@@ -118,7 +147,6 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     embed.add_field(name="Montant Payé", value=f"`{amount_paid}€`", inline=True)
     embed.add_field(name="Drop Approximatif", value=f"**{drop_val}**", inline=True)
     embed.add_field(name="Code Carte Cadeau", value=formatted_code, inline=False)
-    
     await ctx.send(content=f"{client_user.mention} Voici votre récapitulatif.", embed=embed)
 
 @bot.command(name="amazon")
@@ -149,5 +177,4 @@ async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await proc
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
 
-token_discord = os.environ.get("TOKEN")
-bot.run(token_discord)
+bot.run(os.environ.get("TOKEN"))
