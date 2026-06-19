@@ -123,6 +123,9 @@ class ProductSelect(discord.ui.Select):
             description=desc_formatted,
             color=discord.Color.from_rgb(255, 192, 203)
         )
+        embed_ticket.set_image(
+            url="https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
+        )
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket)
         await interaction.response.send_message(f"✅ Ton ticket a été créé ici : {ticket_channel.mention}", ephemeral=True)
 
@@ -148,6 +151,12 @@ async def send_tarifs(ctx):
         title=texts["title"],
         description=texts["description"],
         color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
+    )
+    embed.set_thumbnail(
+        url="https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
+    )
+    embed.set_image(
+        url="https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
     )
     await ctx.send(embed=embed, view=ProductView())
 
