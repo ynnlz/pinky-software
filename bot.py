@@ -4,6 +4,7 @@ from flask import Flask
 from threading import Thread
 import os
 import json
+import asyncio
 
 # =========================================================
 # 🌐 SERVEUR WEB (Pour éviter que Render coupe le bot)
@@ -29,8 +30,9 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ ID du rôle Staff requis pour les commandes
+# ✅ ID des rôles
 STAFF_ROLE_ID = 1517487833886228550
+PURGE_ROLE_ID = 1517495087825817691  # Rôle requis pour la purge et la commande !tarifs
 
 PRODUCT_CONFIG = {
     "AMAZON": {"cat": 1517488377744593057, "emoji": "📦", "emoji_ch": "📦", "rates": {60: "75~120€", 180: "225~310€", 420: "525~730€", 600: "750~1200€"}},
@@ -58,6 +60,12 @@ def get_next_order_number():
     with open(filename, "w") as f:
         json.dump({"count": count}, f)
     return count
+
+# 🔄 Réinitialisation complète du compteur de commandes
+def reset_order_counter():
+    filename = "order_count.json"
+    with open(filename, "w") as f:
+        json.dump({"count": 0}, f)
 
 class ProductSelect(discord.ui.Select):
     def __init__(self):
@@ -89,7 +97,6 @@ class ProductSelect(discord.ui.Select):
             reason=f"Ouverture ticket PinkGift pour {product_chosen}"
         )
 
-        # ✅ Embed d'ouverture modifié avec l'instruction PayPal obligatoire
         embed_ticket = discord.Embed(
             title=f"🎫 Ticket d'achat — {product_chosen}",
             description=(
@@ -115,7 +122,9 @@ class ProductView(discord.ui.View):
 async def on_ready():
     print("Le bot PinkySoftware est en ligne et fonctionnel !")
 
+# 🔒 COMMANDE TARIFS PROTÉGÉE PAR RÔLE SPÉCIFIQUE (1517495087825817691)
 @bot.command(name="tarifs")
+@commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
     embed = discord.Embed(
         title="[CARTE CADEAUX]",
@@ -201,7 +210,37 @@ async def cmd_directory(ctx):
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🔒 COMMANDES DE TRAITEMENT PROTÉGÉES PAR RÔLE
+# 🛑 COMMANDE DE PURGE GÉNÉRALE (RÔLE CRITICAL UNIQUEMENT)
+# =========================================================
+@bot.command(name="purge_all")
+@commands.has_role(PURGE_ROLE_ID)
+async def cmd_purge_all(ctx):
+    status_msg = await ctx.send("🔄 **PinkySoftware initialise la purge complète des tickets et commandes...**")
+    
+    order_prefixes = [v["emoji_ch"] for v in PRODUCT_CONFIG.values()]
+    deleted_count = 0
+    
+    for channel in ctx.guild.text_channels:
+        is_ticket = channel.name.startswith("ticket-")
+        is_processed_order = any(channel.name.startswith(prefix.lower()) or channel.name.startswith(prefix) for prefix in order_prefixes)
+        
+        if is_ticket or is_processed_order:
+            try:
+                await channel.delete(reason="Purge complète demandée.")
+                deleted_count += 1
+                await asyncio.sleep(0.5)
+            except:
+                pass
+                
+    reset_order_counter()
+    
+    try:
+        await status_msg.edit(content=f"✅ **Purge terminée avec succès !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur de commandes réinitialisé à `0`.")
+    except:
+        await ctx.author.send(f"✅ **Purge terminée sur le serveur !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur réinitialisé.")
+
+# =========================================================
+# 🔒 COMMANDES DE TRAITEMENT PROTÉGÉES PAR RÔLE STAFF
 # =========================================================
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
@@ -248,7 +287,7 @@ async def on_command_error(ctx, error):
             await ctx.message.delete()
         except:
             pass
-        await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission d'utiliser cette commande (Rôle Staff requis).", delete_after=5)
+        await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission requise pour cette commande.", delete_after=5)
 
 token_discord = os.environ.get("TOKEN")
 bot.run(token_discord)
