@@ -50,16 +50,30 @@ PRODUCT_CONFIG = {
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
-# 📁 Outil pour charger la configuration des textes à la volée
+
+# 📁 Outil pour charger la configuration des textes à la volée (Ultra sécurisé)
 def load_embed_texts():
     filename = "config_embeds.json"
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {
+    default_data = {
         "tarifs_embed": {"title": "[CARTE CADEAUX]", "description": "Tarifs non configurés.", "color_rgb": [255, 192, 203]},
         "ticket_bienvenue": {"title": "🎫 Ticket — {product}", "description": "Bonjour {user} !"}
     }
+    if os.path.exists(filename):
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # On s'assure que les structures de bases nécessaires sont bien présentes
+                if "tarifs_embed" not in data:
+                    data["tarifs_embed"] = default_data["tarifs_embed"]
+                if "ticket_bienvenue" not in data:
+                    data["ticket_bienvenue"] = default_data["ticket_bienvenue"]
+                if "color_rgb" not in data["tarifs_embed"]:
+                    data["tarifs_embed"]["color_rgb"] = [255, 192, 203]
+                return data
+        except Exception as e:
+            print(f"⚠️ Erreur de chargement de config_embeds.json ({e}). Utilisation des données par défaut.")
+            return default_data
+    return default_data
 
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
@@ -89,6 +103,9 @@ def reset_order_counter():
     with open(filename, "w") as f: json.dump({"count": 0}, f)
 
 
+# =========================================================
+# 🔒 SYSTÈME DE TICKETS ET INTERFACE UTILISATEUR
+# =========================================================
 class CloseTicketView(discord.ui.View):
     def __init__(self, client_id: int):
         super().__init__(timeout=None)
@@ -513,6 +530,9 @@ async def on_command_error(ctx, error):
         try: await ctx.message.delete()
         except: pass
         await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission requise.", delete_after=5)
+    else:
+        # Affiche l'erreur en console pour t'aider à débugger
+        print(f"⚠️ Erreur sur la commande [{ctx.command}] lancée par [{ctx.author}] : {error}")
 
 token_discord = os.environ.get("TOKEN")
 bot.run(token_discord)
