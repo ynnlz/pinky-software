@@ -35,7 +35,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ✅ CONFIGURATION DES ÉMOJIS ET RÔLES
 # Remplace "💳" par ton émoji personnalisé obtenu avec \:paypal:
-PAYPAL_EMOJI = "💳" 
+PAYPAL_EMOJI = "<:paypal:1517582845315649751>" 
 
 STAFF_ROLE_ID = 1517487833886228550
 PURGE_ROLE_ID = 1517495087825817691
