@@ -47,6 +47,18 @@ PRODUCT_CONFIG = {
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
+# 📁 Outil pour charger la configuration des textes à la volée
+def load_embed_texts():
+    filename = "config_embeds.json"
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
+    # Textes de secours si le fichier est manquant
+    return {
+        "tarifs_embed": {"title": "[CARTE CADEAUX]", "description": "Tarifs non configurés.", "color_rgb": [255, 192, 203]},
+        "ticket_bienvenue": {"title": "🎫 Ticket — {product}", "description": "Bonjour {user} !"}
+    }
+
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
     if not match: return None
@@ -103,16 +115,14 @@ class ProductSelect(discord.ui.Select):
             reason=f"Ouverture ticket PinkGift pour {product_chosen}"
         )
 
+        # 🔄 Utilisation des textes dynamiques du JSON
+        texts = load_embed_texts()["ticket_bienvenue"]
+        title_formatted = texts["title"].format(product=product_chosen)
+        desc_formatted = texts["description"].format(user=user.mention, product=product_chosen)
+
         embed_ticket = discord.Embed(
-            title=f"🎫 Ticket d'achat — {product_chosen}",
-            description=(
-                f"Bonjour {user.mention} !\n\n"
-                f"Merci de l'intérêt que tu portes à **PinkGift**.\n"
-                f"Tu as sélectionné le produit : **{product_chosen}**.\n\n"
-                f"Le <@&{STAFF_ROLE_ID}> a été prévenu et va te prendre en charge rapidement.\n"
-                f"En attendant, tu peux préciser le montant souhaité.\n\n"
-                f"⚠️ **Les seuls moyens de paiement acceptés sont PayPal.**"
-            ),
+            title=title_formatted,
+            description=desc_formatted,
             color=discord.Color.from_rgb(255, 192, 203)
         )
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket)
@@ -133,19 +143,14 @@ async def on_ready():
 @bot.command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
+    # 🔄 Chargement dynamique du texte depuis le fichier JSON
+    texts = load_embed_texts()["tarifs_embed"]
+    rgb = texts["color_rgb"]
+
     embed = discord.Embed(
-        title="[CARTE CADEAUX]",
-        description=(
-            "**📦 AMAZON** `-72h`\n*60€* -> **75~120€**\n*180€* -> **225~310€**\n*420€* -> **525~730€**\n*600€* -> **750~1200€**\n⁠—\n"
-            "**🛒 CARREFOUR** `-72h`\n*120€* -> **150~200€**\n*300€* -> **375~500€**\n*600€* -> **750~1000€**\n*900€* -> **1125~1500€**\n⁠—\n"
-            "**🏬 INTERMARCHE** `-72h`\n*60€* -> **75~100€**\n*180€* -> **225~300€**\n*360€* -> **450~600€**\n*600€* -> **750~1000€**\n⁠—\n"
-            "**👕 ZARA** `-48h`\n*35€* -> **45~60€**\n*90€* -> **112~150€**\n*180€* -> **225~300€**\n*360€* -> **450~600€**\n⁠—\n"
-            "**💄 SEPHORA** `-48h`\n*30€* -> **38~50€**\n*60€* -> **75~100€**\n*120€* -> **150~200€**\n*240€* -> **300~400€**\n⁠—\n"
-            "**🎮 XB/PL** `-24h`\n*All* -> **-30%**\n⁠—\n"
-            "**🍔 UBEREATS** `-2h`\n*20€* -> **28~42€**\n*65€* -> **85~115€**\n*130€* -> **165~225€**\n*400€* -> **501~680€**\n⁠—\n"
-            "└  __**Livraison automatique.**__"
-        ),
-        color=discord.Color.from_rgb(255, 192, 203)
+        title=texts["title"],
+        description=texts["description"],
+        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
     )
     await ctx.send(embed=embed, view=ProductView())
 
@@ -226,7 +231,6 @@ async def cmd_directory(ctx):
         description="Voici la liste exhaustive et l'utilité de chaque commande actuellement active sur le bot.",
         color=discord.Color.from_rgb(255, 192, 203)
     )
-    
     embed.add_field(
         name="👑 Administration (Rôle Responsable requis)",
         value=(
@@ -236,7 +240,6 @@ async def cmd_directory(ctx):
         ),
         inline=False
     )
-    
     embed.add_field(
         name="🛡️ Modération (Rôle Staff requis)",
         value=(
@@ -247,7 +250,6 @@ async def cmd_directory(ctx):
         ),
         inline=False
     )
-    
     embed.add_field(
         name="📦 Traitement des Cartes Cadeaux (Rôle Staff requis)",
         value=(
@@ -260,7 +262,7 @@ async def cmd_directory(ctx):
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (CORRIGÉE)
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
@@ -286,9 +288,8 @@ async def process_order(ctx, product_name, amount_paid, card_code):
 
     cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
-
-    # Correction de l'affichage sécurisé du bloc de code
-    formatted_code = f"```\n{card_code}\n```"
+    formatted_code = f"```\n{card_code}\n
+```"
 
     embed = discord.Embed(
         title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
@@ -303,7 +304,7 @@ async def process_order(ctx, product_name, amount_paid, card_code):
 
     await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !", embed=embed)
 
-# Gestion des commandes cadeaux
+# Commandes cadeaux
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
