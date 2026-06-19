@@ -85,6 +85,45 @@ def reset_order_counter():
     filename = "order_count.json"
     with open(filename, "w") as f: json.dump({"count": 0}, f)
 
+class CloseTicketView(discord.ui.View):
+    def __init__(self, client_id: int):
+        super().__init__(timeout=None)
+        self.client_id = client_id
+
+    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        channel = interaction.channel
+        client = guild.get_member(self.client_id) if guild else None
+        staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
+
+        is_staff = staff_role in interaction.user.roles if hasattr(interaction.user, "roles") and staff_role else False
+        is_client = interaction.user.id == self.client_id
+
+        if not is_staff and not is_client:
+            await interaction.response.send_message("❌ Tu n'as pas la permission de fermer ce ticket.", ephemeral=True)
+            return
+
+        if client:
+            await channel.set_permissions(
+                client,
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False,
+                reason=f"Ticket fermé par {interaction.user}"
+            )
+
+        await interaction.response.send_message(
+            "🔒 Ticket fermé : le client n'a plus accès à ce salon.",
+            ephemeral=False
+        )
+
+        try:
+            await channel.edit(name=f"closed-{channel.name}")
+        except:
+            pass
+
+
 class ProductSelect(discord.ui.Select):
     def __init__(self):
         options = [discord.SelectOption(label=k, description="Gift Card", emoji=v["emoji"]) for k, v in PRODUCT_CONFIG.items()]
@@ -126,7 +165,7 @@ class ProductSelect(discord.ui.Select):
         embed_ticket.set_image(
             url="https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
         )
-        await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket)
+        await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket a été créé ici : {ticket_channel.mention}", ephemeral=True)
 
 class ProductView(discord.ui.View):
@@ -271,8 +310,10 @@ async def cmd_directory(ctx):
 # 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
-    try: await ctx.message.delete()
-    except: pass
+    try:
+        await ctx.message.delete()
+    except:
+        pass
 
     cfg = PRODUCT_CONFIG.get(product_name)
     if product_name == "XB/PL":
@@ -292,14 +333,13 @@ async def process_order(ctx, product_name, amount_paid, card_code):
             client_user = msg.author
             break
 
-    cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
-    
-    # Correction définitive : concaténation simple et propre, impossible à faire planter
     formatted_code = f"```\n{card_code}\n```"
 
+    code_fourni = card_code and card_code.strip().lower() not in ["en attente...", "en attente", "attente", "none", "null"]
+
     embed = discord.Embed(
-        title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
+        title=f"{cfg['emoji']} Commande validée",
         description=f"Merci pour votre confiance {client_user.mention} ! Votre commande a été traitée avec succès.",
         color=discord.Color.from_rgb(46, 204, 113)
     )
@@ -307,9 +347,17 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     embed.add_field(name="💵 Prix payé", value=f"`{amount_paid}€`", inline=True)
     embed.add_field(name="🚨 Drop reçu", value=f"**{drop_val}**", inline=True)
     embed.add_field(name="🔑 Carte Cadeau / Code", value=formatted_code, inline=False)
+
+    if code_fourni:
+        embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless")
+        content = f"{client_user.mention} Votre carte cadeau est disponible !"
+    else:
+        embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069657309204/Commande_recu.png?ex=6a369167&is=6a353fe7&hm=5a401706a47f8c7571510f5112ea122b3061eca7382f31d077c7bdbe7c690d9a&=&format=webp&quality=lossless")
+        content = f"{client_user.mention} Votre commande a bien été prise en charge !"
+
     embed.set_footer(text="PinkySoftware — Livraison Instantanée")
 
-    await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !", embed=embed)
+    await ctx.send(content=content, embed=embed)
 
 # Commandes cadeaux
 @bot.command(name="amazon")
@@ -339,6 +387,63 @@ async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await proc
 @bot.command(name="ubereats")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
+
+
+@bot.command(name="finish")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_finish(ctx, *, code_carte: str):
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+    embed_message = None
+
+    async for msg in ctx.channel.history(limit=30):
+        if msg.author == bot.user and msg.embeds:
+            embed = msg.embeds[0]
+            if embed.title and "Commande validée" in embed.title:
+                embed_message = msg
+                break
+
+    if not embed_message:
+        await ctx.send("❌ Aucun embed de commande trouvé dans ce salon.", delete_after=5)
+        return
+
+    old_embed = embed_message.embeds[0]
+
+    new_description = old_embed.description or ""
+    new_description = new_description.replace(
+        "Votre commande a été traitée avec succès.",
+        "Votre commande est finalisé n'oubliez pas de laissez un avis ! (Sinon vous serez ban des commandes)"
+    )
+
+    new_embed = discord.Embed(
+        title=old_embed.title,
+        description=new_description,
+        color=discord.Color.from_rgb(46, 204, 113)
+    )
+
+    for field in old_embed.fields:
+        if field.name == "🔑 Carte Cadeau / Code":
+            new_embed.add_field(
+                name="🔑 Carte Cadeau / Code",
+                value=f"```\n{code_carte}\n```",
+                inline=False
+            )
+        else:
+            new_embed.add_field(
+                name=field.name,
+                value=field.value,
+                inline=field.inline
+            )
+
+    new_embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless")
+    new_embed.set_footer(text="PinkySoftware — Livraison Instantanée")
+
+    await embed_message.edit(embed=new_embed)
+    await ctx.send("✅ Commande finalisée avec succès.", delete_after=5)
+
 
 @bot.event
 async def on_command_error(ctx, error):
