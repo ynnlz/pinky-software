@@ -33,11 +33,12 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ CONFIGURATION DES ÉMOJIS ET RÔLES
+# ✅ CONFIGURATION DES ÉMOJIS, RÔLES ET CONSTANTES
 PAYPAL_EMOJI = "<:paypal:1517582845315649751>" 
 
 STAFF_ROLE_ID = 1517487833886228550
 PURGE_ROLE_ID = 1517495087825817691
+NEW_MEMBER_ROLE_ID = 1517580901356277921
 
 PRODUCT_CONFIG = {
     "AMAZON": {"cat": 1517488377744593057, "emoji": "📦", "emoji_ch": "📦", "rates": {60: "75~120€", 180: "225~310€", 420: "525~730€", 600: "750~1200€"}},
@@ -175,9 +176,30 @@ class ProductView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ProductSelect())
 
+
+# =========================================================
+# ⚙️ ÉVÉNEMENTS DISCORD
+# =========================================================
 @bot.event
 async def on_ready():
     print("Le bot PinkySoftware est en ligne et fonctionnel !")
+
+@bot.event
+async def on_member_join(member):
+    """Attribue automatiquement le rôle configuré lors de l'arrivée d'un nouveau membre."""
+    guild = member.guild
+    role = guild.get_role(NEW_MEMBER_ROLE_ID)
+    if role:
+        try:
+            await member.add_roles(role, reason="Attribution automatique nouveau membre (PinkySoftware)")
+            print(f"✅ Rôle attribué avec succès à {member.name}")
+        except discord.Forbidden:
+            print(f"❌ Erreur de permissions : impossible d'attribuer le rôle à {member.name}")
+        except Exception as e:
+            print(f"❌ Erreur lors de l'attribution du rôle à {member.name} : {e}")
+    else:
+        print(f"❌ Erreur : Le rôle ID {NEW_MEMBER_ROLE_ID} n'existe pas sur cette guilde.")
+
 
 # =========================================================
 # 🔒 COMMANDES ADMINISTRATEUR (RÔLE RESPONSIBLE/PURGE)
@@ -234,6 +256,7 @@ async def cmd_clear_messages(ctx, amount: int):
     try: await msg.delete()
     except: pass
 
+
 # =========================================================
 # 🛡️ COMMANDES DE MODÉRATION & INFORMATIONS (STAFF)
 # =========================================================
@@ -288,6 +311,7 @@ async def cmd_paypal(ctx):
     embed.set_footer(text="PinkGift — Sécurité & Rapidité")
     await ctx.send(embed=embed)
 
+
 # =========================================================
 # 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À JOUR)
 # =========================================================
@@ -334,6 +358,7 @@ async def cmd_directory(ctx):
         inline=False
     )
     await ctx.send(embed=embed)
+
 
 # =========================================================
 # 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
@@ -388,7 +413,10 @@ async def process_order(ctx, product_name, amount_paid, card_code):
 
     await ctx.send(content=content, embed=embed)
 
-# Commandes cadeaux
+
+# =========================================================
+# 🛍️ COMMANDES DE BOUTIQUE INDIVIDUELLES
+# =========================================================
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
@@ -418,6 +446,9 @@ async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await proc
 async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
 
 
+# =========================================================
+# 🏁 COMMANDE DE FINALISATION
+# =========================================================
 @bot.command(name="finish")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_finish(ctx, *, code_carte: str):
