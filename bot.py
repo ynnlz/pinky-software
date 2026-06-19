@@ -50,53 +50,148 @@ PRODUCT_CONFIG = {
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
+# 📁 Configuration par défaut des embeds
+# Elle sert aussi de secours si config_embeds.json est absent sur Render.
+DEFAULT_EMBED_DATA = {
+    "tarifs_embed": {
+        "title": "[CARTE CADEAUX]",
+        "description": [
+            "📦 AMAZON -72h",
+            "60€ -> 75~120€",
+            "180€ -> 225~310€",
+            "420€ -> 525~730€",
+            "600€ -> 750~1200€",
+            "⁠—",
+            "🛒 CARREFOUR -72h",
+            "120€ -> 150~200€",
+            "300€ -> 375~500€",
+            "600€ -> 750~1000€",
+            "900€ -> 1125~1500€",
+            "⁠—",
+            "🏬 INTERMARCHE -72h",
+            "60€ -> 75~100€",
+            "180€ -> 225~300€",
+            "360€ -> 450~600€",
+            "600€ -> 750~1000€",
+            "⁠—",
+            "👕 ZARA -48h",
+            "35€ -> 45~60€",
+            "90€ -> 112~150€",
+            "180€ -> 225~300€",
+            "360€ -> 450~600€",
+            "⁠—",
+            "💄 SEPHORA -48h",
+            "30€ -> 38~50€",
+            "60€ -> 75~100€",
+            "120€ -> 150~200€",
+            "240€ -> 300~400€",
+            "⁠—",
+            "🎮 XB/PL -24h",
+            "All -> -30%",
+            "⁠—",
+            "🍔 UBEREATS -2h",
+            "20€ -> 28~42€",
+            "65€ -> 85~115€",
+            "130€ -> 165~225€",
+            "400€ -> 501~680€",
+            "⁠—",
+            "└  Livraison automatique."
+        ],
+        "color_rgb": [
+            255,
+            192,
+            203
+        ]
+    },
+    "ticket_bienvenue": {
+        "title": "🎫 Ticket d'achat — {product}",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Merci de l'intérêt que tu portes à PinkGift.",
+            "Tu as sélectionné le produit : {product}.",
+            "",
+            "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
+            "En attendant, tu peux préciser le montant souhaité.",
+            "",
+            "⚠️ Les seuls moyens de paiement acceptés sont PayPal."
+        ],
+        "color_rgb": [
+            255,
+            192,
+            203
+        ]
+    }
+}
+
 # 📁 Outil pour charger la configuration des textes à la volée de manière ultra robuste
 def load_embed_texts():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(base_dir, "config_embeds.json")
-    
-    default_data = {
-        "tarifs_embed": {
-            "title": "[CARTE CADEAUX]", 
-            "description": ["Tarifs non configurés."], 
-            "color_rgb": [255, 192, 203]
-        },
-        "ticket_bienvenue": {
-            "title": "🎫 Ticket d'achat — {product}", 
-            "description": ["Bonjour {user} !", "Les seuls moyens de paiement acceptés sont PayPal."],
-            "color_rgb": [255, 192, 203]
-        }
-    }
-    
-    if not os.path.exists(filename):
-        print(f"⚠️ {filename} introuvable. Utilisation des valeurs par défaut.")
-        return default_data
-        
+
+    # Le bot essaie plusieurs emplacements possibles.
+    # Sur Render, le plus important est que config_embeds.json soit dans le même dossier que bot.py.
+    possible_paths = []
+
+    env_path = os.environ.get("EMBED_CONFIG_PATH")
+    if env_path:
+        possible_paths.append(env_path)
+
+    possible_paths.extend([
+        os.path.join(base_dir, "config_embeds.json"),
+        os.path.join(os.getcwd(), "config_embeds.json"),
+    ])
+
+    filename = None
+    for path in possible_paths:
+        if path and os.path.exists(path):
+            filename = path
+            break
+
+    # Si le fichier n'existe pas, on le crée automatiquement avec les vrais tarifs
+    # au lieu d'afficher "Tarifs non configurés."
+    if filename is None:
+        filename = os.path.join(base_dir, "config_embeds.json")
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(DEFAULT_EMBED_DATA, f, ensure_ascii=False, indent=4)
+            print(f"✅ config_embeds.json créé automatiquement ici : {filename}")
+        except Exception as e:
+            print(f"⚠️ Impossible de créer config_embeds.json : {e}")
+        return DEFAULT_EMBED_DATA
+
     try:
         with open(filename, "r", encoding="utf-8") as f:
             raw_content = f.read()
-            
+
         # Supprime les virgules traînantes invalides en JSON
         cleaned_content = re.sub(r',\s*([\]}])', r'\1', raw_content)
         data = json.loads(cleaned_content)
-        
-        # Validation et fusion avec la structure par défaut
-        if "tarifs_embed" not in data:
-            data["tarifs_embed"] = default_data["tarifs_embed"]
-        if "ticket_bienvenue" not in data:
-            data["ticket_bienvenue"] = default_data["ticket_bienvenue"]
-            
+
+        # Fusion robuste : si une clé manque, elle est récupérée depuis DEFAULT_EMBED_DATA
+        for main_key, default_value in DEFAULT_EMBED_DATA.items():
+            if main_key not in data or not isinstance(data[main_key], dict):
+                data[main_key] = default_value
+                continue
+
+            for sub_key, sub_default in default_value.items():
+                if sub_key not in data[main_key]:
+                    data[main_key][sub_key] = sub_default
+
+        print(f"✅ Configuration des embeds chargée depuis : {filename}")
         return data
-        
+
     except json.JSONDecodeError as decode_err:
-        print(f"❌ Erreur de syntaxe JSON dans config_embeds.json : {decode_err}")
+        print(f"❌ Erreur de syntaxe JSON dans {filename} : {decode_err}")
         lines = raw_content.splitlines()
         if decode_err.lineno <= len(lines):
             print(f"👉 Ligne contenant l'erreur ({decode_err.lineno}) : {lines[decode_err.lineno - 1]}")
-        return default_data
+        print("⚠️ Utilisation de la configuration par défaut intégrée au bot.")
+        return DEFAULT_EMBED_DATA
+
     except Exception as e:
-        print(f"⚠️ Erreur de chargement JSON : {e}. Utilisation des données par défaut.")
-        return default_data
+        print(f"⚠️ Erreur de chargement JSON : {e}. Utilisation de la configuration par défaut intégrée au bot.")
+        return DEFAULT_EMBED_DATA
+
 
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
