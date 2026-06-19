@@ -56,15 +56,24 @@ def get_next_order_number():
     return count
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT (MISE À JOUR)
+# 📜 COMMANDE D'AIDE
+# =========================================================
+@bot.command(name="commandes")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_directory(ctx):
+    embed = discord.Embed(title="📜 Répertoire des commandes", color=discord.Color.from_rgb(255, 192, 203))
+    embed.add_field(name="📦 Traitement Cartes", value="`!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`\nSyntaxe: `!magasin <montant> [code]`", inline=False)
+    embed.add_field(name="🛡️ Modération", value="`!ban`, `!tempban`, `!tempmute`", inline=False)
+    await ctx.send(embed=embed)
+
+# =========================================================
+# 🛠️ FONCTION DE TRAITEMENT
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
     except: pass
 
     cfg = PRODUCT_CONFIG.get(product_name)
-    
-    # Calcul du drop
     if product_name == "XB/PL":
         val_recue = round(amount_paid / 0.7)
         drop_val = f"{val_recue}€"
@@ -73,7 +82,6 @@ async def process_order(ctx, product_name, amount_paid, card_code):
         if drop_val == "Sur-mesure":
             drop_val = f"{round(amount_paid * 1.3)}~{round(amount_paid * 1.7)}€"
 
-    # Récupération du client
     client_user = ctx.author
     async for msg in ctx.channel.history(oldest_first=True, limit=5):
         if msg.author != bot.user and not msg.author.bot:
@@ -83,26 +91,19 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     cc_num = get_next_order_number()
     formatted_code = "```\n" + str(card_code) + "\n```"
 
-    # Définition des états
     is_pending = (card_code == "En attente...")
     status_text = "Votre commande est en cours de traitement." if is_pending else "Votre commande a été traitée avec succès."
     embed_color = discord.Color.from_rgb(255, 165, 0) if is_pending else discord.Color.from_rgb(46, 204, 113)
 
-    embed = discord.Embed(
-        title=f"{cfg['emoji']} Commande #CC-{cc_num}",
-        description=status_text,
-        color=embed_color
-    )
+    embed = discord.Embed(title=f"{cfg['emoji']} Commande #CC-{cc_num}", description=status_text, color=embed_color)
     embed.add_field(name="Client", value=client_user.mention, inline=True)
     embed.add_field(name="Magasin", value=product_name, inline=True)
     embed.add_field(name="Montant Payé", value=f"`{amount_paid}€`", inline=True)
     embed.add_field(name="Drop Approximatif", value=f"**{drop_val}**", inline=True)
     embed.add_field(name="Code Carte Cadeau", value=formatted_code, inline=False)
-    embed.set_footer(text="PinkySoftware")
+    
+    await ctx.send(content=f"{client_user.mention} Voici votre récapitulatif.", embed=embed)
 
-    await ctx.send(content=f"{client_user.mention} Voici le récapitulatif de votre commande.", embed=embed)
-
-# Commandes
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
