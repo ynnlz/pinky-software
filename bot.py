@@ -30,20 +30,20 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ⚠️ REMPLACE CET ID par l'ID de la catégorie Discord où créer les tickets
-CATEGORY_TICKET_ID = 123456789012345678  
+# ✅ Ton identifiant de catégorie a été configuré ici :
+CATEGORY_TICKET_ID = 1418873021615308850  
 
 # Définition du menu déroulant interactif
 class ProductSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="AMAZON", description="Gift Card", emoji="<:amazon:1234567890>"),
-            discord.SelectOption(label="CARREFOUR", description="Gift Card", emoji="<:carrefour:1234567890>"),
-            discord.SelectOption(label="INTERMARCHE", description="Gift Card", emoji="<:intermarche:1234567890>"),
-            discord.SelectOption(label="ZARA", description="Gift Card", emoji="<:zara:1234567890>"),
-            discord.SelectOption(label="SEPHORA", description="Gift Card", emoji="<:sephora:1234567890>"),
-            discord.SelectOption(label="XB/PL", description="Gift Card", emoji="<:xbox:1234567890>"),
-            discord.SelectOption(label="UBEREATS", description="Gift Card", emoji="<:ubereats:1234567890>"),
+            discord.SelectOption(label="AMAZON", description="Gift Card", emoji="📦"),
+            discord.SelectOption(label="CARREFOUR", description="Gift Card", emoji="🛒"),
+            discord.SelectOption(label="INTERMARCHE", description="Gift Card", emoji="🏬"),
+            discord.SelectOption(label="ZARA", description="Gift Card", emoji="👕"),
+            discord.SelectOption(label="SEPHORA", description="Gift Card", emoji="💄"),
+            discord.SelectOption(label="XB/PL", description="Gift Card", emoji="🎮"),
+            discord.SelectOption(label="UBEREATS", description="Gift Card", emoji="🍔"),
         ]
         super().__init__(placeholder="Je veux me régaler avec PinkGift", min_values=1, max_values=1, options=options)
 
@@ -53,15 +53,22 @@ class ProductSelect(discord.ui.Select):
         user = interaction.user
         product_chosen = self.values[0]
 
-        # Permissions : seul l'acheteur et le bot voient le ticket
+        # Permissions : seul l'acheteur, le bot et les admins voient le ticket
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
 
-        # Récupération de la catégorie
+        # Récupération de la catégorie configurée
         category = guild.get_channel(CATEGORY_TICKET_ID)
+
+        if category is None:
+            await interaction.response.send_message(
+                "❌ Erreur : La catégorie des tickets est introuvable. Contacte un administrateur.", 
+                ephemeral=True
+            )
+            return
 
         # Création du salon de ticket privé
         ticket_channel = await guild.create_text_channel(
@@ -99,48 +106,47 @@ class ProductView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f"Le bot PinkySoftware est en ligne et son serveur Web Flask tourne !")
+    print(f"Le bot PinkySoftware est en ligne et prêt à l'emploi !")
 
 @bot.command(name="tarifs")
 async def send_tarifs(ctx):
-    # L'embed contenant ta nouvelle grille tarifaire augmentée (bénéfices optimisés)
     embed = discord.Embed(
         title="[CARTE CADEAUX]",
         description=(
-            "**<:amazon:1234567890> AMAZON** `-72h`\n"
+            "**📦 AMAZON** `-72h`\n"
             "*60€* -> **75~120€**\n"
             "*180€* -> **225~310€**\n"
             "*420€* -> **525~730€**\n"
             "*600€* -> **750~1200€**\n"
             "⁠—\n"
-            "**<:carrefour:1234567890> CARREFOUR** `-72h`\n"
+            "**🛒 CARREFOUR** `-72h`\n"
             "*120€* -> **150~200€**\n"
             "*300€* -> **375~500€**\n"
             "*600€* -> **750~1000€**\n"
             "*900€* -> **1125~1500€**\n"
             "⁠—\n"
-            "**<:intermarche:1234567890> INTERMARCHE** `-72h`\n"
+            "**🏬 INTERMARCHE** `-72h`\n"
             "*60€* -> **75~100€**\n"
             "*180€* -> **225~300€**\n"
             "*360€* -> **450~600€**\n"
             "*600€* -> **750~1000€**\n"
             "⁠—\n"
-            "**<:zara:1234567890> ZARA** `-48h`\n"
+            "**👕 ZARA** `-48h`\n"
             "*35€* -> **45~60€**\n"
             "*90€* -> **112~150€**\n"
             "*180€* -> **225~300€**\n"
             "*360€* -> **450~600€**\n"
             "⁠—\n"
-            "**<:sephora:1234567890> SEPHORA** `-48h`\n"
+            "**💄 SEPHORA** `-48h`\n"
             "*30€* -> **38~50€**\n"
             "*60€* -> **75~100€**\n"
             "*120€* -> **150~200€**\n"
             "*240€* -> **300~400€**\n"
             "⁠—\n"
-            "**<:xbox:1234567890> XB/PL** `-24h`\n"
+            "**🎮 XB/PL** `-24h`\n"
             "*All* -> **-30%**\n"
             "⁠—\n"
-            "**<:ubereats:1234567890> UBEREATS** `-2h`\n"
+            "**🍔 UBEREATS** `-2h`\n"
             "*20€* -> **28~42€**\n"
             "*65€* -> **85~115€**\n"
             "*130€* -> **165~225€**\n"
@@ -151,9 +157,9 @@ async def send_tarifs(ctx):
         color=discord.Color.from_rgb(255, 192, 203)
     )
     
-    # Remplis ces liens avec tes vrais visuels (Logo dessiné et GIF du bas)
-    embed.set_thumbnail(url="LIEN_DE_TON_LOGO")
-    embed.set_image(url="LIEN_DE_TON_GIF")
+    # Remplis ces liens plus tard si tu veux ajouter des images
+    # embed.set_thumbnail(url="LIEN_DE_TON_LOGO")
+    # embed.set_image(url="LIEN_DE_TON_GIF")
     
     # Envoi de l'embed combiné avec le menu déroulant
     await ctx.send(embed=embed, view=ProductView())
