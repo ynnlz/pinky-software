@@ -233,7 +233,7 @@ async def cmd_clear_messages(ctx, amount: int):
     except: pass
 
 # =========================================================
-# 🛡️ COMMANDES DE MODÉRATION (STAFF)
+# 🛡️ COMMANDES DE MODÉRATION & INFORMATIONS (STAFF)
 # =========================================================
 @bot.command(name="ban")
 @commands.has_role(STAFF_ROLE_ID)
@@ -265,8 +265,29 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     await member.timeout(td, reason=reason)
     await ctx.send(f"🔇 **{member.name}** a été réduit au silence pendant **{duration}**. (Raison : {reason})")
 
+# 💳 COMMANDE PAYPAL (STAFF)
+@bot.command(name="paypal")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_paypal(ctx):
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+    embed = discord.Embed(
+        title="💳 Moyen de Paiement — PayPal",
+        description=(
+            "Pour finaliser votre achat chez **PinkySoftware**, veuillez noter la règle suivante :\n\n"
+            "<:paypal:1517517069061456102> **Nous n'acceptons uniquement PayPal comme moyen de paiement.**\n\n"
+            "Veuillez préparer votre compte ainsi que votre adresse e-mail de paiement, et la communiquer au staff dans ce ticket."
+        ),
+        color=discord.Color.from_rgb(0, 112, 186) # Bleu PayPal officiel
+    )
+    embed.set_footer(text="PinkGift — Sécurité & Rapidité")
+    await ctx.send(embed=embed)
+
 # =========================================================
-# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À POUR)
+# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À JOUR)
 # =========================================================
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
@@ -286,8 +307,9 @@ async def cmd_directory(ctx):
         inline=False
     )
     embed.add_field(
-        name="🛡️ Modération (Rôle Staff requis)",
+        name="🛡️ Modération & Informations (Rôle Staff requis)",
         value=(
+            "`!paypal` : Envoie l'embed spécifiant que seul PayPal est accepté <:paypal:1517517069061456102>.\n"
             "`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n"
             "`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: `10m`, `2h`, `5d`).\n"
             "`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n"
