@@ -259,7 +259,7 @@ async def cmd_directory(ctx):
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (CORRIGÉE SANS F-STRING RIGIDE)
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (NETTOYÉE)
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
@@ -286,9 +286,8 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     cc_num = get_next_order_number()
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
     
-    # Sécurisation totale ici : plus aucune f-string risquée pour le bloc de code
-    formatted_code = "```\n" + str(card_code) + "\n
-```"
+    # Correction définitive : concaténation simple et propre, impossible à faire planter
+    formatted_code = "```\n" + str(card_code) + "\n```"
 
     embed = discord.Embed(
         title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
