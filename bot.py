@@ -218,7 +218,7 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     await ctx.send(f"🔇 **{member.name}** a été réduit au silence pendant **{duration}**. (Raison : {reason})")
 
 # =========================================================
-# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES
+# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À POUR)
 # =========================================================
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
@@ -229,9 +229,9 @@ async def cmd_directory(ctx):
         color=discord.Color.from_rgb(255, 192, 203)
     )
     embed.add_field(
-        name="👑 Administration (Rôle Responsable requis)",
+        name="👑 Administration (Rôle Responsable/Purge requis)",
         value=(
-            "`!tarifs` : Génère l'embed des prix avec le menu déroulant d'ouverture de ticket.\n"
+            "`!tarifs` : Génère l'embed des prix (chargé depuis le JSON) avec le menu déroulant d'ouverture de ticket.\n"
             "`!purge_all` : Supprime l'intégralité des salons tickets et remet le compteur à zéro.\n"
             "`!clear <nombre>` : Efface un nombre précis de messages dans le salon actuel (Ex: `!clear 20`)."
         ),
@@ -251,7 +251,7 @@ async def cmd_directory(ctx):
         name="📦 Traitement des Cartes Cadeaux (Rôle Staff requis)",
         value=(
             "**Syntaxe :** `!<nom_du_magasin> <montant> <code_carte_cadeau>`\n"
-            "Valide l'achat, renomme le salon et ping le client avec l'embed contenant le code de la carte.\n"
+            "Valide l'achat, renomme automatiquement le salon avec le drop calculé, et envoie l'embed de livraison avec le code au client.\n"
             "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
         ),
         inline=False
@@ -259,7 +259,7 @@ async def cmd_directory(ctx):
     await ctx.send(embed=embed)
 
 # =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES (NETTOYÉE)
+# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
 # =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
     try: await ctx.message.delete()
@@ -287,7 +287,8 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     clean_name = product_name.replace('UBEREATS', 'Uber Eats')
     
     # Correction définitive : concaténation simple et propre, impossible à faire planter
-    formatted_code = "```\n" + str(card_code) + "\n```"
+    formatted_code = "```\n" + str(card_code) + "\n
+```"
 
     embed = discord.Embed(
         title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
