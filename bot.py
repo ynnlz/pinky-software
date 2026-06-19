@@ -33,7 +33,7 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ CONFIGURATION DES ÉMOJIS, RÔLES ET CONSTANTES
+# ✅ CONFIGURATION DES ÉMOJIS ET RÔLES
 PAYPAL_EMOJI = "<:paypal:1517582845315649751>" 
 
 STAFF_ROLE_ID = 1517487833886228550
@@ -50,30 +50,53 @@ PRODUCT_CONFIG = {
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
-
-# 📁 Outil pour charger la configuration des textes à la volée (Ultra sécurisé)
+# 📁 Outil pour charger la configuration des textes à la volée de manière ultra robuste
 def load_embed_texts():
-    filename = "config_embeds.json"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(base_dir, "config_embeds.json")
+    
     default_data = {
-        "tarifs_embed": {"title": "[CARTE CADEAUX]", "description": "Tarifs non configurés.", "color_rgb": [255, 192, 203]},
-        "ticket_bienvenue": {"title": "🎫 Ticket — {product}", "description": "Bonjour {user} !"}
+        "tarifs_embed": {
+            "title": "[CARTE CADEAUX]", 
+            "description": ["Tarifs non configurés."], 
+            "color_rgb": [255, 192, 203]
+        },
+        "ticket_bienvenue": {
+            "title": "🎫 Ticket d'achat — {product}", 
+            "description": ["Bonjour {user} !", "Les seuls moyens de paiement acceptés sont PayPal."],
+            "color_rgb": [255, 192, 203]
+        }
     }
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # On s'assure que les structures de bases nécessaires sont bien présentes
-                if "tarifs_embed" not in data:
-                    data["tarifs_embed"] = default_data["tarifs_embed"]
-                if "ticket_bienvenue" not in data:
-                    data["ticket_bienvenue"] = default_data["ticket_bienvenue"]
-                if "color_rgb" not in data["tarifs_embed"]:
-                    data["tarifs_embed"]["color_rgb"] = [255, 192, 203]
-                return data
-        except Exception as e:
-            print(f"⚠️ Erreur de chargement de config_embeds.json ({e}). Utilisation des données par défaut.")
-            return default_data
-    return default_data
+    
+    if not os.path.exists(filename):
+        print(f"⚠️ {filename} introuvable. Utilisation des valeurs par défaut.")
+        return default_data
+        
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            raw_content = f.read()
+            
+        # Supprime les virgules traînantes invalides en JSON
+        cleaned_content = re.sub(r',\s*([\]}])', r'\1', raw_content)
+        data = json.loads(cleaned_content)
+        
+        # Validation et fusion avec la structure par défaut
+        if "tarifs_embed" not in data:
+            data["tarifs_embed"] = default_data["tarifs_embed"]
+        if "ticket_bienvenue" not in data:
+            data["ticket_bienvenue"] = default_data["ticket_bienvenue"]
+            
+        return data
+        
+    except json.JSONDecodeError as decode_err:
+        print(f"❌ Erreur de syntaxe JSON dans config_embeds.json : {decode_err}")
+        lines = raw_content.splitlines()
+        if decode_err.lineno <= len(lines):
+            print(f"👉 Ligne contenant l'erreur ({decode_err.lineno}) : {lines[decode_err.lineno - 1]}")
+        return default_data
+    except Exception as e:
+        print(f"⚠️ Erreur de chargement JSON : {e}. Utilisation des données par défaut.")
+        return default_data
 
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
@@ -87,7 +110,8 @@ def parse_duration(duration_str: str):
     return None
 
 def get_next_order_number():
-    filename = "order_count.json"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(base_dir, "order_count.json")
     if os.path.exists(filename):
         try:
             with open(filename, "r") as f:
@@ -99,12 +123,13 @@ def get_next_order_number():
     return count
 
 def reset_order_counter():
-    filename = "order_count.json"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(base_dir, "order_count.json")
     with open(filename, "w") as f: json.dump({"count": 0}, f)
 
 
 # =========================================================
-# 🔒 SYSTÈME DE TICKETS ET INTERFACE UTILISATEUR
+# 🔒 SYSTÈME DE FERMETURE DES TICKETS
 # =========================================================
 class CloseTicketView(discord.ui.View):
     def __init__(self, client_id: int):
@@ -176,12 +201,21 @@ class ProductSelect(discord.ui.Select):
 
         texts = load_embed_texts()["ticket_bienvenue"]
         title_formatted = texts["title"].format(product=product_chosen)
-        desc_formatted = texts["description"].format(user=user.mention, product=product_chosen)
+        
+        # Reconstitution de la description (liste -> string)
+        desc_raw = texts["description"]
+        if isinstance(desc_raw, list):
+            description_str = "\n".join(desc_raw)
+        else:
+            description_str = str(desc_raw)
+            
+        desc_formatted = description_str.format(user=user.mention, product=product_chosen)
+        rgb = texts.get("color_rgb", [255, 192, 203])
 
         embed_ticket = discord.Embed(
             title=title_formatted,
             description=desc_formatted,
-            color=discord.Color.from_rgb(255, 192, 203)
+            color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
         )
         embed_ticket.set_image(
             url="https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
@@ -189,16 +223,11 @@ class ProductSelect(discord.ui.Select):
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket a été créé ici : {ticket_channel.mention}", ephemeral=True)
 
-
 class ProductView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(ProductSelect())
 
-
-# =========================================================
-# ⚙️ ÉVÉNEMENTS DISCORD
-# =========================================================
 @bot.event
 async def on_ready():
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
@@ -229,9 +258,16 @@ async def send_tarifs(ctx):
     texts = load_embed_texts()["tarifs_embed"]
     rgb = texts["color_rgb"]
 
+    # Reconstitution de la description (liste -> string)
+    desc_raw = texts["description"]
+    if isinstance(desc_raw, list):
+        description_str = "\n".join(desc_raw)
+    else:
+        description_str = str(desc_raw)
+
     embed = discord.Embed(
         title=texts["title"],
-        description=texts["description"],
+        description=description_str,
         color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
     )
     embed.set_thumbnail(
@@ -531,7 +567,6 @@ async def on_command_error(ctx, error):
         except: pass
         await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission requise.", delete_after=5)
     else:
-        # Affiche l'erreur en console pour t'aider à débugger
         print(f"⚠️ Erreur sur la commande [{ctx.command}] lancée par [{ctx.author}] : {error}")
 
 token_discord = os.environ.get("TOKEN")
