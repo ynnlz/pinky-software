@@ -114,7 +114,7 @@ DEFAULT_EMBED_DATA = {
             "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
             "En attendant, tu peux préciser le montant souhaité.",
             "",
-            "⚠️ Les seuls moyens de paiement acceptés sont PayPal."
+            "⚠️ Les seuls moyens de paiement acceptés sont PayPal. <:paypal:1517582845315649751> "
         ],
         "color_rgb": [
             255,
