@@ -47,7 +47,8 @@ PRODUCT_CONFIG = {
     "ZARA": {"cat": 1517488486783910008, "emoji": "👕", "emoji_ch": "👕", "rates": {35: "45~60€", 90: "112~150€", 180: "225~300€", 360: "450~600€"}},
     "SEPHORA": {"cat": 1517488524180455484, "emoji": "💄", "emoji_ch": "💄", "rates": {30: "38~50€", 60: "75~100€", 120: "150~200€", 240: "300~400€"}},
     "XB/PL": {"cat": 1517488548964466819, "emoji": "🎮", "emoji_ch": "🎮", "rates": {}}, 
-    "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
+    "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}},
+    "VALORANT": {"cat": 1517488399106183188, "emoji": "🎮", "emoji_ch": "🎮", "rates": {22: "3650 VP Europe", 32: "5350 VP Europe / 8900 VP Turquie", 42: "8700 VP Europe", 10: "2925 VP Turquie", 17: "4325 VP Turquie"}}
 }
 
 # 📁 Configuration par défaut des embeds
@@ -118,7 +119,7 @@ DEFAULT_EMBED_DATA = {
                     "💎 **4325 VP** — `18€`",
                     "💎 **8900 VP** — `33€`",
                     "",
-                    "🛒 Pour commander : ouvre un ticket ou contacte le staff."
+                    "🛒 Clique sur le bouton vert ci-dessous pour ouvrir un ticket."
             ],
             "color_rgb": [
                     255,
@@ -347,6 +348,61 @@ class ProductView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ProductSelect())
 
+
+class ValoTicketButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Ouvrir un ticket", emoji="🛒", style=discord.ButtonStyle.success)
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        user = interaction.user
+
+        if guild is None:
+            await interaction.response.send_message("❌ Cette commande doit être utilisée sur un serveur.", ephemeral=True)
+            return
+
+        category = guild.get_channel(1517488399106183188)
+        if category is None:
+            await interaction.response.send_message("❌ Erreur : catégorie Valorant introuvable.", ephemeral=True)
+            return
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        }
+
+        ticket_channel = await guild.create_text_channel(
+            name=f"ticket-{user.name}",
+            category=category,
+            overwrites=overwrites,
+            reason=f"Ouverture ticket PinkGift pour Valorant Points par {user}"
+        )
+
+        embed_ticket = discord.Embed(
+            title="🎫 Ticket d'achat — VALORANT POINTS",
+            description=(
+                f"Bonjour {user.mention} !\n\n"
+                "Merci de l'intérêt que tu portes à PinkGift.\n"
+                "Tu as sélectionné le produit : **VALORANT POINTS**.\n\n"
+                f"Le <@&{STAFF_ROLE_ID}> a été prévenu et va te prendre en charge rapidement.\n"
+                "En attendant, indique le pack VP souhaité.\n\n"
+                "⚠️ Les seuls moyens de paiement acceptés sont PayPal."
+            ),
+            color=discord.Color.from_rgb(255, 192, 203)
+        )
+        embed_ticket.set_image(
+            url="https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
+        )
+
+        await ticket_channel.send(
+            content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
+            embed=embed_ticket,
+            view=CloseTicketView(user.id)
+        )
+        await interaction.response.send_message(f"✅ Ton ticket a été créé ici : {ticket_channel.mention}", ephemeral=True)
+
 @bot.event
 async def on_ready():
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
@@ -515,7 +571,7 @@ async def cmd_valo(ctx):
         embed.set_image(url=image_url)
 
     embed.set_footer(text="PinkGift — Valorant Points")
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, view=ValoTicketButton())
 
 
 # =========================================================
@@ -533,6 +589,7 @@ async def cmd_directory(ctx):
         name="👑 Administration (Rôle Responsable/Purge requis)",
         value=(
             "`!tarifs` : Génère l'embed des prix (chargé depuis le JSON) avec le menu déroulant d'ouverture de ticket.\n"
+            "`!valo` : Envoie l'embed des Valorant Points avec le bouton vert d'ouverture de ticket.\n"
             "`!purge_all` : Supprime l'intégralité des salons tickets et remet le compteur à zéro.\n"
             "`!clear <nombre>` : Efface un nombre précis de messages dans le salon actuel (Ex: `!clear 20`)."
         ),
@@ -542,7 +599,6 @@ async def cmd_directory(ctx):
         name="🛡️ Modération & Informations (Rôle Staff requis)",
         value=(
             f"`!paypal` : Envoie l'embed spécifiant que seul PayPal est accepté {PAYPAL_EMOJI}.\n"
-            "`!valo` : Envoie l'embed des Valorant Points sans stock ni mention API.\n"
             "`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n"
             "`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: `10m`, `2h`, `5d`).\n"
             "`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n"
@@ -553,14 +609,14 @@ async def cmd_directory(ctx):
         inline=False
     )
     embed.add_field(
-        name="📦 Traitement des Cartes Cadeaux (Rôle Staff requis)",
+        name="📦 Traitement des Cartes Cadeaux / VP (Rôle Staff requis)",
         value=(
-            "**Syntaxe prise en charge :** `!<nom_du_magasin> <montant>`\n"
-            "Crée une commande en attente, renomme automatiquement le salon avec le drop calculé et affiche l'embed de commande reçue.\n"
+            "**Syntaxe prise en charge :** `!<nom_du_magasin> <montant>` ou `!vp <montant>`\n"
+            "Crée une commande en attente, renomme automatiquement le salon et affiche l'embed de commande reçue.\n"
             "**Finalisation :** `!finish <code_carte>`\n"
-            "Remplace le code `En attente...` par le vrai code carte, change le message de validation et affiche l'image de commande finalisée.\n"
+            "Remplace le code `En attente...` par le vrai code carte et finalise l'embed.\n"
             "⚠️ Ces commandes ne doivent être utilisées que dans les salons tickets.\n"
-            "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
+            "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`, `!vp <montant>`"
         ),
         inline=False
     )
@@ -622,6 +678,50 @@ async def process_order(ctx, product_name, amount_paid, card_code):
 
 
 # =========================================================
+# 🎮 TRAITEMENT VALORANT POINTS
+# =========================================================
+async def process_vp_order(ctx, amount_paid: int):
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+    vp_packs = {
+        22: "3650 VP Europe",
+        32: "5350 VP Europe / 8900 VP Turquie",
+        42: "8700 VP Europe",
+        10: "2925 VP Turquie",
+        17: "4325 VP Turquie"
+    }
+    pack = vp_packs.get(amount_paid, "Pack personnalisé")
+
+    try:
+        await ctx.channel.edit(name=f"🎮-valorant-{amount_paid}e")
+    except:
+        pass
+
+    client_user = ctx.author
+    async for msg in ctx.channel.history(oldest_first=True, limit=8):
+        if msg.author != bot.user and not msg.author.bot:
+            client_user = msg.author
+            break
+
+    embed = discord.Embed(
+        title="🎮 Commande validée",
+        description=f"Merci pour votre confiance {client_user.mention} ! Votre commande a été traitée avec succès.",
+        color=discord.Color.from_rgb(46, 204, 113)
+    )
+    embed.add_field(name="🎯 Produit", value="**Valorant Points**", inline=True)
+    embed.add_field(name="💵 Prix payé", value=f"`{amount_paid}€`", inline=True)
+    embed.add_field(name="🚨 Pack VP", value=f"**{pack}**", inline=True)
+    embed.add_field(name="🔑 Carte Cadeau / Code", value="```\nEn attente...\n```", inline=False)
+    embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069657309204/Commande_recu.png?ex=6a369167&is=6a353fe7&hm=5a401706a47f8c7571510f5112ea122b3061eca7382f31d077c7bdbe7c690d9a&=&format=webp&quality=lossless")
+    embed.set_footer(text="PinkSoftware — Livraison Instantanée")
+
+    await ctx.send(content=f"{client_user.mention} Votre commande VP a bien été prise en charge !", embed=embed)
+
+
+# =========================================================
 # 🛍️ COMMANDES DE BOUTIQUE INDIVIDUELLES
 # =========================================================
 @bot.command(name="amazon")
@@ -651,6 +751,11 @@ async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await proc
 @bot.command(name="ubereats")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
+
+@bot.command(name="vp")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_vp(ctx, amount: int):
+    await process_vp_order(ctx, amount)
 
 
 # =========================================================
