@@ -103,6 +103,30 @@ DEFAULT_EMBED_DATA = {
             203
         ]
     },
+    "valo_embed": {
+            "title": "💘 VALORANT POINTS 💘",
+            "description": [
+                    "Choisis ton montant, paie avec ton solde. 💞",
+                    "",
+                    "🇪🇺 **Europe**",
+                    "💎 **3650 VP** — `24€`",
+                    "💎 **5350 VP** — `34€`",
+                    "💎 **8700 VP** — `43€`",
+                    "",
+                    "🇹🇷 **Turquie**",
+                    "💎 **2925 VP** — `11€`",
+                    "💎 **4325 VP** — `18€`",
+                    "💎 **8900 VP** — `33€`",
+                    "",
+                    "🛒 Pour commander : ouvre un ticket ou contacte le staff."
+            ],
+            "color_rgb": [
+                    255,
+                    192,
+                    203
+            ],
+            "image_url": ""
+    },
     "ticket_bienvenue": {
         "title": "🎫 Ticket d'achat — {product}",
         "description": [
@@ -462,6 +486,38 @@ async def cmd_paypal(ctx):
     await ctx.send(embed=embed)
 
 
+# 🎮 COMMANDE VALORANT POINTS (STAFF)
+@bot.command(name="valo")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_valo(ctx):
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+    texts = load_embed_texts().get("valo_embed", DEFAULT_EMBED_DATA["valo_embed"])
+    rgb = texts.get("color_rgb", [255, 192, 203])
+
+    desc_raw = texts.get("description", [])
+    if isinstance(desc_raw, list):
+        description_str = "\n".join(desc_raw)
+    else:
+        description_str = str(desc_raw)
+
+    embed = discord.Embed(
+        title=texts.get("title", "💘 VALORANT POINTS 💘"),
+        description=description_str,
+        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
+    )
+
+    image_url = texts.get("image_url", "")
+    if image_url:
+        embed.set_image(url=image_url)
+
+    embed.set_footer(text="PinkGift — Valorant Points")
+    await ctx.send(embed=embed)
+
+
 # =========================================================
 # 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À JOUR)
 # =========================================================
@@ -486,6 +542,7 @@ async def cmd_directory(ctx):
         name="🛡️ Modération & Informations (Rôle Staff requis)",
         value=(
             f"`!paypal` : Envoie l'embed spécifiant que seul PayPal est accepté {PAYPAL_EMOJI}.\n"
+            "`!valo` : Envoie l'embed des Valorant Points sans stock ni mention API.\n"
             "`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n"
             "`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: `10m`, `2h`, `5d`).\n"
             "`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n"
