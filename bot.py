@@ -1,37 +1,32 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
+import json
+import os
+import re
 from flask import Flask
 from threading import Thread
-import os
-import json
-import asyncio
-import datetime
-import re
 
-# =========================================================
-# 🌐 SERVEUR WEB (Pour éviter que Render coupe le bot)
-# =========================================================
+# ✅ CONFIGURATION FLASK (Keep-Alive pour l'hébergement continu)
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "PinkSoftware est en ligne !"
+    return "PinkSoftware est en ligne et opérationnel !"
 
-def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+def run():
+    app.run(host='0.0.0.0', port=8080)
 
-Thread(target=run_web).start()
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
-
-# =========================================================
-# 🤖 CONFIGURATION DU BOT DISCORD
-# =========================================================
+# ✅ INITIALISATION DU BOT ET INTENTS
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True
-
+intents.members = True  # Indispensable pour l'événement on_member_join
 bot = commands.Bot(command_prefix="!", intents=intents)
+bot.remove_command('help')
 
 # ✅ CONFIGURATION DES ÉMOJIS ET RÔLES
 PAYPAL_EMOJI = "<:paypal:1517582845315649751>" 
@@ -40,240 +35,111 @@ STAFF_ROLE_ID = 1517487833886228550
 PURGE_ROLE_ID = 1517495087825817691
 NEW_MEMBER_ROLE_ID = 1517580901356277921
 
+# Catégorie spécifique pour les Valorant Points
+VALO_CATEGORY_ID = 1517488399106183188
+
 PRODUCT_CONFIG = {
-    "AMAZON": {"cat": 1517488377744593057, "emoji": "📦", "emoji_ch": "📦", "rates": {60: "75~120€", 180: "225~310€", 420: "525~730€", 600: "750~1200€"}},
-    "CARREFOUR": {"cat": 1517488444769833011, "emoji": "🛒", "emoji_ch": "🛒", "rates": {120: "150~200€", 300: "375~500€", 600: "750~1000€", 900: "1125~1500€"}},
-    "INTERMARCHE": {"cat": 1517488466600919153, "emoji": "🏬", "emoji_ch": "🏬", "rates": {60: "75~100€", 180: "225~300€", 360: "450~600€", 600: "750~1000€"}},
-    "ZARA": {"cat": 1517488486783910008, "emoji": "👕", "emoji_ch": "👕", "rates": {35: "45~60€", 90: "112~150€", 180: "225~300€", 360: "450~600€"}},
-    "SEPHORA": {"cat": 1517488524180455484, "emoji": "💄", "emoji_ch": "💄", "rates": {30: "38~50€", 60: "75~100€", 120: "150~200€", 240: "300~400€"}},
-    "XB/PL": {"cat": 1517488548964466819, "emoji": "🎮", "emoji_ch": "🎮", "rates": {}}, 
-    "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
+    "AMAZON": {"emoji": "📦", "emoji_ch": "📦", "rates": {60: "75~120€", 180: "225~310€", 420: "525~730€", 600: "750~1200€"}},
+    "CARREFOUR": {"emoji": "🛒", "emoji_ch": "🛒", "rates": {120: "150~200€", 300: "375~500€", 600: "750~1000€", 900: "1125~1500€"}},
+    "INTERMARCHE": {"emoji": "🏬", "emoji_ch": "🏬", "rates": {60: "75~100€", 180: "225~300€", 360: "450~600€", 600: "750~1000€"}},
+    "ZARA": {"emoji": "👕", "emoji_ch": "👕", "rates": {35: "45~60€", 90: "112~150€", 180: "225~300€", 360: "450~600€"}},
+    "SEPHORA": {"emoji": "💄", "emoji_ch": "💄", "rates": {30: "38~50€", 60: "75~100€", 120: "150~200€", 240: "300~400€"}},
+    "XB/PL": {"emoji": "🎮", "emoji_ch": "🎮", "rates": {}},
+    "UBEREATS": {"emoji": "🍔", "emoji_ch": "🍔", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}}
 }
 
-# 📁 Configuration par défaut des embeds
-# Elle sert aussi de secours si config_embeds.json est absent sur Render.
-DEFAULT_EMBED_DATA = {
-    "tarifs_embed": {
-        "title": "[CARTE CADEAUX]",
-        "description": [
-            "📦 AMAZON -72h",
-            "60€ -> 75~120€",
-            "180€ -> 225~310€",
-            "420€ -> 525~730€",
-            "600€ -> 750~1200€",
-            "⁠—",
-            "🛒 CARREFOUR -72h",
-            "120€ -> 150~200€",
-            "300€ -> 375~500€",
-            "600€ -> 750~1000€",
-            "900€ -> 1125~1500€",
-            "⁠—",
-            "🏬 INTERMARCHE -72h",
-            "60€ -> 75~100€",
-            "180€ -> 225~300€",
-            "360€ -> 450~600€",
-            "600€ -> 750~1000€",
-            "⁠—",
-            "👕 ZARA -48h",
-            "35€ -> 45~60€",
-            "90€ -> 112~150€",
-            "180€ -> 225~300€",
-            "360€ -> 450~600€",
-            "⁠—",
-            "💄 SEPHORA -48h",
-            "30€ -> 38~50€",
-            "60€ -> 75~100€",
-            "120€ -> 150~200€",
-            "240€ -> 300~400€",
-            "⁠—",
-            "🎮 XB/PL -24h",
-            "All -> -30%",
-            "⁠—",
-            "🍔 UBEREATS -2h",
-            "20€ -> 28~42€",
-            "65€ -> 85~115€",
-            "130€ -> 165~225€",
-            "400€ -> 501~680€",
-            "⁠—",
-            "└  Livraison automatique."
-        ],
-        "color_rgb": [
-            255,
-            192,
-            203
-        ]
-    },
-    "ticket_bienvenue": {
-        "title": "🎫 Ticket d'achat — {product}",
-        "description": [
-            "Bonjour {user} !",
-            "",
-            "Merci de l'intérêt que tu portes à PinkGift.",
-            "Tu as sélectionné le produit : {product}.",
-            "",
-            "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
-            "En attendant, tu peux préciser le montant souhaité.",
-            "",
-            "⚠️ Les seuls moyens de paiement acceptés sont PayPal. <:paypal:1517582845315649751> "
-        ],
-        "color_rgb": [
-            255,
-            192,
-            203
-        ]
-    }
-}
-
-# 📁 Outil pour charger la configuration des textes à la volée de manière ultra robuste
 def load_embed_texts():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # Le bot essaie plusieurs emplacements possibles.
-    # Sur Render, le plus important est que config_embeds.json soit dans le même dossier que bot.py.
-    possible_paths = []
-
-    env_path = os.environ.get("EMBED_CONFIG_PATH")
-    if env_path:
-        possible_paths.append(env_path)
-
-    possible_paths.extend([
-        os.path.join(base_dir, "config_embeds.json"),
-        os.path.join(os.getcwd(), "config_embeds.json"),
-    ])
-
-    filename = None
-    for path in possible_paths:
-        if path and os.path.exists(path):
-            filename = path
-            break
-
-    # Si le fichier n'existe pas, on le crée automatiquement avec les vrais tarifs
-    # au lieu d'afficher "Tarifs non configurés."
-    if filename is None:
-        filename = os.path.join(base_dir, "config_embeds.json")
-        try:
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_EMBED_DATA, f, ensure_ascii=False, indent=4)
-            print(f"✅ config_embeds.json créé automatiquement ici : {filename}")
-        except Exception as e:
-            print(f"⚠️ Impossible de créer config_embeds.json : {e}")
-        return DEFAULT_EMBED_DATA
+    """Charge les textes de l'embed depuis un fichier JSON de manière ultra-sécurisée."""
+    default_texts = {
+        "tarifs_embed": {
+            "title": "[CARTE CADEAUX]",
+            "description": ["**⚠️ Tarifs non configurés dans le fichier config_embeds.json**"],
+            "color_rgb": [255, 192, 203]
+        },
+        "ticket_bienvenue": {
+            "title": "🎫 Ticket d'achat — {product}",
+            "description": ["**⚠️ Message de bienvenue non configuré.**"],
+            "color_rgb": [255, 192, 203]
+        }
+    }
 
     try:
-        with open(filename, "r", encoding="utf-8") as f:
-            raw_content = f.read()
+        # Calcul du chemin d'accès absolu pour éviter les erreurs "File not found" des hébergeurs
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        json_path = os.path.join(script_dir, "config_embeds.json")
+        print(f"[PinkSoftware] Lecture du fichier JSON à : {json_path}")
 
-        # Supprime les virgules traînantes invalides en JSON
-        cleaned_content = re.sub(r',\s*([\]}])', r'\1', raw_content)
-        data = json.loads(cleaned_content)
+        with open(json_path, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-        # Fusion robuste : si une clé manque, elle est récupérée depuis DEFAULT_EMBED_DATA
-        for main_key, default_value in DEFAULT_EMBED_DATA.items():
-            if main_key not in data or not isinstance(data[main_key], dict):
-                data[main_key] = default_value
-                continue
+        # Nettoyage automatique des petites erreurs de syntaxe (virgules en trop à la fin)
+        content = re.sub(r',\s*}', '}', content)
+        content = re.sub(r',\s*]', ']', content)
 
-            for sub_key, sub_default in default_value.items():
-                if sub_key not in data[main_key]:
-                    data[main_key][sub_key] = sub_default
-
-        print(f"✅ Configuration des embeds chargée depuis : {filename}")
+        data = json.loads(content)
         return data
-
-    except json.JSONDecodeError as decode_err:
-        print(f"❌ Erreur de syntaxe JSON dans {filename} : {decode_err}")
-        lines = raw_content.splitlines()
-        if decode_err.lineno <= len(lines):
-            print(f"👉 Ligne contenant l'erreur ({decode_err.lineno}) : {lines[decode_err.lineno - 1]}")
-        print("⚠️ Utilisation de la configuration par défaut intégrée au bot.")
-        return DEFAULT_EMBED_DATA
-
+    except FileNotFoundError:
+        print("[PinkSoftware] ❌ ERREUR : Le fichier config_embeds.json est introuvable. Chargement des données par défaut.")
+        return default_texts
+    except json.JSONDecodeError as e:
+        print(f"[PinkSoftware] ❌ ERREUR DE SYNTAXE JSON à la ligne {e.lineno}, colonne {e.colno} : {e.msg}")
+        return default_texts
     except Exception as e:
-        print(f"⚠️ Erreur de chargement JSON : {e}. Utilisation de la configuration par défaut intégrée au bot.")
-        return DEFAULT_EMBED_DATA
+        print(f"[PinkSoftware] ❌ ERREUR INCONNUE JSON : {e}")
+        return default_texts
 
-
-def parse_duration(duration_str: str):
-    match = re.match(r"(\d+)([mhds])?", duration_str.lower())
-    if not match: return None
-    amount = int(match.group(1))
-    unit = match.group(2) or "m"
-    if unit == "m": return amount * 60
-    if unit == "h": return amount * 3600
-    if unit == "d": return amount * 86400
-    if unit == "s": return amount
-    return None
+ORDER_FILE = "order_count.txt"
 
 def get_next_order_number():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(base_dir, "order_count.json")
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r") as f:
-                data = json.load(f)
-                count = data.get("count", 0) + 1
-        except: count = 1
-    else: count = 1
-    with open(filename, "w") as f: json.dump({"count": count}, f)
-    return count
+    """Génère le prochain numéro de commande CC-XXXX"""
+    if not os.path.exists(ORDER_FILE):
+        with open(ORDER_FILE, "w") as f:
+            f.write("0")
+    
+    with open(ORDER_FILE, "r") as f:
+        current = int(f.read().strip())
+    
+    next_num = current + 1
+    
+    with open(ORDER_FILE, "w") as f:
+        f.write(str(next_num))
+        
+    return str(next_num).zfill(4)
 
-def reset_order_counter():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(base_dir, "order_count.json")
-    with open(filename, "w") as f: json.dump({"count": 0}, f)
-
-
-# =========================================================
-# 🔒 SYSTÈME DE FERMETURE DES TICKETS
-# =========================================================
 class CloseTicketView(discord.ui.View):
-    def __init__(self, client_id: int):
+    def __init__(self, user_id):
         super().__init__(timeout=None)
-        self.client_id = client_id
+        self.user_id = user_id
 
-    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒")
+    @discord.ui.button(label="Fermer le ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="btn_close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        channel = interaction.channel
-        client = guild.get_member(self.client_id) if guild else None
-        staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
-
-        is_staff = staff_role in interaction.user.roles if hasattr(interaction.user, "roles") and staff_role else False
-        is_client = interaction.user.id == self.client_id
-
-        if not is_staff and not is_client:
-            await interaction.response.send_message("❌ Tu n'as pas la permission de fermer ce ticket.", ephemeral=True)
+        # Autoriser uniquement le créateur ou le Staff
+        if interaction.user.id != self.user_id and STAFF_ROLE_ID not in [role.id for role in interaction.user.roles]:
+            await interaction.response.send_message("❌ Vous n'avez pas la permission de fermer ce ticket.", ephemeral=True)
             return
-
-        if client:
-            await channel.set_permissions(
-                client,
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False,
-                reason=f"Ticket fermé par {interaction.user}"
-            )
-
-        await interaction.response.send_message(
-            "🔒 Ticket fermé : le client n'a plus accès à ce salon.",
-            ephemeral=False
-        )
-
-        try:
-            await channel.edit(name=f"closed-{channel.name}")
-        except:
-            pass
-
+        
+        await interaction.response.send_message("🔒 Fermeture du ticket dans 5 secondes...")
+        import asyncio
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
 
 class ProductSelect(discord.ui.Select):
     def __init__(self):
-        options = [discord.SelectOption(label=k, description="Gift Card", emoji=v["emoji"]) for k, v in PRODUCT_CONFIG.items()]
-        super().__init__(placeholder="Je veux me régaler avec PinkGift", min_values=1, max_values=1, options=options)
+        options = [
+            discord.SelectOption(label="AMAZON", emoji="📦", description="Cartes Amazon"),
+            discord.SelectOption(label="CARREFOUR", emoji="🛒", description="Cartes Carrefour"),
+            discord.SelectOption(label="INTERMARCHE", emoji="🏬", description="Cartes Intermarché"),
+            discord.SelectOption(label="ZARA", emoji="👕", description="Cartes Zara"),
+            discord.SelectOption(label="SEPHORA", emoji="💄", description="Cartes Sephora"),
+            discord.SelectOption(label="XB/PL", emoji="🎮", description="Cartes Xbox/PlayStation"),
+            discord.SelectOption(label="UBEREATS", emoji="🍔", description="Cartes UberEats"),
+        ]
+        super().__init__(placeholder="Choisissez votre produit PinkGift...", min_values=1, max_values=1, options=options, custom_id="select_product")
 
     async def callback(self, interaction: discord.Interaction):
+        selected_product = self.values[0]
         guild = interaction.guild
         user = interaction.user
-        product_chosen = self.values[0]
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -281,36 +147,27 @@ class ProductSelect(discord.ui.Select):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
 
-        cfg = PRODUCT_CONFIG.get(product_chosen)
-        category = guild.get_channel(cfg["cat"])
-        if category is None:
-            await interaction.response.send_message("❌ Erreur : Catégorie introuvable.", ephemeral=True)
-            return
-
+        # Création du channel privé ticket
         ticket_channel = await guild.create_text_channel(
             name=f"ticket-{user.name}",
-            category=category,
             overwrites=overwrites,
-            reason=f"Ouverture ticket PinkGift pour {product_chosen}"
+            reason="Ouverture ticket PinkGift"
         )
 
         texts = load_embed_texts()["ticket_bienvenue"]
-        title_formatted = texts["title"].format(product=product_chosen)
+        title_formatted = texts["title"].format(product=selected_product)
         
-        # Reconstitution de la description (liste -> string)
-        desc_raw = texts["description"]
-        if isinstance(desc_raw, list):
-            description_str = "\n".join(desc_raw)
-        else:
-            description_str = str(desc_raw)
-            
-        desc_formatted = description_str.format(user=user.mention, product=product_chosen)
-        rgb = texts.get("color_rgb", [255, 192, 203])
+        # Formatage dynamique de la description gérant tableaux ou chaînes
+        desc_lines = texts.get("description", [])
+        desc_string = "\n".join(desc_lines) if isinstance(desc_lines, list) else desc_lines
+        desc_formatted = desc_string.format(user=user.mention, product=selected_product)
+        
+        color_config = texts.get("color_rgb", [255, 192, 203])
 
         embed_ticket = discord.Embed(
             title=title_formatted,
             description=desc_formatted,
-            color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
+            color=discord.Color.from_rgb(*color_config)
         )
         embed_ticket.set_image(
             url="https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
@@ -323,151 +180,172 @@ class ProductView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ProductSelect())
 
+class ValoView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Acheter mes VP", style=discord.ButtonStyle.success, emoji="🛒", custom_id="btn_buy_valo")
+    async def buy_valo(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        user = interaction.user
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        }
+
+        category = guild.get_channel(VALO_CATEGORY_ID)
+        if category is None:
+            await interaction.response.send_message("❌ Erreur : Catégorie Valorant introuvable. Vérifiez l'ID.", ephemeral=True)
+            return
+
+        # Création du ticket valorant
+        ticket_channel = await guild.create_text_channel(
+            name=f"ticket-valo-{user.name}",
+            category=category,
+            overwrites=overwrites,
+            reason="Ouverture ticket Valorant PinkGift"
+        )
+
+        texts = load_embed_texts()["ticket_bienvenue"]
+        title_formatted = texts["title"].format(product="VALORANT POINTS")
+        
+        desc_lines = texts.get("description", [])
+        desc_string = "\n".join(desc_lines) if isinstance(desc_lines, list) else desc_lines
+        desc_formatted = desc_string.format(user=user.mention, product="VALORANT POINTS")
+
+        embed_ticket = discord.Embed(
+            title=title_formatted,
+            description=desc_formatted,
+            color=discord.Color.from_rgb(255, 192, 203)
+        )
+        embed_ticket.set_image(
+            url="https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
+        )
+        await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
+        await interaction.response.send_message(f"✅ Ton ticket Valorant a été créé ici : {ticket_channel.mention}", ephemeral=True)
+
 @bot.event
 async def on_ready():
-    print("Le bot PinkSoftware est en ligne et fonctionnel !")
+    print(f"[PinkSoftware] Connecté en tant que {bot.user} !")
+    try:
+        synced = await bot.tree.sync()
+        print(f"[PinkSoftware] {len(synced)} commandes slash synchronisées.")
+    except Exception as e:
+        print(f"[PinkSoftware] Erreur de synchronisation des commandes : {e}")
+    
+    # Enregistrer les boutons interactifs persistants
+    bot.add_view(ProductView())
+    bot.add_view(ValoView())
 
 @bot.event
 async def on_member_join(member):
-    """Attribue automatiquement le rôle configuré lors de l'arrivée d'un nouveau membre."""
-    guild = member.guild
-    role = guild.get_role(NEW_MEMBER_ROLE_ID)
+    print(f"[PinkSoftware] Nouveau membre arrivé sur le serveur : {member.name}")
+    role = member.guild.get_role(NEW_MEMBER_ROLE_ID)
+    
     if role:
         try:
-            await member.add_roles(role, reason="Attribution automatique nouveau membre (PinkSoftware)")
-            print(f"✅ Rôle attribué avec succès à {member.name}")
+            await member.add_roles(role)
+            print(f"[PinkSoftware] Rôle auto {role.name} attribué avec succès à {member.name}.")
         except discord.Forbidden:
-            print(f"❌ Erreur de permissions : impossible d'attribuer le rôle à {member.name}")
+            print(f"[PinkSoftware] ❌ ERREUR : Le bot n'a pas les permissions pour donner le rôle à {member.name} (le rôle du bot doit être au-dessus du rôle à donner).")
         except Exception as e:
-            print(f"❌ Erreur lors de l'attribution du rôle à {member.name} : {e}")
+            print(f"[PinkSoftware] ❌ ERREUR lors de l'attribution du rôle à {member.name} : {e}")
     else:
-        print(f"❌ Erreur : Le rôle ID {NEW_MEMBER_ROLE_ID} n'existe pas sur cette guilde.")
+        print(f"[PinkSoftware] ❌ ERREUR : Impossible de trouver le rôle ID {NEW_MEMBER_ROLE_ID} sur ce serveur.")
 
-
-# =========================================================
-# 🔒 COMMANDES ADMINISTRATEUR (RÔLE RESPONSIBLE/PURGE)
-# =========================================================
 @bot.command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
-async def send_tarifs(ctx):
-    texts = load_embed_texts()["tarifs_embed"]
-    rgb = texts["color_rgb"]
+async def cmd_tarifs(ctx):
+    try: await ctx.message.delete()
+    except: pass
 
-    # Reconstitution de la description (liste -> string)
-    desc_raw = texts["description"]
-    if isinstance(desc_raw, list):
-        description_str = "\n".join(desc_raw)
-    else:
-        description_str = str(desc_raw)
+    texts = load_embed_texts()["tarifs_embed"]
+    
+    desc_lines = texts.get("description", [])
+    desc_string = "\n".join(desc_lines) if isinstance(desc_lines, list) else desc_lines
+    
+    color_config = texts.get("color_rgb", [255, 192, 203])
 
     embed = discord.Embed(
         title=texts["title"],
-        description=description_str,
-        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
-    )
-    embed.set_thumbnail(
-        url="https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
+        description=desc_string,
+        color=discord.Color.from_rgb(*color_config)
     )
     embed.set_image(
         url="https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
     )
     await ctx.send(embed=embed, view=ProductView())
 
+@bot.command(name="valo")
+@commands.has_role(PURGE_ROLE_ID)
+async def cmd_valo(ctx):
+    try: await ctx.message.delete()
+    except: pass
+    
+    desc = (
+        "| Choisis ton montant et clique sur le bouton pour commander. 💖✨\n\n"
+        "🇪🇺 **Europe**\n"
+        "♦️ **3650 VP** — `25€`\n"
+        "♦️ **5350 VP** — `35€`\n"
+        "♦️ **8700 VP** — `45€`\n\n"
+        "🇹🇷 **Turquie**\n"
+        "♦️ **2925 VP** — `12€`\n"
+        "♦️ **4325 VP** — `19€`\n"
+        "♦️ **8900 VP** — `35€`\n\n"
+        "`[API] GET /v2/inventory`"
+    )
+
+    embed = discord.Embed(
+        title="💸 [PINKGIFT] VALORANT POINTS 💸",
+        description=desc,
+        color=discord.Color.from_rgb(255, 192, 203)
+    )
+    embed.set_image(
+        url="https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
+    )
+    await ctx.send(embed=embed, view=ValoView())
+
 @bot.command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
 async def cmd_purge_all(ctx):
-    status_msg = await ctx.send("🔄 **PinkSoftware initialise la purge complète des tickets et commandes...**")
-    order_prefixes = [v["emoji_ch"] for v in PRODUCT_CONFIG.values()]
-    deleted_count = 0
+    await ctx.send("🧹 Début de la suppression de tous les salons tickets et assimilés...")
+    count = 0
     for channel in ctx.guild.text_channels:
-        is_ticket = channel.name.startswith("ticket-")
-        is_processed_order = any(channel.name.startswith(prefix.lower()) or channel.name.startswith(prefix) for prefix in order_prefixes)
-        if is_ticket or is_processed_order:
+        if channel.name.startswith("ticket-") or channel.name.startswith("📦-amazon") or channel.name.startswith("🛒-carrefour") or channel.name.startswith("🏬-intermarche") or channel.name.startswith("👕-zara") or channel.name.startswith("💄-sephora") or channel.name.startswith("🎮-xb") or channel.name.startswith("🍔-ubereats"):
             try:
-                await channel.delete(reason="Purge complète demandée.")
-                deleted_count += 1
-                await asyncio.sleep(0.5)
-            except: pass
-    reset_order_counter()
-    try: await status_msg.edit(content=f"✅ **Purge terminée avec succès !**\n🗑️ `{deleted_count}` salons supprimés.\n🔢 Compteur réinitialisé à `0`.")
-    except: pass
+                await channel.delete()
+                count += 1
+            except discord.Forbidden:
+                pass
+    
+    # Remise à zéro du compteur CC
+    if os.path.exists(ORDER_FILE):
+        with open(ORDER_FILE, "w") as f:
+            f.write("0")
+    
+    await ctx.author.send(f"✅ Purge PinkSoftware terminée ! {count} salons supprimés et le compteur des numéros de carte est remis à zéro.")
 
-@bot.command(name="clear", aliases=["purge"])
+@bot.command(name="clear")
 @commands.has_role(PURGE_ROLE_ID)
-async def cmd_clear_messages(ctx, amount: int):
-    if amount <= 0:
-        await ctx.send("❌ Veuillez indiquer un nombre de messages supérieur à 0.", delete_after=3)
+async def cmd_clear(ctx, amount: int):
+    if amount < 1 or amount > 100:
+        await ctx.send("❌ Veuillez spécifier un nombre entre 1 et 100.")
         return
-    try: await ctx.message.delete()
-    except: pass
-    deleted = await ctx.channel.purge(limit=amount)
-    msg = await ctx.send(f"🗑️ **{len(deleted)}** messages ont été effacés avec succès par l'administration.")
-    await asyncio.sleep(4)
-    try: await msg.delete()
-    except: pass
+    
+    await ctx.channel.purge(limit=amount + 1)
+    msg = await ctx.send(f"✅ {amount} messages supprimés par le staff PinkSoftware.")
+    import asyncio
+    await asyncio.sleep(3)
+    await msg.delete()
 
-
-# =========================================================
-# 🛡️ COMMANDES DE MODÉRATION & INFORMATIONS (STAFF)
-# =========================================================
-@bot.command(name="ban")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_ban(ctx, member: discord.Member, *, reason: str = "Aucune raison fournie"):
-    await member.ban(reason=reason)
-    await ctx.send(f"🔨 **{member.name}** a été banni définitivement du serveur. (Raison : {reason})")
-
-@bot.command(name="tempban")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_tempban(ctx, member: discord.Member, duration: str, *, reason: str = "Aucune raison fournie"):
-    seconds = parse_duration(duration)
-    if not seconds:
-        await ctx.send("❌ Format de temps invalide. Utilisez par exemple `10m`, `2h`, ou `3d`.")
-        return
-    await member.ban(reason=f"[Tempban {duration}] {reason}")
-    await ctx.send(f"⏳ **{member.name}** a été banni temporairement pour **{duration}**. (Raison : {reason})")
-    await asyncio.sleep(seconds)
-    try: await ctx.guild.unban(member, reason="Fin du tempban.")
-    except: pass
-
-@bot.command(name="tempmute")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: str = "Aucune raison fournie"):
-    seconds = parse_duration(duration)
-    if not seconds:
-        await ctx.send("❌ Format de temps invalide. Utilisez par exemple `10m`, `2h`.")
-        return
-    td = datetime.timedelta(seconds=seconds)
-    await member.timeout(td, reason=reason)
-    await ctx.send(f"🔇 **{member.name}** a été réduit au silence pendant **{duration}**. (Raison : {reason})")
-
-# 💳 COMMANDE PAYPAL (STAFF)
-@bot.command(name="paypal")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_paypal(ctx):
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-
-    embed = discord.Embed(
-        title="💳 Moyen de Paiement — PayPal",
-        description=(
-            f"Pour finaliser votre achat chez **PinkSoftware**, veuillez noter la règle suivante :\n\n"
-            f"<:paypal:1517582845315649751> **Nous n'acceptons uniquement PayPal comme moyen de paiement.**\n\n"
-            "Veuillez préparer votre compte ainsi que votre adresse e-mail de paiement, et la communiquer au staff dans ce ticket."
-        ),
-        color=discord.Color.from_rgb(255, 192, 203) 
-    )
-    embed.set_footer(text="PinkGift — Sécurité & Rapidité")
-    await ctx.send(embed=embed)
-
-
-# =========================================================
-# 📜 REPERTOIRE GÉNÉRAL DES COMMANDES (MIS À JOUR)
-# =========================================================
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
+    try: await ctx.message.delete()
+    except: pass
+
     embed = discord.Embed(
         title="📜 RÉPERTOIRE GLOBAL DES COMMANDES — PinkSoftware",
         description="Voici la liste exhaustive et l'utilité de chaque commande actuellement active sur le bot.",
@@ -476,74 +354,67 @@ async def cmd_directory(ctx):
     embed.add_field(
         name="👑 Administration (Rôle Responsable/Purge requis)",
         value=(
-            "`!tarifs` : Génère l'embed des prix (chargé depuis le JSON) avec le menu déroulant d'ouverture de ticket.\n"
+            "`!tarifs` : Génère l'embed des prix classique (avec menu déroulant).\n"
+            "`!valo` : Génère l'embed spécial Valorant Points.\n"
             "`!purge_all` : Supprime l'intégralité des salons tickets et remet le compteur à zéro.\n"
-            "`!clear <nombre>` : Efface un nombre précis de messages dans le salon actuel (Ex: `!clear 20`)."
+            "`!clear <nombre>` : Efface un nombre précis de messages dans le salon actuel."
         ),
         inline=False
     )
     embed.add_field(
-        name="🛡️ Modération & Informations (Rôle Staff requis)",
+        name="🛍️ Gestion de Commandes (En Ticket - Rôle Staff requis)",
         value=(
-            f"`!paypal` : Envoie l'embed spécifiant que seul PayPal est accepté {PAYPAL_EMOJI}.\n"
-            "`!ban <@membre> <raison>` : Bannit définitivement un utilisateur.\n"
-            "`!tempban <@membre> <durée> <raison>` : Bannit temporairement (ex: `10m`, `2h`, `5d`).\n"
-            "`!tempmute <@membre> <durée> <raison>` : Mute temporairement un utilisateur via timeout Discord.\n"
-            "`!finish <code_carte>` : Finalise la commande en remplaçant `En attente...` par le code de carte et met à jour l'embed.\n"
-            "`Bouton Close` : Ferme le ticket et retire l'accès au client.\n"
-            "`!commandes` : Affiche ce répertoire d'aide complet."
+            "`!amz <prix> <code_carte>` : Valide une commande Amazon.\n"
+            "`!crf <prix> <code_carte>` : Valide une commande Carrefour.\n"
+            "`!int <prix> <code_carte>` : Valide une commande Intermarché.\n"
+            "`!zara <prix> <code_carte>` : Valide une commande Zara.\n"
+            "`!seph <prix> <code_carte>` : Valide une commande Sephora.\n"
+            "`!xb <prix> <code_carte>` : Valide une commande Xbox/PlayStation.\n"
+            "`!uber <prix> <code_carte>` : Valide une commande UberEats."
         ),
         inline=False
     )
-    embed.add_field(
-        name="📦 Traitement des Cartes Cadeaux (Rôle Staff requis)",
-        value=(
-            "**Syntaxe prise en charge :** `!<nom_du_magasin> <montant>`\n"
-            "Crée une commande en attente, renomme automatiquement le salon avec le drop calculé et affiche l'embed de commande reçue.\n"
-            "**Finalisation :** `!finish <code_carte>`\n"
-            "Remplace le code `En attente...` par le vrai code carte, change le message de validation et affiche l'image de commande finalisée.\n"
-            "⚠️ Ces commandes ne doivent être utilisées que dans les salons tickets.\n"
-            "👉 `!amazon`, `!carrefour`, `!intermarche`, `!zara`, `!sephora`, `!xbox`, `!ubereats`"
-        ),
-        inline=False
-    )
+    embed.set_footer(text="PinkSoftware — Système Interne")
     await ctx.send(embed=embed)
 
-
-# =========================================================
-# 🛠️ FONCTION DE TRAITEMENT UNIQUE DES CARTES
-# =========================================================
 async def process_order(ctx, product_name, amount_paid, card_code):
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+    try: await ctx.message.delete()
+    except: pass
 
     cfg = PRODUCT_CONFIG.get(product_name)
+
+    # Calcul spécifique pour XB/PL (prix payé = 70% de la valeur, donc valeur = prix / 0.7)
     if product_name == "XB/PL":
         val_recue = round(amount_paid / 0.7)
         drop_val = f"{val_recue}€"
     else:
+        # Chercher le drop correspondant au montant exact
         drop_val = cfg["rates"].get(amount_paid, "Sur-mesure")
         if drop_val == "Sur-mesure":
+            # Si le montant n'est pas standard, on l'estime
             drop_val = f"{round(amount_paid * 1.3)}~{round(amount_paid * 1.7)}€"
 
+    # Renommer le channel : 📦-amazon-75-120€
     new_name = f"{cfg['emoji_ch']}-{product_name.lower()}-{drop_val}".replace("~", "-")
     await ctx.channel.edit(name=new_name)
 
+    # Identifier le client (celui qui n'est ni le bot ni la commande de bot)
     client_user = ctx.author
     async for msg in ctx.channel.history(oldest_first=True, limit=5):
         if msg.author != bot.user and not msg.author.bot:
             client_user = msg.author
             break
 
-    clean_name = product_name.replace('UBEREATS', 'Uber Eats')
-    formatted_code = f"```\n{card_code}\n```"
+    cc_num = get_next_order_number()
 
-    code_fourni = card_code and card_code.strip().lower() not in ["en attente...", "en attente", "attente", "none", "null"]
+    # Nettoyage affichage
+    clean_name = product_name.replace('UBEREATS', 'Uber Eats')
+    
+    # SOLUTION BUG F-STRING : Utiliser la concaténation de chaînes simples
+    formatted_code = "```\n" + str(card_code) + "\n```"
 
     embed = discord.Embed(
-        title=f"{cfg['emoji']} Commande validée",
+        title=f"{cfg['emoji']} Commande validée — #CC-{cc_num}",
         description=f"Merci pour votre confiance {client_user.mention} ! Votre commande a été traitée avec succès.",
         color=discord.Color.from_rgb(46, 204, 113)
     )
@@ -551,118 +422,55 @@ async def process_order(ctx, product_name, amount_paid, card_code):
     embed.add_field(name="💵 Prix payé", value=f"`{amount_paid}€`", inline=True)
     embed.add_field(name="🚨 Drop reçu", value=f"**{drop_val}**", inline=True)
     embed.add_field(name="🔑 Carte Cadeau / Code", value=formatted_code, inline=False)
-
-    if code_fourni:
-        embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless")
-        content = f"{client_user.mention} Votre carte cadeau est disponible !"
-    else:
-        embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069657309204/Commande_recu.png?ex=6a369167&is=6a353fe7&hm=5a401706a47f8c7571510f5112ea122b3061eca7382f31d077c7bdbe7c690d9a&=&format=webp&quality=lossless")
-        content = f"{client_user.mention} Votre commande a bien été prise en charge !"
-
     embed.set_footer(text="PinkSoftware — Livraison Instantanée")
 
-    await ctx.send(content=content, embed=embed)
+    await ctx.send(content=f"{client_user.mention} Votre carte cadeau **#CC-{cc_num}** est disponible !", embed=embed)
 
-
-# =========================================================
-# 🛍️ COMMANDES DE BOUTIQUE INDIVIDUELLES
-# =========================================================
-@bot.command(name="amazon")
+@bot.command(name="amz")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
+async def cmd_amz(ctx, amount_paid: int, *, card_code: str):
+    await process_order(ctx, "AMAZON", amount_paid, card_code)
 
-@bot.command(name="carrefour")
+@bot.command(name="crf")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_carrefour(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "CARREFOUR", amount, code)
+async def cmd_crf(ctx, amount_paid: int, *, card_code: str):
+    await process_order(ctx, "CARREFOUR", amount_paid, card_code)
 
-@bot.command(name="intermarche")
+@bot.command(name="int")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_intermarche(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "INTERMARCHE", amount, code)
+async def cmd_int(ctx, amount_paid: int, *, card_code: str):
+    await process_order(ctx, "INTERMARCHE", amount_paid, card_code)
 
 @bot.command(name="zara")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_zara(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "ZARA", amount, code)
+async def cmd_zara(ctx, amount_paid: int, *, card_code: str):
+    await process_order(ctx, "ZARA", amount_paid, card_code)
 
-@bot.command(name="sephora")
+@bot.command(name="seph")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_sephora(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "SEPHORA", amount, code)
+async def cmd_seph(ctx, amount_paid: int, *, card_code: str):
+    await process_order(ctx, "SEPHORA", amount_paid, card_code)
 
-@bot.command(name="xbox")
+@bot.command(name="xb")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "XB/PL", amount, code)
+async def cmd_xb(ctx, amount_paid: int, *, card_code: str):
+    await process_order(ctx, "XB/PL", amount_paid, card_code)
 
-@bot.command(name="ubereats")
+@bot.command(name="uber")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
+async def cmd_uber(ctx, amount_paid: int, *, card_code: str):
+    await process_order(ctx, "UBEREATS", amount_paid, card_code)
 
-
-# =========================================================
-# 🏁 COMMANDE DE FINALISATION
-# =========================================================
-@bot.command(name="finish")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_finish(ctx, *, code_carte: str):
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-
-    embed_message = None
-
-    async for msg in ctx.channel.history(limit=30):
-        if msg.author == bot.user and msg.embeds:
-            embed = msg.embeds[0]
-            if embed.title and "Commande validée" in embed.title:
-                embed_message = msg
-                break
-
-    if not embed_message:
-        await ctx.send("❌ Aucun embed de commande trouvé dans ce salon.", delete_after=5)
-        return
-
-    old_embed = embed_message.embeds[0]
-
-    new_description = old_embed.description or ""
-    new_description = new_description.replace(
-        "Votre commande a été traitée avec succès.",
-        "Votre commande est finalisé n'oubliez pas de laissez un avis ! (Sinon vous serez ban des commandes)"
-    )
-
-    new_embed = discord.Embed(
-        title=old_embed.title,
-        description=new_description,
-        color=discord.Color.from_rgb(46, 204, 113)
-    )
-
-    for field in old_embed.fields:
-        if field.name == "🔑 Carte Cadeau / Code":
-            new_embed.add_field(
-                name="🔑 Carte Cadeau / Code",
-                value=f"```\n{code_carte}\n```",
-                inline=False
-            )
-        else:
-            new_embed.add_field(
-                name=field.name,
-                value=field.value,
-                inline=field.inline
-            )
-
-    new_embed.set_image(url="https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless")
-    new_embed.set_footer(text="PinkSoftware — Livraison Instantanée")
-
-    await embed_message.edit(embed=new_embed)
-    await ctx.send("✅ Commande finalisée avec succès.", delete_after=5)
-
-
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        try: await ctx.message.delete()
-        except: pass
-        await ctx.send(f"❌ {ctx.author.mention}, tu n'as pas la permission requise.", delete_after=5)
+if __name__ == "__main__":
+    # Lancement du serveur Keep-Alive
+    keep_alive()
+    
+    # Lancement du bot Discord
+    # NOTE: Assure-toi que ton token est défini dans les variables d'environnement (Secret/Env Vars de ton hébergeur)
+    token = os.getenv("DISCORD_TOKEN")
+    
+    if token:
+        bot.run(token)
     else:
-        print(f"⚠️ Erreur sur la commande [{ctx.command}] lancée par [{ctx.author}] : {error}")
-
-token_discord = os.environ.get("TOKEN")
-bot.run(token_discord)
+        print("[PinkSoftware] ❌ ERREUR CRITIQUE : Token introuvable. Mets ton token Discord directement ici ou configure la variable DISCORD_TOKEN.")
+        # bot.run("TON_TOKEN_ICI") # Si tu veux coller ton token en clair (déconseillé sur les hébergeurs publics)
