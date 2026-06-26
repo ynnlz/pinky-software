@@ -72,6 +72,12 @@ PRODUCT_CONFIG = {
 }
 
 DEFAULT_EMBED_DATA = {
+    "images": {
+        "paiement_securise": "https://media.discordapp.net/attachments/1517516946390908949/1520055535389638756/paiement_secure.jpg?ex=6a3fcd88&is=6a3e7c08&hm=fcd785c6d9ad1fc767e0df567093a5848bfff636be686eb0e0426d70d3a160bb&=&format=webp",
+        "ticket_cree": "https://media.discordapp.net/attachments/1517516946390908949/1520055535632781475/ticket_cree.jpg?ex=6a3fcd88&is=6a3e7c08&hm=09bf5c3a14e418a2771408952bd21c6ae8cb5dcaae845d7948a8e1d3690be48a&=&format=webp&width=1768&height=573",
+        "commande_confirmee": "https://media.discordapp.net/attachments/1517516946390908949/1520055535162888263/commande_confirme.jpg?ex=6a3fcd88&is=6a3e7c08&hm=cedcd1942d15b1cdd2a6a2d74566d4e89872d424578caf3e26dbf98c551c3d96&=&format=webp",
+        "commande_livree": "https://media.discordapp.net/attachments/1517516946390908949/1520055534819086586/finito_la_commande.jpg?ex=6a3fcd88&is=6a3e7c08&hm=cad0daca6c8a92695ba99bdf18fad7007370c597b06e1dbfe4cecb6c7d2128f1&=&format=webp"
+    },
     "tarifs_embed": {
         "title": "🎟️ COMMANDES PINKGIFT",
         "description": [
@@ -85,7 +91,8 @@ DEFAULT_EMBED_DATA = {
             "",
             "🎫 Clique sur le bouton ci-dessous pour creer un ticket prive."
         ],
-        "color_rgb": [255, 192, 203]
+        "color_rgb": [255, 192, 203],
+        "image_url": ""
     },
     "valo_embed": {
         "title": "💘 VALORANT POINTS 💘",
@@ -170,6 +177,14 @@ def load_embed_texts():
             except Exception as e:
                 print(f"Erreur chargement config_embeds.json local : {e}")
     return DEFAULT_EMBED_DATA
+
+
+def get_image_url(image_key: str, fallback_url: str = "") -> str:
+    data = load_embed_texts()
+    images = data.get("images", {})
+    if isinstance(images, dict):
+        return images.get(image_key) or fallback_url
+    return fallback_url
 
 
 def apply_custom_brand_emojis(text: str):
@@ -298,7 +313,7 @@ class OpenTicketView(discord.ui.View):
         title = texts.get("title", "🎫 Ticket d achat")
         title = title.replace(" — {product}", "").replace(" - {product}", "").format(product="")
         embed_ticket = discord.Embed(title=title, description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
-        embed_ticket.set_image(url=TICKET_IMAGE_URL)
+        embed_ticket.set_image(url=get_image_url("ticket_cree", TICKET_IMAGE_URL))
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket a ete cree ici : {ticket_channel.mention}", ephemeral=True)
 
@@ -342,7 +357,7 @@ class ValoTicketButton(discord.ui.View):
             ),
             color=discord.Color.from_rgb(255, 192, 203)
         )
-        embed_ticket.set_image(url=TICKET_IMAGE_URL)
+        embed_ticket.set_image(url=get_image_url("ticket_cree", TICKET_IMAGE_URL))
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket Valorant a ete cree ici : {ticket_channel.mention}", ephemeral=True)
 
@@ -372,7 +387,9 @@ def build_tarifs_embed():
     description = apply_custom_brand_emojis(description)
     embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
     embed.set_thumbnail(url=TARIFS_THUMBNAIL_URL)
-    embed.set_image(url=TARIFS_IMAGE_URL)
+    image_url = texts.get("image_url", TARIFS_IMAGE_URL)
+    if image_url:
+        embed.set_image(url=image_url)
     return embed
 
 def build_valo_embed():
@@ -396,6 +413,9 @@ def build_paiements_embed():
     footer = texts.get("footer", "PinkGift — Paiements")
     if footer:
         embed.set_footer(text=footer)
+    image_url = texts.get("image_url", "") or get_image_url("paiement_securise", "")
+    if image_url:
+        embed.set_image(url=image_url)
     return embed
 
 async def update_last_embed(ctx, embed_builder, title_keywords):
@@ -421,6 +441,43 @@ async def update_last_embed(ctx, embed_builder, title_keywords):
             pass
         return
     await ctx.send("❌ Aucun embed correspondant trouvé dans ce salon.", delete_after=6)
+async def update_public_embeds_without_ping(ctx):
+    builders = [
+        (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed),
+        (["VALORANT", "VALORANT POINTS"], build_valo_embed),
+        (["Moyens de paiement", "Paiements"], build_paiements_embed),
+    ]
+    updated_count = 0
+    async for msg in ctx.channel.history(limit=150):
+        if msg.author == bot.user and msg.embeds:
+            title = msg.embeds[0].title or ""
+            for keywords, builder in builders:
+                if any(keyword.lower() in title.lower() for keyword in keywords):
+                    await msg.edit(embed=builder())
+                    updated_count += 1
+                    break
+    return updated_count
+
+
+@bot.command(name="maj_categories")
+@commands.has_role(PURGE_ROLE_ID)
+async def update_categories(ctx):
+    updated_count = await update_public_embeds_without_ping(ctx)
+    if updated_count:
+        confirmation = await ctx.send(f"✅ {updated_count} embed(s) public(s) mis à jour sans ping.")
+        await asyncio.sleep(8)
+        try:
+            await confirmation.delete()
+        except:
+            pass
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+    else:
+        await ctx.send("❌ Aucun embed public trouvé dans ce salon.", delete_after=6)
+
+
 @bot.command(name="debug_embed")
 @commands.has_role(PURGE_ROLE_ID)
 async def debug_embed(ctx, embed_name: str = "tarifs_embed"):
@@ -578,7 +635,7 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
     embed.add_field(name="Montant", value=f"{amount_paid}€", inline=True)
     embed.add_field(name="Payé", value=f"{paid_display}€", inline=True)
     embed.add_field(name="Code", value=f"```\n{card_code}\n```", inline=False)
-    embed.set_image(url=ORDER_PENDING_IMAGE_URL)
+    embed.set_image(url=get_image_url("commande_confirmee", ORDER_PENDING_IMAGE_URL))
     embed.set_footer(text="PinkSoftware — Ticket commande")
     await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
 
@@ -625,7 +682,7 @@ async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
     embed.add_field(name="Pack VP", value=f"**{pack}**", inline=True)
     embed.add_field(name="Prix", value=f"{amount_paid}€", inline=True)
     embed.add_field(name="Code", value=f"```\n{code}\n```", inline=False)
-    embed.set_image(url=ORDER_PENDING_IMAGE_URL)
+    embed.set_image(url=get_image_url("commande_confirmee", ORDER_PENDING_IMAGE_URL))
     embed.set_footer(text="PinkSoftware — Ticket Valorant")
     await ctx.send(content=f"{client_user.mention} commande Valorant enregistree : **{pack} — {amount_paid}€**", embed=embed)
 
@@ -759,7 +816,7 @@ async def cmd_finish(ctx, *, code_carte: str):
             new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
     if not code_updated:
         new_embed.add_field(name="Code", value=f"```\n{code_carte}\n```", inline=False)
-    new_embed.set_image(url=ORDER_FINISHED_IMAGE_URL)
+    new_embed.set_image(url=get_image_url("commande_livree", ORDER_FINISHED_IMAGE_URL))
     new_embed.set_footer(text="PinkSoftware — Commande finalisee")
     await embed_message.edit(embed=new_embed)
     await ctx.send("✅ Commande finalisee avec succes.", delete_after=5)
@@ -778,7 +835,7 @@ async def cmd_directory(ctx):
             "!tarifs : envoie l'embed public avec le bouton Ouvrir un ticket.\n"
             "!valo : envoie l'embed Valorant avec son bouton ticket.\n"
             "!paiements : envoie l'embed des moyens de paiement.\n"
-            "!maj_tarifs, !maj_valo, !maj_paiements : modifient les embeds deja envoyes sans ping.\n"
+            "!maj_tarifs, !maj_valo, !maj_paiements : modifient les embeds deja envoyes sans ping.\n!maj_categories : met a jour tous les embeds publics et leurs images sans ping.\n"
             "Bouton Ouvrir un ticket : cree un salon prive dans la categorie configuree.\n"
             "Bouton Close : ferme le ticket et retire l'acces au client.\n"
             "!close_button : renvoie un bouton Close persistant dans un ancien ticket."
