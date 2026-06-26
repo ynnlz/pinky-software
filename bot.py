@@ -48,7 +48,7 @@ PRODUCT_CONFIG = {
     "SEPHORA": {"cat": 1517488524180455484, "emoji": "💄", "emoji_ch": "💄", "rates": {30: "38~50€", 60: "75~100€", 120: "150~200€", 240: "300~400€"}},
     "XB/PL": {"cat": 1517488548964466819, "emoji": "🎮", "emoji_ch": "🎮", "rates": {}}, 
     "UBEREATS": {"cat": 1517488572083470386, "emoji": "🍔", "emoji_ch": "🍽️", "rates": {20: "28~42€", 65: "85~115€", 130: "165~225€", 400: "501~680€"}},
-    "VALORANT": {"cat": 1517488399106183188, "emoji": "🎮", "emoji_ch": "🎮", "rates": {22: "3650 VP Europe", 32: "5350 VP Europe / 8900 VP Turquie", 42: "8700 VP Europe", 10: "2925 VP Turquie", 17: "4325 VP Turquie"}}
+    "VALORANT": {"cat": 1517488399106183188, "emoji": "🎮", "emoji_ch": "🎮", "rates": {30: "3650 VP Europe", 40: "5350 VP Europe", 45: "8900 VP Turquie", 60: "8700 VP Europe", 15: "2925 VP Turquie", 20: "4325 VP Turquie"}}
 }
 
 # 📁 Configuration par défaut des embeds
@@ -110,14 +110,14 @@ DEFAULT_EMBED_DATA = {
                     "Choisis ton montant, paie avec ton solde. 💞",
                     "",
                     "🇪🇺 **Europe**",
-                    "💎 **3650 VP** — `24€`",
-                    "💎 **5350 VP** — `34€`",
-                    "💎 **8700 VP** — `43€`",
+                    "💎 **3650 VP** — `30€`",
+                    "💎 **5350 VP** — `40€`",
+                    "💎 **8700 VP** — `60€`",
                     "",
                     "🇹🇷 **Turquie**",
-                    "💎 **2925 VP** — `11€`",
-                    "💎 **4325 VP** — `18€`",
-                    "💎 **8900 VP** — `33€`",
+                    "💎 **2925 VP** — `15€`",
+                    "💎 **4325 VP** — `20€`",
+                    "💎 **8900 VP** — `45€`",
                     "",
                     "🛒 Clique sur le bouton vert ci-dessous pour ouvrir un ticket."
             ],
@@ -139,7 +139,7 @@ DEFAULT_EMBED_DATA = {
             "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
             "En attendant, tu peux préciser le montant souhaité.",
             "",
-            "⚠️ Les seuls moyens de paiement acceptés sont PayPal. <:paypal:1517582845315649751> "
+            "⚠️ Les seuls moyens de paiement acceptés sont PayPal & les Virements Bancaires."
         ],
         "color_rgb": [
             255,
