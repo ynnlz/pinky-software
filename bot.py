@@ -30,6 +30,11 @@ STAFF_ROLE_ID = 1517487833886228550
 PURGE_ROLE_ID = 1517495087825817691
 NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
+TICKET_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
+TARIFS_THUMBNAIL_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
+TARIFS_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
+ORDER_PENDING_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517069657309204/Commande_recu.png?ex=6a369167&is=6a353fe7&hm=5a401706a47f8c7571510f5112ea122b3061eca7382f31d077c7bdbe7c690d9a&=&format=webp&quality=lossless"
+ORDER_FINISHED_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless"
 
 PRODUCT_CONFIG = {
     "AMAZON": {"display": "AMAZON", "emoji": "📦", "emoji_ch": "📦"},
@@ -177,10 +182,18 @@ class OpenTicketView(discord.ui.View):
         )
         texts = load_embed_texts()["ticket_bienvenue"]
         desc_raw = texts["description"]
-        description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
-        description = description.format(user=user.mention, product="a preciser")
+        if isinstance(desc_raw, list):
+            desc_lines = [line for line in desc_raw if "Tu as sélectionné" not in line and "Tu as selectionne" not in line]
+            description = "\n".join(desc_lines)
+        else:
+            description = str(desc_raw)
+            description = re.sub(r"^.*Tu as s[ée]lectionn[ée].*$", "", description, flags=re.MULTILINE)
+        description = description.format(user=user.mention, product="")
         rgb = texts.get("color_rgb", [255, 192, 203])
-        embed_ticket = discord.Embed(title=texts.get("title", "🎫 Ticket d achat"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+        title = texts.get("title", "🎫 Ticket d achat")
+        title = title.replace(" — {product}", "").replace(" - {product}", "").format(product="")
+        embed_ticket = discord.Embed(title=title, description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+        embed_ticket.set_image(url=TICKET_IMAGE_URL)
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket a ete cree ici : {ticket_channel.mention}", ephemeral=True)
 
@@ -208,6 +221,8 @@ async def send_tarifs(ctx):
     desc_raw = texts.get("description", [])
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
     embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+    embed.set_thumbnail(url=TARIFS_THUMBNAIL_URL)
+    embed.set_image(url=TARIFS_IMAGE_URL)
     await ctx.send(embed=embed, view=OpenTicketView())
 
 @bot.command(name="purge_all")
@@ -277,15 +292,25 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
     await ctx.send(f"🔇 {member.name} mute pendant {duration}.")
 
-@bot.command(name="paypal")
+@bot.command(name="paiements")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_paypal(ctx):
+async def cmd_paiements(ctx):
     try:
         await ctx.message.delete()
     except:
         pass
-    embed = discord.Embed(title="💳 Moyen de Paiement — PayPal", description="Prepare ton adresse e-mail de paiement et communique-la au staff dans le ticket.", color=discord.Color.from_rgb(255, 192, 203))
-    embed.set_footer(text="PinkGift — Securite & Rapidite")
+    embed = discord.Embed(
+        title="💳 Moyens de paiement",
+        description=(
+            "Pour finaliser votre achat chez **PinkGift**, nous acceptons :\n\n"
+            f"{PAYPAL_EMOJI} **PayPal**\n"
+            "🏦 **Virements bancaires**\n"
+            "₿ **Cryptomonnaies**\n\n"
+            "Merci d'indiquer le moyen de paiement souhaite dans le ticket."
+        ),
+        color=discord.Color.from_rgb(255, 192, 203)
+    )
+    embed.set_footer(text="PinkGift — Paiements")
     await ctx.send(embed=embed)
 
 async def process_order(ctx, product_name, amount_paid: int, card_code: str = "En attente..."):
@@ -299,6 +324,8 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
         return
     display_name = cfg["display"]
     emoji = cfg["emoji_ch"]
+    paid_amount = round(amount_paid * 0.7, 2)
+    paid_display = int(paid_amount) if paid_amount.is_integer() else paid_amount
     new_name = f"{emoji}-{display_name}-{amount_paid}€"
     try:
         await ctx.channel.edit(name=new_name)
@@ -313,7 +340,9 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
     embed = discord.Embed(title=f"{emoji} Commande prise en charge", description=f"Merci pour votre confiance {client_user.mention} !", color=discord.Color.from_rgb(46, 204, 113))
     embed.add_field(name="Article", value=f"**{display_name}**", inline=True)
     embed.add_field(name="Montant", value=f"{amount_paid}€", inline=True)
+    embed.add_field(name="Payé", value=f"{paid_display}€", inline=True)
     embed.add_field(name="Code", value=f"```\n{card_code}\n```", inline=False)
+    embed.set_image(url=ORDER_PENDING_IMAGE_URL)
     embed.set_footer(text="PinkSoftware — Ticket commande")
     await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
 
@@ -447,6 +476,7 @@ async def cmd_finish(ctx, *, code_carte: str):
             new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
     if not code_updated:
         new_embed.add_field(name="Code", value=f"```\n{code_carte}\n```", inline=False)
+    new_embed.set_image(url=ORDER_FINISHED_IMAGE_URL)
     new_embed.set_footer(text="PinkSoftware — Commande finalisee")
     await embed_message.edit(embed=new_embed)
     await ctx.send("✅ Commande finalisee avec succes.", delete_after=5)
@@ -488,7 +518,7 @@ async def cmd_directory(ctx):
     embed.add_field(
         name="🛡️ Moderation / Staff",
         value=(
-            "!paypal : envoie l'embed PayPal.\n"
+            "!paiements : envoie l'embed des moyens de paiement.\n"
             "!clear <nombre> : supprime des messages.\n"
             "!purge_all : supprime les tickets.\n"
             "!ban, !tempban, !tempmute : moderation staff."
