@@ -141,8 +141,8 @@ def load_embed_texts():
     if EMBED_CONFIG_URL:
         try:
             separator = "&" if "?" in EMBED_CONFIG_URL else "?"
-            url = f"{EMBED_CONFIG_URL}{separator}t={int(time.time())}"
-            request = urllib.request.Request(url, headers={"User-Agent": "PinkSoftwareBot/1.0"})
+            url = f"{EMBED_CONFIG_URL}{separator}t={int(time.time() * 1000)}"
+            request = urllib.request.Request(url, headers={"User-Agent": "PinkSoftwareBot/1.0", "Cache-Control": "no-cache", "Pragma": "no-cache"})
             with urllib.request.urlopen(request, timeout=5) as response:
                 raw_content = response.read().decode("utf-8")
             cleaned_content = re.sub(r",\s*([\]}])", r"\1", raw_content)
@@ -386,23 +386,41 @@ def build_paiements_embed():
 
 async def update_last_embed(ctx, embed_builder, title_keywords):
     embed = embed_builder()
-    async for msg in ctx.channel.history(limit=50):
+    updated_count = 0
+    async for msg in ctx.channel.history(limit=100):
         if msg.author == bot.user and msg.embeds:
             title = msg.embeds[0].title or ""
             if any(keyword.lower() in title.lower() for keyword in title_keywords):
                 await msg.edit(embed=embed)
-                confirmation = await ctx.send("✅ Embed mis à jour sans ping.")
-                await asyncio.sleep(4)
-                try:
-                    await confirmation.delete()
-                except:
-                    pass
-                try:
-                    await ctx.message.delete()
-                except:
-                    pass
-                return
+                updated_count += 1
+    if updated_count:
+        preview = (embed.description or "").replace("
+", " ")[:120]
+        confirmation = await ctx.send(f"✅ {updated_count} embed(s) mis à jour sans ping. Aperçu chargé : {preview}")
+        await asyncio.sleep(8)
+        try:
+            await confirmation.delete()
+        except:
+            pass
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+        return
     await ctx.send("❌ Aucun embed correspondant trouvé dans ce salon.", delete_after=6)
+@bot.command(name="debug_embed")
+@commands.has_role(PURGE_ROLE_ID)
+async def debug_embed(ctx, embed_name: str = "tarifs_embed"):
+    data = load_embed_texts()
+    embed_data = data.get(embed_name)
+    if not embed_data:
+        await ctx.send(f"❌ Embed introuvable : {embed_name}", delete_after=8)
+        return
+    desc_raw = embed_data.get("description", [])
+    description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
+    preview = description.replace("\n", " ")[:300]
+    await ctx.send(f"📦 JSON lu pour **{embed_name}** : {preview}", delete_after=20)
+
 @bot.command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
