@@ -15,7 +15,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "PinkSoftware est en ligne !"
+    return "67 j'aime le TastyCrousty"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
