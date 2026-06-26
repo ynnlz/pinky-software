@@ -30,23 +30,13 @@
       "<:nintendo:1519907394157678632> **Nintendo**",
       "<:nike:1519906735589167164> **Nike**",
       "",
-      "🎫 Clique sur le bouton vert pour passer ta comande :3 !"
+      "🎫 Sélectionne ton choix dans le menu pour créer un ticket privé."
     ],
-    "color_rgb": [255, 192, 203]
-  },
-  "ticket_bienvenue": {
-    "title": "🎫 Ticket d'achat",
-    "description": [
-      "Bonjour {user} !",
-      "",
-      "Merci de l'intérêt que tu portes à PinkGift.",
-      "",
-      "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
-      "En attendant, tu peux préciser la carte cadeau ainsi que son montant souhaité.",
-      "",
-      "⚠️ Les seuls moyens de paiement acceptés sont PayPal, les Virements Bancaires et la Cryptomonnaie **Solana**."
-    ],
-    "color_rgb": [255, 192, 203]
+    "color_rgb": [
+      255,
+      192,
+      203
+    ]
   },
   "valo_embed": {
     "title": "💘 VALORANT POINTS 💘",
@@ -54,18 +44,58 @@
       "Choisis ton montant. 💞",
       "",
       "🇪🇺 **Europe**",
-      "💎 **3650 VP** — `30€`",
-      "💎 **5350 VP** — `40€`",
-      "💎 **8700 VP** — `60€`",
+      "<:vp:1519915966476320901> **3650 VP** — `30€`",
+      "<:vp:1519915966476320901> **5350 VP** — `40€`",
+      "<:vp:1519915966476320901> **8700 VP** — `60€`",
       "",
       "🇹🇷 **Turquie**",
-      "💎 **2925 VP** — `15€`",
-      "💎 **4325 VP** — `20€`",
-      "💎 **8900 VP** — `45€`",
+      "<:vp:1519915966476320901> **2925 VP** — `15€`",
+      "<:vp:1519915966476320901> **4325 VP** — `20€`",
+      "<:vp:1519915966476320901> **8900 VP** — `45€`",
       "",
       "🛒 Pour commander : ouvre un ticket."
     ],
-    "color_rgb": [255, 192, 203],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
     "image_url": ""
+  },
+  "paiements_embed": {
+    "title": "💳 Moyens de paiement",
+    "description": [
+      "Pour finaliser votre achat chez **PinkGift**, nous acceptons :",
+      "",
+      "<:paypal:1517582845315649751> **PayPal**",
+      "🏦 **Virements bancaires**",
+      "₿ **Cryptomonnaies**",
+      "",
+      "Merci d'indiquer le moyen de paiement souhaité dans le ticket."
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "footer": "PinkGift — Paiements"
+  },
+  "ticket_bienvenue": {
+    "title": "🎫 Ticket d'achat",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Merci de l'intérêt que tu portes à PinkGift.",
+      "Indique l’article et le montant souhaité dans ce ticket.",
+      "",
+      "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
+      "",
+      "⚠️ Les seuls moyens de paiement acceptés sont PayPal, les Virements Bancaires et la Cryptomonnaie **Solana**."
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ]
   }
 }
