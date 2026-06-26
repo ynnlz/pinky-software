@@ -7,6 +7,9 @@ import json
 import asyncio
 import datetime
 import re
+import time
+import urllib.request
+import urllib.error
 
 app = Flask('')
 
@@ -32,6 +35,7 @@ NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
 VALO_TICKET_CATEGORY_ID = 1519913523440779404
 CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
+EMBED_CONFIG_URL = os.environ.get("EMBED_CONFIG_URL", "https://raw.githubusercontent.com/ynnlz/pinky-software/main/config_embeds.json")
 TICKET_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
 TARIFS_THUMBNAIL_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
 TARIFS_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
@@ -50,7 +54,7 @@ PRODUCT_CONFIG = {
     "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "<:steam:1519907154545610873>"},
     "NETFLIX": {"display": "NETFLIX", "emoji": "<:netflix:1519907125160316928>", "emoji_ch": "<:netflix:1519907125160316928>"},
     "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smythstoys:1519907368429944832>", "emoji_ch": "<:smythstoys:1519907368429944832>"},
-    "ZALANDO": {"display": "ZALANDO", "emoji": "👟", "emoji_ch": "👟"},
+    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "<:zalando:1519907231812816906>"},
     "KING_JOUET": {"display": "KING JOUET", "emoji": "<:kingjouet:1519907322783338557>", "emoji_ch": "<:kingjouet:1519907322783338557>"},
     "LEGO": {"display": "LEGO", "emoji": "<:lego:1519907470854852720>", "emoji_ch": "<:lego:1519907470854852720>"},
     "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "<:adidas:1519906784515588116>"},
@@ -75,7 +79,7 @@ DEFAULT_EMBED_DATA = {
             "",
             "📦 **Amazon**", "🛒 **Carrefour**", "🏬 **Intermarché**", "👕 **Zara**", "💄 **Sephora**",
             "🍔 **Uber Eats**", "🍎 **Apple**", "🎮 **Google Play**", "🎮 **Steam**", "🎬 **Netflix**",
-            "🧸 **Smyths Toys**", "👟 **Zalando**", "🧸 **King Jouet**", "🧱 **LEGO**", "👟 **Adidas**",
+            "🧸 **Smyths Toys**", "<:zalando:1519907231812816906> **Zalando**", "🧸 **King Jouet**", "🧱 **LEGO**", "👟 **Adidas**",
             "👟 **Foot Locker**", "🍽️ **Deliveroo**", "✨ **Claude**", "🏠 **Airbnb**", "🎮 **Xbox**",
             "🎮 **PlayStation**", "💳 **Paysafecard**", "📚 **Fnac**", "🎮 **Nintendo**", "👟 **Nike**",
             "",
@@ -103,6 +107,20 @@ DEFAULT_EMBED_DATA = {
         "color_rgb": [255, 192, 203],
         "image_url": ""
     },
+    "paiements_embed": {
+        "title": "💳 Moyens de paiement",
+        "description": [
+            "Pour finaliser votre achat chez **PinkGift**, nous acceptons :",
+            "",
+            "<:paypal:1517582845315649751> **PayPal**",
+            "🏦 **Virements bancaires**",
+            "₿ **Cryptomonnaies**",
+            "",
+            "Merci d'indiquer le moyen de paiement souhaite dans le ticket."
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Paiements"
+    },
     "ticket_bienvenue": {
         "title": "🎫 Ticket d achat",
         "description": [
@@ -120,11 +138,24 @@ DEFAULT_EMBED_DATA = {
 }
 
 def load_embed_texts():
+    if EMBED_CONFIG_URL:
+        try:
+            separator = "&" if "?" in EMBED_CONFIG_URL else "?"
+            url = f"{EMBED_CONFIG_URL}{separator}t={int(time.time())}"
+            request = urllib.request.Request(url, headers={"User-Agent": "PinkSoftwareBot/1.0"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                raw_content = response.read().decode("utf-8")
+            cleaned_content = re.sub(r",\s*([\]}])", r"\1", raw_content)
+            data = json.loads(cleaned_content)
+            for key, default_value in DEFAULT_EMBED_DATA.items():
+                if key not in data or not isinstance(data[key], dict):
+                    data[key] = default_value
+            return data
+        except Exception as e:
+            print(f"Erreur chargement JSON distant : {e}")
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     possible_paths = [os.path.join(base_dir, "config_embeds.json"), os.path.join(os.getcwd(), "config_embeds.json")]
-    env_path = os.environ.get("EMBED_CONFIG_PATH")
-    if env_path:
-        possible_paths.insert(0, env_path)
     for filename in possible_paths:
         if filename and os.path.exists(filename):
             try:
@@ -137,43 +168,8 @@ def load_embed_texts():
                         data[key] = default_value
                 return data
             except Exception as e:
-                print(f"Erreur chargement config_embeds.json : {e}")
+                print(f"Erreur chargement config_embeds.json local : {e}")
     return DEFAULT_EMBED_DATA
-
-
-def apply_custom_brand_emojis(text: str):
-    replacements = {
-        "📦 **Amazon**": "<:amazon:1519907450403160104> **Amazon**",
-        "🛒 **Carrefour**": "<:carrefour:1519906825494073414> **Carrefour**",
-        "🏬 **Intermarché**": "<:intermarche:1519907100057276546> **Intermarché**",
-        "🏬 **Intermarche**": "<:intermarche:1519907100057276546> **Intermarche**",
-        "👕 **Zara**": "<:zara:1519907265681948773> **Zara**",
-        "💄 **Sephora**": "<:sephora:1519907492862103742> **Sephora**",
-        "🍔 **Uber Eats**": "<:ubereats:1519907186636099604> **Uber Eats**",
-        "🍎 **Apple**": "<:apple:1519906800411869204> **Apple**",
-        "🎮 **Google Play**": "<:googleplay:1519907060555186278> **Google Play**",
-        "🎮 **Steam**": "<:steam:1519907154545610873> **Steam**",
-        "🎬 **Netflix**": "<:netflix:1519907125160316928> **Netflix**",
-        "🧸 **Smyths Toys**": "<:smythstoys:1519907368429944832> **Smyths Toys**",
-        "👟 **Zalando**": "👟 **Zalando**",
-        "🧸 **King Jouet**": "<:kingjouet:1519907322783338557> **King Jouet**",
-        "🧱 **LEGO**": "<:lego:1519907470854852720> **LEGO**",
-        "👟 **Adidas**": "<:adidas:1519906784515588116> **Adidas**",
-        "👟 **Foot Locker**": "<:footlocker:1519907296342310952> **Foot Locker**",
-        "🍽️ **Deliveroo**": "<:deliveroo:1519906860356993174> **Deliveroo**",
-        "✨ **Claude**": "<:claude:1519906842006913065> **Claude**",
-        "🏠 **Airbnb**": "<:airbnb:1519906701900386344> **Airbnb**",
-        "🎮 **Xbox**": "<:xbox:1519907418836828230> **Xbox**",
-        "🎮 **PlayStation**": "<:playstation:1519906767268741200> **PlayStation**",
-        "💳 **Paysafecard**": "<:paysafecard:1519906750571085995> **Paysafecard**",
-        "📚 **Fnac**": "<:fnac:1519906718140727387> **Fnac**",
-        "🎮 **Nintendo**": "<:nintendo:1519907394157678632> **Nintendo**",
-        "👟 **Nike**": "<:nike:1519906735589167164> **Nike**",
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    return text
-
 
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
@@ -316,9 +312,8 @@ async def on_member_join(member):
         except Exception as e:
             print(f"Erreur attribution role : {e}")
 
-@bot.command(name="tarifs")
-@commands.has_role(PURGE_ROLE_ID)
-async def send_tarifs(ctx):
+
+def build_tarifs_embed():
     texts = load_embed_texts()["tarifs_embed"]
     rgb = texts.get("color_rgb", [255, 192, 203])
     desc_raw = texts.get("description", [])
@@ -327,25 +322,71 @@ async def send_tarifs(ctx):
     embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
     embed.set_thumbnail(url=TARIFS_THUMBNAIL_URL)
     embed.set_image(url=TARIFS_IMAGE_URL)
-    await ctx.send(content="||@everyone||", embed=embed, view=OpenTicketView())
+    return embed
 
-@bot.command(name="valo")
-@commands.has_role(PURGE_ROLE_ID)
-async def cmd_valo(ctx):
+def build_valo_embed():
     texts = load_embed_texts().get("valo_embed", DEFAULT_EMBED_DATA["valo_embed"])
     rgb = texts.get("color_rgb", [255, 192, 203])
     desc_raw = texts.get("description", [])
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
-    embed = discord.Embed(
-        title=texts.get("title", "💘 VALORANT POINTS 💘"),
-        description=description,
-        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
-    )
+    embed = discord.Embed(title=texts.get("title", "💘 VALORANT POINTS 💘"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
     image_url = texts.get("image_url", "")
     if image_url:
         embed.set_image(url=image_url)
     embed.set_footer(text="PinkGift — Valorant Points")
+    return embed
+
+def build_paiements_embed():
+    texts = load_embed_texts().get("paiements_embed", DEFAULT_EMBED_DATA["paiements_embed"])
+    rgb = texts.get("color_rgb", [255, 192, 203])
+    desc_raw = texts.get("description", [])
+    description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
+    embed = discord.Embed(title=texts.get("title", "💳 Moyens de paiement"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+    footer = texts.get("footer", "PinkGift — Paiements")
+    if footer:
+        embed.set_footer(text=footer)
+    return embed
+
+async def update_last_embed(ctx, embed_builder, title_keywords):
+    embed = embed_builder()
+    async for msg in ctx.channel.history(limit=50):
+        if msg.author == bot.user and msg.embeds:
+            title = msg.embeds[0].title or ""
+            if any(keyword.lower() in title.lower() for keyword in title_keywords):
+                await msg.edit(embed=embed)
+                confirmation = await ctx.send("✅ Embed mis à jour sans ping.")
+                await asyncio.sleep(4)
+                try:
+                    await confirmation.delete()
+                except:
+                    pass
+                try:
+                    await ctx.message.delete()
+                except:
+                    pass
+                return
+    await ctx.send("❌ Aucun embed correspondant trouvé dans ce salon.", delete_after=6)
+@bot.command(name="tarifs")
+@commands.has_role(PURGE_ROLE_ID)
+async def send_tarifs(ctx):
+    embed = build_tarifs_embed()
+    await ctx.send(content="||@everyone||", embed=embed, view=OpenTicketView())
+
+@bot.command(name="maj_tarifs")
+@commands.has_role(PURGE_ROLE_ID)
+async def update_tarifs(ctx):
+    await update_last_embed(ctx, build_tarifs_embed, ["COMMANDES PINKGIFT", "CARTE CADEAUX"])
+
+@bot.command(name="valo")
+@commands.has_role(PURGE_ROLE_ID)
+async def cmd_valo(ctx):
+    embed = build_valo_embed()
     await ctx.send(content="||@everyone||", embed=embed, view=ValoTicketButton())
+
+@bot.command(name="maj_valo")
+@commands.has_role(PURGE_ROLE_ID)
+async def update_valo(ctx):
+    await update_last_embed(ctx, build_valo_embed, ["VALORANT", "VALORANT POINTS"])
 
 @bot.command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
@@ -421,19 +462,13 @@ async def cmd_paiements(ctx):
         await ctx.message.delete()
     except:
         pass
-    embed = discord.Embed(
-        title="💳 Moyens de paiement",
-        description=(
-            "Pour finaliser votre achat chez **PinkGift**, nous acceptons :\n\n"
-            f"{PAYPAL_EMOJI} **PayPal**\n"
-            "🏦 **Virements bancaires**\n"
-            "₿ **Cryptomonnaies**\n\n"
-            "Merci d'indiquer le moyen de paiement souhaite dans le ticket."
-        ),
-        color=discord.Color.from_rgb(255, 192, 203)
-    )
-    embed.set_footer(text="PinkGift — Paiements")
+    embed = build_paiements_embed()
     await ctx.send(content="||@everyone||", embed=embed)
+
+@bot.command(name="maj_paiements")
+@commands.has_role(STAFF_ROLE_ID)
+async def update_paiements(ctx):
+    await update_last_embed(ctx, build_paiements_embed, ["Moyens de paiement", "Paiements"])
 
 async def process_order(ctx, product_name, amount_paid: int, card_code: str = "En attente..."):
     try:
@@ -663,6 +698,8 @@ async def cmd_directory(ctx):
         value=(
             "!tarifs : envoie l'embed public avec le bouton Ouvrir un ticket.\n"
             "!valo : envoie l'embed Valorant avec son bouton ticket.\n"
+            "!paiements : envoie l'embed des moyens de paiement.\n"
+            "!maj_tarifs, !maj_valo, !maj_paiements : modifient les embeds deja envoyes sans ping.\n"
             "Bouton Ouvrir un ticket : cree un salon prive dans la categorie configuree.\n"
             "Bouton Close : ferme le ticket et retire l'acces au client."
         ),
@@ -688,7 +725,6 @@ async def cmd_directory(ctx):
     embed.add_field(
         name="🛡️ Moderation / Staff",
         value=(
-            "!paiements : envoie l'embed des moyens de paiement.\n"
             "!clear <nombre> : supprime des messages.\n"
             "!purge_all : supprime les tickets.\n"
             "!ban, !tempban, !tempmute : moderation staff."
