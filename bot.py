@@ -31,6 +31,7 @@ PURGE_ROLE_ID = 1517495087825817691
 NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
 VALO_TICKET_CATEGORY_ID = 1519913523440779404
+CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
 TICKET_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
 TARIFS_THUMBNAIL_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
 TARIFS_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
@@ -204,9 +205,14 @@ class CloseTicketView(discord.ui.View):
             return
         if client:
             await channel.set_permissions(client, view_channel=False, send_messages=False, read_message_history=False)
+        closed_category = guild.get_channel(CLOSED_TICKET_CATEGORY_ID) if guild else None
         await interaction.response.send_message("🔒 Ticket ferme : le client n a plus acces a ce salon.")
         try:
-            await channel.edit(name=f"closed-{channel.name}")
+            new_name = channel.name if channel.name.startswith("closed-") else f"closed-{channel.name}"
+            if closed_category:
+                await channel.edit(name=new_name, category=closed_category, reason=f"Ticket ferme par {interaction.user}")
+            else:
+                await channel.edit(name=new_name, reason=f"Ticket ferme par {interaction.user}")
         except:
             pass
 
