@@ -454,8 +454,47 @@ async def cmd_finish(ctx, *, code_carte: str):
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
-    embed = discord.Embed(title="📜 COMMANDES STAFF", description="!tarifs ouvre le bouton ticket. Les commandes articles renomment le ticket.", color=discord.Color.from_rgb(255, 192, 203))
-    embed.add_field(name="Exemple", value="!deliveroo 60 renomme le ticket en 🍽️-DELIVEROO-60€", inline=False)
+    embed = discord.Embed(
+        title="📜 COMMANDES STAFF — PinkSoftware",
+        description="Liste des commandes actuellement actives sur le bot.",
+        color=discord.Color.from_rgb(255, 192, 203)
+    )
+    embed.add_field(
+        name="🎫 Tickets",
+        value=(
+            "!tarifs : envoie l'embed public avec le bouton Ouvrir un ticket.\n"
+            "Bouton Ouvrir un ticket : cree un salon prive dans la categorie configuree.\n"
+            "Bouton Close : ferme le ticket et retire l'acces au client."
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="🛍️ Articles",
+        value=(
+            "Syntaxe : !article montant\n"
+            "Exemple : !deliveroo 60 renomme le ticket en 🍽️-DELIVEROO-60€\n\n"
+            "!amazon, !carrefour, !intermarche, !zara, !sephora, !ubereats\n"
+            "!apple, !googleplay, !steam, !netflix, !smyths, !zalando\n"
+            "!kingjouet, !lego, !adidas, !footlocker, !deliveroo, !claude\n"
+            "!airbnb, !xbox, !playstation, !paysafecard, !fnac, !nintendo, !nike, !vp"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="✅ Finalisation",
+        value="!finish <code> : remplace ou ajoute le code dans l'embed de commande.",
+        inline=False
+    )
+    embed.add_field(
+        name="🛡️ Moderation / Staff",
+        value=(
+            "!paypal : envoie l'embed PayPal.\n"
+            "!clear <nombre> : supprime des messages.\n"
+            "!purge_all : supprime les tickets.\n"
+            "!ban, !tempban, !tempmute : moderation staff."
+        ),
+        inline=False
+    )
     await ctx.send(embed=embed)
 
 @bot.event
