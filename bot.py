@@ -327,7 +327,7 @@ async def send_tarifs(ctx):
     embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
     embed.set_thumbnail(url=TARIFS_THUMBNAIL_URL)
     embed.set_image(url=TARIFS_IMAGE_URL)
-    await ctx.send(embed=embed, view=OpenTicketView())
+    await ctx.send(content="||@everyone||", embed=embed, view=OpenTicketView())
 
 @bot.command(name="valo")
 @commands.has_role(PURGE_ROLE_ID)
@@ -345,7 +345,7 @@ async def cmd_valo(ctx):
     if image_url:
         embed.set_image(url=image_url)
     embed.set_footer(text="PinkGift — Valorant Points")
-    await ctx.send(embed=embed, view=ValoTicketButton())
+    await ctx.send(content="||@everyone||", embed=embed, view=ValoTicketButton())
 
 @bot.command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
@@ -433,7 +433,7 @@ async def cmd_paiements(ctx):
         color=discord.Color.from_rgb(255, 192, 203)
     )
     embed.set_footer(text="PinkGift — Paiements")
-    await ctx.send(embed=embed)
+    await ctx.send(content="||@everyone||", embed=embed)
 
 async def process_order(ctx, product_name, amount_paid: int, card_code: str = "En attente..."):
     try:
