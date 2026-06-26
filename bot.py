@@ -171,6 +171,41 @@ def load_embed_texts():
                 print(f"Erreur chargement config_embeds.json local : {e}")
     return DEFAULT_EMBED_DATA
 
+
+def apply_custom_brand_emojis(text: str):
+    replacements = {
+        "📦 **Amazon**": "<:amazon:1519907450403160104> **Amazon**",
+        "🛒 **Carrefour**": "<:carrefour:1519906825494073414> **Carrefour**",
+        "🏬 **Intermarché**": "<:intermarche:1519907100057276546> **Intermarché**",
+        "🏬 **Intermarche**": "<:intermarche:1519907100057276546> **Intermarche**",
+        "👕 **Zara**": "<:zara:1519907265681948773> **Zara**",
+        "💄 **Sephora**": "<:sephora:1519907492862103742> **Sephora**",
+        "🍔 **Uber Eats**": "<:ubereats:1519907186636099604> **Uber Eats**",
+        "🍎 **Apple**": "<:apple:1519906800411869204> **Apple**",
+        "🎮 **Google Play**": "<:googleplay:1519907060555186278> **Google Play**",
+        "🎮 **Steam**": "<:steam:1519907154545610873> **Steam**",
+        "🎬 **Netflix**": "<:netflix:1519907125160316928> **Netflix**",
+        "🧸 **Smyths Toys**": "<:smythstoys:1519907368429944832> **Smyths Toys**",
+        "👟 **Zalando**": "<:zalando:1519907231812816906> **Zalando**",
+        "🧸 **King Jouet**": "<:kingjouet:1519907322783338557> **King Jouet**",
+        "🧱 **LEGO**": "<:lego:1519907470854852720> **LEGO**",
+        "👟 **Adidas**": "<:adidas:1519906784515588116> **Adidas**",
+        "👟 **Foot Locker**": "<:footlocker:1519907296342310952> **Foot Locker**",
+        "🍽️ **Deliveroo**": "<:deliveroo:1519906860356993174> **Deliveroo**",
+        "✨ **Claude**": "<:claude:1519906842006913065> **Claude**",
+        "🏠 **Airbnb**": "<:airbnb:1519906701900386344> **Airbnb**",
+        "🎮 **Xbox**": "<:xbox:1519907418836828230> **Xbox**",
+        "🎮 **PlayStation**": "<:playstation:1519906767268741200> **PlayStation**",
+        "💳 **Paysafecard**": "<:paysafecard:1519906750571085995> **Paysafecard**",
+        "📚 **Fnac**": "<:fnac:1519906718140727387> **Fnac**",
+        "🎮 **Nintendo**": "<:nintendo:1519907394157678632> **Nintendo**",
+        "👟 **Nike**": "<:nike:1519906735589167164> **Nike**",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
     if not match:
