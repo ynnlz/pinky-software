@@ -1,81 +1,72 @@
 {
-"tarifs_embed": {
-  "title": "🎟️ COMMANDES PINKGIFT",
-  "description": [
-    "Choisis une option dans le menu ci-dessous pour ouvrir un ticket avec le staff. Toutes les cartes cadeaux à -30%.",
-    "",
-    "📦 **Amazon**",
-    "🛒 **Carrefour**",
-    "🏬 **Intermarché**",
-    "👕 **Zara**",
-    "💄 **Sephora**",
-    "🍔 **Uber Eats**",
-    "🍎 **Apple**",
-    "🎮 **Google Play**",
-    "🎮 **Steam**",
-    "🎬 **Netflix**",
-    "🧸 **Smyths Toys**",
-    "👟 **Zalando**",
-    "🧸 **King Jouet**",
-    "🧱 **LEGO**",
-    "👟 **Adidas**",
-    "👟 **Foot Locker**",
-    "🍽️ **Deliveroo**",
-    "✨ **Claude**",
-    "🏠 **Airbnb**",
-    "🎮 **Xbox**",
-    "🎮 **PlayStation**",
-    "💳 **Paysafecard**",
-    "📚 **Fnac**",
-    "🎮 **Nintendo**",
-    "👟 **Nike**",
-    "",
-    "🎫 Sélectionne ton choix dans le menu pour créer un ticket privé."
-  ],
-  "color_rgb": [255, 192, 203]
-}
-    },
-    "ticket_bienvenue": {
-        "title": "🎫 Ticket d'achat — {product}",
-        "description": [
-            "Bonjour {user} !",
-            "",
-            "Merci de l'intérêt que tu portes à PinkGift.",
-            "Tu as sélectionné le produit : {product}.",
-            "",
-            "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
-            "En attendant, tu peux préciser le montant souhaité.",
-            "",
-            "⚠️ Les seuls moyens de paiement acceptés sont PayPal."
-        ],
-        "color_rgb": [
-            255,
-            192,
-            203
-        ]
-    },
-    "valo_embed": {
-        "title": "💘 VALORANT POINTS 💘",
-        "description": [
-            "Choisis ton montant. 💞",
-            "",
-            "🇪🇺 **Europe**",
-            "💎 **3650 VP** — `30€`",
-            "💎 **5350 VP** — `40€`",
-            "💎 **8700 VP** — `60€`",
-            "",
-            "🇹🇷 **Turquie**",
-            "💎 **2925 VP** — `15€`",
-            "💎 **4325 VP** — `20€`",
-            "💎 **8900 VP** — `45€`",
-            "",
-            "🛒 Pour commander : ouvre un ticket."
-        ],
-        "color_rgb": [
-            255,
-            192,
-            203
-        ],
-        "image_url": ""
-    }
+  "tarifs_embed": {
+    "title": "🎟️ COMMANDES PINKGIFT",
+    "description": [
+      "Choisis une option dans le menu ci-dessous pour ouvrir un ticket avec le staff. Toutes les cartes cadeaux à -30%.",
+      "",
+      "📦 **Amazon**",
+      "🛒 **Carrefour**",
+      "🏬 **Intermarché**",
+      "👕 **Zara**",
+      "💄 **Sephora**",
+      "🍔 **Uber Eats**",
+      "🍎 **Apple**",
+      "🎮 **Google Play**",
+      "🎮 **Steam**",
+      "🎬 **Netflix**",
+      "🧸 **Smyths Toys**",
+      "👟 **Zalando**",
+      "🧸 **King Jouet**",
+      "🧱 **LEGO**",
+      "👟 **Adidas**",
+      "👟 **Foot Locker**",
+      "🍽️ **Deliveroo**",
+      "✨ **Claude**",
+      "🏠 **Airbnb**",
+      "🎮 **Xbox**",
+      "🎮 **PlayStation**",
+      "💳 **Paysafecard**",
+      "📚 **Fnac**",
+      "🎮 **Nintendo**",
+      "👟 **Nike**",
+      "",
+      "🎫 Sélectionne ton choix dans le menu pour créer un ticket privé."
+    ],
+    "color_rgb": [255, 192, 203]
+  },
+  "ticket_bienvenue": {
+    "title": "🎫 Ticket d'achat — {product}",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Merci de l'intérêt que tu portes à PinkGift.",
+      "Tu as sélectionné le produit : {product}.",
+      "",
+      "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
+      "En attendant, tu peux préciser le montant souhaité.",
+      "",
+      "⚠️ Les seuls moyens de paiement acceptés sont PayPal."
+    ],
+    "color_rgb": [255, 192, 203]
+  },
+  "valo_embed": {
+    "title": "💘 VALORANT POINTS 💘",
+    "description": [
+      "Choisis ton montant. 💞",
+      "",
+      "🇪🇺 **Europe**",
+      "💎 **3650 VP** — `30€`",
+      "💎 **5350 VP** — `40€`",
+      "💎 **8700 VP** — `60€`",
+      "",
+      "🇹🇷 **Turquie**",
+      "💎 **2925 VP** — `15€`",
+      "💎 **4325 VP** — `20€`",
+      "💎 **8900 VP** — `45€`",
+      "",
+      "🛒 Pour commander : ouvre un ticket."
+    ],
+    "color_rgb": [255, 192, 203],
+    "image_url": ""
+  }
 }
