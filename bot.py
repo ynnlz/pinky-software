@@ -71,11 +71,11 @@ DEFAULT_EMBED_DATA = {
         "description": [
             "Choisis une option puis clique sur le bouton pour ouvrir un ticket avec le staff. Toutes les cartes cadeaux à -30%.",
             "",
-            "<:amazon:1519907450403160104> **Amazon**", "<:carrefour:1519906825494073414> **Carrefour**", "<:intermarche:1519907100057276546> **Intermarché**", "<:zara:1519907265681948773> **Zara**", "<:sephora:1519907492862103742> **Sephora**",
-            "<:ubereats:1519907186636099604> **Uber Eats**", "<:apple:1519906800411869204> **Apple**", "<:googleplay:1519907060555186278> **Google Play**", "<:steam:1519907154545610873> **Steam**", "<:netflix:1519907125160316928> **Netflix**",
-            "<:smythstoys:1519907368429944832> **Smyths Toys**", "👟 **Zalando**", "<:kingjouet:1519907322783338557> **King Jouet**", "<:lego:1519907470854852720> **LEGO**", "<:adidas:1519906784515588116> **Adidas**",
-            "<:footlocker:1519907296342310952> **Foot Locker**", "<:deliveroo:1519906860356993174> **Deliveroo**", "<:claude:1519906842006913065> **Claude**", "<:airbnb:1519906701900386344> **Airbnb**", "<:xbox:1519907418836828230> **Xbox**",
-            "<:playstation:1519906767268741200> **PlayStation**", "<:paysafecard:1519906750571085995> **Paysafecard**", "<:fnac:1519906718140727387> **Fnac**", "<:nintendo:1519907394157678632> **Nintendo**", "<:nike:1519906735589167164> **Nike**",
+            "📦 **Amazon**", "🛒 **Carrefour**", "🏬 **Intermarché**", "👕 **Zara**", "💄 **Sephora**",
+            "🍔 **Uber Eats**", "🍎 **Apple**", "🎮 **Google Play**", "🎮 **Steam**", "🎬 **Netflix**",
+            "🧸 **Smyths Toys**", "👟 **Zalando**", "🧸 **King Jouet**", "🧱 **LEGO**", "👟 **Adidas**",
+            "👟 **Foot Locker**", "🍽️ **Deliveroo**", "✨ **Claude**", "🏠 **Airbnb**", "🎮 **Xbox**",
+            "🎮 **PlayStation**", "💳 **Paysafecard**", "📚 **Fnac**", "🎮 **Nintendo**", "👟 **Nike**",
             "",
             "🎫 Clique sur le bouton ci-dessous pour creer un ticket prive."
         ],
