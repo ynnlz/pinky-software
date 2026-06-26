@@ -462,6 +462,53 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
     embed.set_footer(text="PinkSoftware — Ticket commande")
     await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
 
+
+async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+    vp_packs = {
+        30: "3650 VP",
+        40: "5350 VP",
+        60: "8700 VP",
+        15: "2925 VP",
+        20: "4325 VP",
+        45: "8900 VP",
+    }
+    pack = vp_packs.get(amount_paid)
+    if pack is None:
+        await ctx.send("❌ Pack Valorant introuvable. Montants disponibles : 15, 20, 30, 40, 45 ou 60 euros.", delete_after=8)
+        return
+
+    cfg = PRODUCT_CONFIG.get("VALORANT")
+    emoji = cfg["emoji_ch"] if cfg else "🎮"
+    try:
+        await ctx.channel.edit(name=f"{emoji}-VALORANT-{pack.replace(' ', '-')}")
+    except Exception as e:
+        await ctx.send(f"❌ Impossible de renommer le ticket : {e}", delete_after=5)
+        return
+
+    client_user = ctx.author
+    async for msg in ctx.channel.history(oldest_first=True, limit=8):
+        if msg.author != bot.user and not msg.author.bot:
+            client_user = msg.author
+            break
+
+    embed = discord.Embed(
+        title=f"{emoji} Commande Valorant prise en charge",
+        description=f"Merci pour votre confiance {client_user.mention} !",
+        color=discord.Color.from_rgb(46, 204, 113)
+    )
+    embed.add_field(name="Produit", value="**Valorant Points**", inline=True)
+    embed.add_field(name="Pack VP", value=f"**{pack}**", inline=True)
+    embed.add_field(name="Prix", value=f"{amount_paid}€", inline=True)
+    embed.add_field(name="Code", value=f"```\n{code}\n```", inline=False)
+    embed.set_image(url=ORDER_PENDING_IMAGE_URL)
+    embed.set_footer(text="PinkSoftware — Ticket Valorant")
+    await ctx.send(content=f"{client_user.mention} commande Valorant enregistree : **{pack} — {amount_paid}€**", embed=embed)
+
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
@@ -564,7 +611,7 @@ async def cmd_nike(ctx, amount: int, *, code: str = "En attente..."): await proc
 
 @bot.command(name="vp")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_vp(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "VALORANT", amount, code)
+async def cmd_vp(ctx, amount: int, *, code: str = "En attente..."): await process_vp_order(ctx, amount, code)
 
 @bot.command(name="finish")
 @commands.has_role(STAFF_ROLE_ID)
