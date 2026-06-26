@@ -43,31 +43,31 @@ ORDER_PENDING_IMAGE_URL = "https://media.discordapp.net/attachments/151751694639
 ORDER_FINISHED_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless"
 
 PRODUCT_CONFIG = {
-    "AMAZON": {"display": "AMAZON", "emoji": "<:amazon:1519907450403160104>", "emoji_ch": "<:amazon:1519907450403160104>"},
-    "CARREFOUR": {"display": "CARREFOUR", "emoji": "<:carrefour:1519906825494073414>", "emoji_ch": "<:carrefour:1519906825494073414>"},
-    "INTERMARCHE": {"display": "INTERMARCHE", "emoji": "<:intermarche:1519907100057276546>", "emoji_ch": "<:intermarche:1519907100057276546>"},
-    "ZARA": {"display": "ZARA", "emoji": "<:zara:1519907265681948773>", "emoji_ch": "<:zara:1519907265681948773>"},
-    "SEPHORA": {"display": "SEPHORA", "emoji": "<:sephora:1519907492862103742>", "emoji_ch": "<:sephora:1519907492862103742>"},
-    "UBEREATS": {"display": "UBER EATS", "emoji": "<:ubereats:1519907186636099604>", "emoji_ch": "<:ubereats:1519907186636099604>"},
-    "APPLE": {"display": "APPLE", "emoji": "<:apple:1519906800411869204>", "emoji_ch": "<:apple:1519906800411869204>"},
-    "GOOGLE_PLAY": {"display": "GOOGLE PLAY", "emoji": "<:googleplay:1519907060555186278>", "emoji_ch": "<:googleplay:1519907060555186278>"},
-    "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "<:steam:1519907154545610873>"},
-    "NETFLIX": {"display": "NETFLIX", "emoji": "<:netflix:1519907125160316928>", "emoji_ch": "<:netflix:1519907125160316928>"},
-    "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smythstoys:1519907368429944832>", "emoji_ch": "<:smythstoys:1519907368429944832>"},
-    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "<:zalando:1519907231812816906>"},
-    "KING_JOUET": {"display": "KING JOUET", "emoji": "<:kingjouet:1519907322783338557>", "emoji_ch": "<:kingjouet:1519907322783338557>"},
-    "LEGO": {"display": "LEGO", "emoji": "<:lego:1519907470854852720>", "emoji_ch": "<:lego:1519907470854852720>"},
-    "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "<:adidas:1519906784515588116>"},
-    "FOOT_LOCKER": {"display": "FOOT LOCKER", "emoji": "<:footlocker:1519907296342310952>", "emoji_ch": "<:footlocker:1519907296342310952>"},
-    "DELIVEROO": {"display": "DELIVEROO", "emoji": "<:deliveroo:1519906860356993174>", "emoji_ch": "<:deliveroo:1519906860356993174>"},
-    "CLAUDE": {"display": "CLAUDE", "emoji": "<:claude:1519906842006913065>", "emoji_ch": "<:claude:1519906842006913065>"},
-    "AIRBNB": {"display": "AIRBNB", "emoji": "<:airbnb:1519906701900386344>", "emoji_ch": "<:airbnb:1519906701900386344>"},
-    "XBOX": {"display": "XBOX", "emoji": "<:xbox:1519907418836828230>", "emoji_ch": "<:xbox:1519907418836828230>"},
-    "PLAYSTATION": {"display": "PLAYSTATION", "emoji": "<:playstation:1519906767268741200>", "emoji_ch": "<:playstation:1519906767268741200>"},
-    "PAYSAFECARD": {"display": "PAYSAFECARD", "emoji": "<:paysafecard:1519906750571085995>", "emoji_ch": "<:paysafecard:1519906750571085995>"},
-    "FNAC": {"display": "FNAC", "emoji": "<:fnac:1519906718140727387>", "emoji_ch": "<:fnac:1519906718140727387>"},
-    "NINTENDO": {"display": "NINTENDO", "emoji": "<:nintendo:1519907394157678632>", "emoji_ch": "<:nintendo:1519907394157678632>"},
-    "NIKE": {"display": "NIKE", "emoji": "<:nike:1519906735589167164>", "emoji_ch": "<:nike:1519906735589167164>"},
+    "AMAZON": {"display": "AMAZON", "emoji": "<:amazon:1519907450403160104>", "emoji_ch": "📦"},
+    "CARREFOUR": {"display": "CARREFOUR", "emoji": "<:carrefour:1519906825494073414>", "emoji_ch": "🛒"},
+    "INTERMARCHE": {"display": "INTERMARCHE", "emoji": "<:intermarche:1519907100057276546>", "emoji_ch": "🏬"},
+    "ZARA": {"display": "ZARA", "emoji": "<:zara:1519907265681948773>", "emoji_ch": "👕"},
+    "SEPHORA": {"display": "SEPHORA", "emoji": "<:sephora:1519907492862103742>", "emoji_ch": "💄"},
+    "UBEREATS": {"display": "UBER EATS", "emoji": "<:ubereats:1519907186636099604>", "emoji_ch": "🍔"},
+    "APPLE": {"display": "APPLE", "emoji": "<:apple:1519906800411869204>", "emoji_ch": "🍎"},
+    "GOOGLE_PLAY": {"display": "GOOGLE PLAY", "emoji": "<:googleplay:1519907060555186278>", "emoji_ch": "🎮"},
+    "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "🎮"},
+    "NETFLIX": {"display": "NETFLIX", "emoji": "<:netflix:1519907125160316928>", "emoji_ch": "🎬"},
+    "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smythstoys:1519907368429944832>", "emoji_ch": "🧸"},
+    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "👟"},
+    "KING_JOUET": {"display": "KING JOUET", "emoji": "<:kingjouet:1519907322783338557>", "emoji_ch": "🧸"},
+    "LEGO": {"display": "LEGO", "emoji": "<:lego:1519907470854852720>", "emoji_ch": "🧱"},
+    "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "👟"},
+    "FOOT_LOCKER": {"display": "FOOT LOCKER", "emoji": "<:footlocker:1519907296342310952>", "emoji_ch": "👟"},
+    "DELIVEROO": {"display": "DELIVEROO", "emoji": "<:deliveroo:1519906860356993174>", "emoji_ch": "🍽️"},
+    "CLAUDE": {"display": "CLAUDE", "emoji": "<:claude:1519906842006913065>", "emoji_ch": "✨"},
+    "AIRBNB": {"display": "AIRBNB", "emoji": "<:airbnb:1519906701900386344>", "emoji_ch": "🏠"},
+    "XBOX": {"display": "XBOX", "emoji": "<:xbox:1519907418836828230>", "emoji_ch": "🎮"},
+    "PLAYSTATION": {"display": "PLAYSTATION", "emoji": "<:playstation:1519906767268741200>", "emoji_ch": "🎮"},
+    "PAYSAFECARD": {"display": "PAYSAFECARD", "emoji": "<:paysafecard:1519906750571085995>", "emoji_ch": "💳"},
+    "FNAC": {"display": "FNAC", "emoji": "<:fnac:1519906718140727387>", "emoji_ch": "📚"},
+    "NINTENDO": {"display": "NINTENDO", "emoji": "<:nintendo:1519907394157678632>", "emoji_ch": "🎮"},
+    "NIKE": {"display": "NIKE", "emoji": "<:nike:1519906735589167164>", "emoji_ch": "👟"},
     "VALORANT": {"display": "VALORANT", "emoji": "🎮", "emoji_ch": "🎮"},
 }
 
@@ -206,6 +206,12 @@ def apply_custom_brand_emojis(text: str):
     return text
 
 
+def ticket_channel_name(emoji: str, label: str, suffix: str) -> str:
+    clean_label = label.upper().replace(" ", "-").replace("_", "-")
+    clean_suffix = str(suffix).replace(" ", "-")
+    return f"{emoji}-{clean_label}-{clean_suffix}"[:95]
+
+
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
     if not match:
@@ -219,23 +225,29 @@ def parse_duration(duration_str: str):
     return None
 
 class CloseTicketView(discord.ui.View):
-    def __init__(self, client_id: int):
+    def __init__(self, client_id: int = 0):
         super().__init__(timeout=None)
         self.client_id = client_id
 
-    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒")
+    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="pinkgift_close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         channel = interaction.channel
-        client = guild.get_member(self.client_id) if guild else None
+        client = guild.get_member(self.client_id) if guild and self.client_id else None
         staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
         is_staff = staff_role in interaction.user.roles if hasattr(interaction.user, "roles") and staff_role else False
-        is_client = interaction.user.id == self.client_id
+        is_client = self.client_id and interaction.user.id == self.client_id
         if not is_staff and not is_client:
             await interaction.response.send_message("❌ Tu n as pas la permission de fermer ce ticket.", ephemeral=True)
             return
         if client:
             await channel.set_permissions(client, view_channel=False, send_messages=False, read_message_history=False)
+        elif guild:
+            for target, overwrite in channel.overwrites.items():
+                if isinstance(target, discord.Member):
+                    has_staff_role = staff_role in target.roles if staff_role else False
+                    if not target.bot and not has_staff_role:
+                        await channel.set_permissions(target, view_channel=False, send_messages=False, read_message_history=False)
         closed_category = guild.get_channel(CLOSED_TICKET_CATEGORY_ID) if guild else None
         await interaction.response.send_message("🔒 Ticket ferme : le client n a plus acces a ce salon.")
         try:
@@ -338,6 +350,7 @@ class ValoTicketButton(discord.ui.View):
 async def on_ready():
     bot.add_view(OpenTicketView())
     bot.add_view(ValoTicketButton())
+    bot.add_view(CloseTicketView())
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
 
 @bot.event
@@ -419,6 +432,17 @@ async def debug_embed(ctx, embed_name: str = "tarifs_embed"):
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
     preview = description.replace("\n", " ")[:300]
     await ctx.send(f"📦 JSON lu pour **{embed_name}** : {preview}", delete_after=20)
+
+
+@bot.command(name="close_button")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_close_button(ctx):
+    embed = discord.Embed(
+        title="🔒 Fermeture du ticket",
+        description="Utilise le bouton ci-dessous pour fermer ce ticket.",
+        color=discord.Color.from_rgb(255, 192, 203)
+    )
+    await ctx.send(embed=embed, view=CloseTicketView())
 
 @bot.command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
@@ -537,7 +561,7 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
     emoji = cfg["emoji_ch"]
     paid_amount = round(amount_paid * 0.7, 2)
     paid_display = int(paid_amount) if paid_amount.is_integer() else paid_amount
-    new_name = f"{emoji}-{display_name}-{amount_paid}€"
+    new_name = ticket_channel_name(emoji, display_name, f"{amount_paid}€")
     try:
         await ctx.channel.edit(name=new_name)
     except Exception as e:
@@ -580,7 +604,7 @@ async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
     cfg = PRODUCT_CONFIG.get("VALORANT")
     emoji = cfg["emoji_ch"] if cfg else "🎮"
     try:
-        await ctx.channel.edit(name=f"{emoji}-VALORANT-{pack.replace(' ', '-')}")
+        await ctx.channel.edit(name=ticket_channel_name(emoji, "VALORANT", pack))
     except Exception as e:
         await ctx.send(f"❌ Impossible de renommer le ticket : {e}", delete_after=5)
         return
@@ -755,7 +779,8 @@ async def cmd_directory(ctx):
             "!paiements : envoie l'embed des moyens de paiement.\n"
             "!maj_tarifs, !maj_valo, !maj_paiements : modifient les embeds deja envoyes sans ping.\n"
             "Bouton Ouvrir un ticket : cree un salon prive dans la categorie configuree.\n"
-            "Bouton Close : ferme le ticket et retire l'acces au client."
+            "Bouton Close : ferme le ticket et retire l'acces au client.\n"
+            "!close_button : renvoie un bouton Close persistant dans un ancien ticket."
         ),
         inline=False
     )
