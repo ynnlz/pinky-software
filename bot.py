@@ -394,8 +394,7 @@ async def update_last_embed(ctx, embed_builder, title_keywords):
                 await msg.edit(embed=embed)
                 updated_count += 1
     if updated_count:
-        preview = (embed.description or "").replace("
-", " ")[:120]
+        preview = (embed.description or "").replace("\n", " ")[:120]
         confirmation = await ctx.send(f"✅ {updated_count} embed(s) mis à jour sans ping. Aperçu chargé : {preview}")
         await asyncio.sleep(8)
         try:
