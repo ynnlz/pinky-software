@@ -30,6 +30,7 @@ STAFF_ROLE_ID = 1517487833886228550
 PURGE_ROLE_ID = 1517495087825817691
 NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
+VALO_TICKET_CATEGORY_ID = 1519913523440779404
 TICKET_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
 TARIFS_THUMBNAIL_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070894502108/Produits.png?ex=6a369167&is=6a353fe7&hm=06c63f7fb8cca01a4b847fd53b228c2442a158c7fe04c5f61c858a015c517c24&=&format=webp&quality=lossless"
 TARIFS_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517070554890385/Photo_accueil.png?ex=6a369167&is=6a353fe7&hm=07fe98ebafb4108c5c5288ea0d18e1ce113aeebd25d71c4b433033e914d21e44&=&format=webp&quality=lossless"
@@ -48,7 +49,7 @@ PRODUCT_CONFIG = {
     "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "<:steam:1519907154545610873>"},
     "NETFLIX": {"display": "NETFLIX", "emoji": "<:netflix:1519907125160316928>", "emoji_ch": "<:netflix:1519907125160316928>"},
     "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smythstoys:1519907368429944832>", "emoji_ch": "<:smythstoys:1519907368429944832>"},
-    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "<:zalando:1519907231812816906>"},
+    "ZALANDO": {"display": "ZALANDO", "emoji": "👟", "emoji_ch": "👟"},
     "KING_JOUET": {"display": "KING JOUET", "emoji": "<:kingjouet:1519907322783338557>", "emoji_ch": "<:kingjouet:1519907322783338557>"},
     "LEGO": {"display": "LEGO", "emoji": "<:lego:1519907470854852720>", "emoji_ch": "<:lego:1519907470854852720>"},
     "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "<:adidas:1519906784515588116>"},
@@ -80,6 +81,26 @@ DEFAULT_EMBED_DATA = {
             "🎫 Clique sur le bouton ci-dessous pour creer un ticket prive."
         ],
         "color_rgb": [255, 192, 203]
+    },
+    "valo_embed": {
+        "title": "💘 VALORANT POINTS 💘",
+        "description": [
+            "Choisis ton montant. 💞",
+            "",
+            "🇪🇺 **Europe**",
+            "💎 **3650 VP** — 30€",
+            "💎 **5350 VP** — 40€",
+            "💎 **8700 VP** — 60€",
+            "",
+            "🇹🇷 **Turquie**",
+            "💎 **2925 VP** — 15€",
+            "💎 **4325 VP** — 20€",
+            "💎 **8900 VP** — 45€",
+            "",
+            "🛒 Clique sur le bouton ci-dessous pour ouvrir un ticket."
+        ],
+        "color_rgb": [255, 192, 203],
+        "image_url": ""
     },
     "ticket_bienvenue": {
         "title": "🎫 Ticket d achat",
@@ -117,6 +138,41 @@ def load_embed_texts():
             except Exception as e:
                 print(f"Erreur chargement config_embeds.json : {e}")
     return DEFAULT_EMBED_DATA
+
+
+def apply_custom_brand_emojis(text: str):
+    replacements = {
+        "📦 **Amazon**": "<:amazon:1519907450403160104> **Amazon**",
+        "🛒 **Carrefour**": "<:carrefour:1519906825494073414> **Carrefour**",
+        "🏬 **Intermarché**": "<:intermarche:1519907100057276546> **Intermarché**",
+        "🏬 **Intermarche**": "<:intermarche:1519907100057276546> **Intermarche**",
+        "👕 **Zara**": "<:zara:1519907265681948773> **Zara**",
+        "💄 **Sephora**": "<:sephora:1519907492862103742> **Sephora**",
+        "🍔 **Uber Eats**": "<:ubereats:1519907186636099604> **Uber Eats**",
+        "🍎 **Apple**": "<:apple:1519906800411869204> **Apple**",
+        "🎮 **Google Play**": "<:googleplay:1519907060555186278> **Google Play**",
+        "🎮 **Steam**": "<:steam:1519907154545610873> **Steam**",
+        "🎬 **Netflix**": "<:netflix:1519907125160316928> **Netflix**",
+        "🧸 **Smyths Toys**": "<:smythstoys:1519907368429944832> **Smyths Toys**",
+        "👟 **Zalando**": "👟 **Zalando**",
+        "🧸 **King Jouet**": "<:kingjouet:1519907322783338557> **King Jouet**",
+        "🧱 **LEGO**": "<:lego:1519907470854852720> **LEGO**",
+        "👟 **Adidas**": "<:adidas:1519906784515588116> **Adidas**",
+        "👟 **Foot Locker**": "<:footlocker:1519907296342310952> **Foot Locker**",
+        "🍽️ **Deliveroo**": "<:deliveroo:1519906860356993174> **Deliveroo**",
+        "✨ **Claude**": "<:claude:1519906842006913065> **Claude**",
+        "🏠 **Airbnb**": "<:airbnb:1519906701900386344> **Airbnb**",
+        "🎮 **Xbox**": "<:xbox:1519907418836828230> **Xbox**",
+        "🎮 **PlayStation**": "<:playstation:1519906767268741200> **PlayStation**",
+        "💳 **Paysafecard**": "<:paysafecard:1519906750571085995> **Paysafecard**",
+        "📚 **Fnac**": "<:fnac:1519906718140727387> **Fnac**",
+        "🎮 **Nintendo**": "<:nintendo:1519907394157678632> **Nintendo**",
+        "👟 **Nike**": "<:nike:1519906735589167164> **Nike**",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
 
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
@@ -200,6 +256,47 @@ class OpenTicketView(discord.ui.View):
 class ProductView(OpenTicketView):
     pass
 
+
+class ValoTicketButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Ouvrir un ticket Valorant", emoji="🎮", style=discord.ButtonStyle.success)
+    async def open_valo_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        user = interaction.user
+        if guild is None:
+            await interaction.response.send_message("❌ Cette action doit etre utilisee sur un serveur.", ephemeral=True)
+            return
+        category = guild.get_channel(VALO_TICKET_CATEGORY_ID)
+        if category is None:
+            await interaction.response.send_message("❌ Categorie Valorant introuvable.", ephemeral=True)
+            return
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        }
+        ticket_channel = await guild.create_text_channel(
+            name=f"ticket-valorant-{user.name}",
+            category=category,
+            overwrites=overwrites,
+            reason=f"Ouverture ticket Valorant par {user}"
+        )
+        embed_ticket = discord.Embed(
+            title="🎫 Ticket d'achat — VALORANT",
+            description=(
+                f"Bonjour {user.mention} !\n\n"
+                "Merci de l'interet que tu portes a PinkGift.\n"
+                "Indique le pack Valorant Points souhaite dans ce ticket.\n\n"
+                f"Le <@&{STAFF_ROLE_ID}> a ete prevenu et va te prendre en charge rapidement."
+            ),
+            color=discord.Color.from_rgb(255, 192, 203)
+        )
+        embed_ticket.set_image(url=TICKET_IMAGE_URL)
+        await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
+        await interaction.response.send_message(f"✅ Ton ticket Valorant a ete cree ici : {ticket_channel.mention}", ephemeral=True)
+
 @bot.event
 async def on_ready():
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
@@ -220,10 +317,29 @@ async def send_tarifs(ctx):
     rgb = texts.get("color_rgb", [255, 192, 203])
     desc_raw = texts.get("description", [])
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
+    description = apply_custom_brand_emojis(description)
     embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
     embed.set_thumbnail(url=TARIFS_THUMBNAIL_URL)
     embed.set_image(url=TARIFS_IMAGE_URL)
     await ctx.send(embed=embed, view=OpenTicketView())
+
+@bot.command(name="valo")
+@commands.has_role(PURGE_ROLE_ID)
+async def cmd_valo(ctx):
+    texts = load_embed_texts().get("valo_embed", DEFAULT_EMBED_DATA["valo_embed"])
+    rgb = texts.get("color_rgb", [255, 192, 203])
+    desc_raw = texts.get("description", [])
+    description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
+    embed = discord.Embed(
+        title=texts.get("title", "💘 VALORANT POINTS 💘"),
+        description=description,
+        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
+    )
+    image_url = texts.get("image_url", "")
+    if image_url:
+        embed.set_image(url=image_url)
+    embed.set_footer(text="PinkGift — Valorant Points")
+    await ctx.send(embed=embed, view=ValoTicketButton())
 
 @bot.command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
@@ -493,6 +609,7 @@ async def cmd_directory(ctx):
         name="🎫 Tickets",
         value=(
             "!tarifs : envoie l'embed public avec le bouton Ouvrir un ticket.\n"
+            "!valo : envoie l'embed Valorant avec son bouton ticket.\n"
             "Bouton Ouvrir un ticket : cree un salon prive dans la categorie configuree.\n"
             "Bouton Close : ferme le ticket et retire l'acces au client."
         ),
