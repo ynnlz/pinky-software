@@ -351,6 +351,7 @@ async def on_ready():
     bot.add_view(OpenTicketView())
     bot.add_view(ValoTicketButton())
     bot.add_view(CloseTicketView())
+    await bot.change_presence(activity=discord.Game(name="🎀 PinkGift | Tickets ouverts"))
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
 
 @bot.event
