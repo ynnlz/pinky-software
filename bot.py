@@ -89,7 +89,7 @@ DEFAULT_EMBED_DATA = {
             "👟 **Foot Locker**", "🍽️ **Deliveroo**", "✨ **Claude**", "🏠 **Airbnb**", "🎮 **Xbox**",
             "🎮 **PlayStation**", "💳 **Paysafecard**", "📚 **Fnac**", "🎮 **Nintendo**", "👟 **Nike**",
             "",
-            "🎫 Choisis une marque dans le menu ci-dessous pour commander."
+            "🎫 Clique sur le bouton Commander ci-dessous pour choisir ta marque et ton montant en privé."
         ],
         "color_rgb": [255, 192, 203],
         "image_url": ""
@@ -144,6 +144,181 @@ DEFAULT_EMBED_DATA = {
     }
 }
 
+DEFAULT_EMBED_DATA.update({
+    "menu_ticket_embed": {
+        "title": "🎫 Commande — {service}",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Ta commande a bien été enregistrée. Le staff va te prendre en charge rapidement."
+        ],
+        "fields": [
+            {
+                "name": "Service sélectionné",
+                "value": "{emoji} **{service}**",
+                "inline": False
+            },
+            {
+                "name": "Montant que tu vas recevoir",
+                "value": "**{amount} €**",
+                "inline": True
+            },
+            {
+                "name": "Montant à payer (-30 %)",
+                "value": "**{paid} €**",
+                "inline": True
+            }
+        ],
+        "color_rgb": [
+            255,
+            192,
+            203
+        ],
+        "image_key": "ticket_cree"
+    },
+    "valo_ticket_bienvenue_embed": {
+        "title": "🎫 Ticket d'achat — VALORANT",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Merci de l'intérêt que tu portes à PinkGift.",
+            "Indique le pack Valorant Points souhaité dans ce ticket.",
+            "",
+            "Le staff a été prévenu et va te prendre en charge rapidement."
+        ],
+        "color_rgb": [
+            255,
+            192,
+            203
+        ],
+        "image_key": "ticket_cree"
+    },
+    "close_ticket_embed": {
+        "title": "🔒 Fermeture du ticket",
+        "description": [
+            "Utilise le bouton ci-dessous pour fermer ce ticket."
+        ],
+        "color_rgb": [
+            255,
+            192,
+            203
+        ]
+    },
+    "commande_embed": {
+        "title": "{emoji} Commande prise en charge",
+        "description": [
+            "Merci pour votre confiance {user} !"
+        ],
+        "fields": [
+            {
+                "name": "Article",
+                "value": "**{service}**",
+                "inline": True
+            },
+            {
+                "name": "Montant reçu",
+                "value": "{amount}€",
+                "inline": True
+            },
+            {
+                "name": "Payé",
+                "value": "{paid}€",
+                "inline": True
+            },
+            {
+                "name": "Code",
+                "value": "{code}",
+                "inline": False
+            }
+        ],
+        "color_rgb": [
+            46,
+            204,
+            113
+        ],
+        "image_key": "commande_confirmee",
+        "footer": "PinkGift — Ticket commande"
+    },
+    "commande_vp_embed": {
+        "title": "{emoji} Commande Valorant prise en charge",
+        "description": [
+            "Merci pour votre confiance {user} !"
+        ],
+        "fields": [
+            {
+                "name": "Produit",
+                "value": "**Valorant Points**",
+                "inline": True
+            },
+            {
+                "name": "Pack VP",
+                "value": "**{pack}**",
+                "inline": True
+            },
+            {
+                "name": "Prix",
+                "value": "{amount}€",
+                "inline": True
+            },
+            {
+                "name": "Code",
+                "value": "{code}",
+                "inline": False
+            }
+        ],
+        "color_rgb": [
+            46,
+            204,
+            113
+        ],
+        "image_key": "commande_confirmee",
+        "footer": "PinkGift — Ticket Valorant"
+    },
+    "commande_finalisee": {
+        "color_rgb": [
+            46,
+            204,
+            113
+        ],
+        "image_key": "commande_livree",
+        "footer": "PinkGift — Commande finalisée",
+        "code_field_name": "Code"
+    },
+    "commandes_embed": {
+        "title": "📜 COMMANDES STAFF — PinkGift",
+        "description": [
+            "Liste des commandes actuellement actives sur le bot."
+        ],
+        "fields": [
+            {
+                "name": "🎫 Tickets",
+                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!paiements : envoie les moyens de paiement.\n!maj_tarifs, !maj_valo, !maj_paiements : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
+                "inline": False
+            },
+            {
+                "name": "🛍️ Articles",
+                "value": "Syntaxe : !article montant\n!amazon, !carrefour, !intermarche, !zara, !sephora, !ubereats\n!apple, !googleplay, !steam, !netflix, !smyths, !zalando\n!kingjouet, !lego, !adidas, !footlocker, !deliveroo, !claude\n!airbnb, !xbox, !playstation, !paysafecard, !fnac, !nintendo, !nike, !vp",
+                "inline": False
+            },
+            {
+                "name": "✅ Finalisation",
+                "value": "!finish <code> : ajoute le code et marque la commande comme livrée.",
+                "inline": False
+            },
+            {
+                "name": "🛡️ Modération / Staff",
+                "value": "!clear <nombre>, !purge_all, !ban, !tempban, !tempmute",
+                "inline": False
+            }
+        ],
+        "color_rgb": [
+            255,
+            192,
+            203
+        ]
+    }
+})
+
 def load_embed_texts():
     if EMBED_CONFIG_URL:
         try:
@@ -185,6 +360,50 @@ def get_image_url(image_key: str, fallback_url: str = "") -> str:
     if isinstance(images, dict):
         return images.get(image_key) or fallback_url
     return fallback_url
+
+
+class SafeFormatDict(dict):
+    def __missing__(self, key):
+        return "{" + key + "}"
+
+
+def format_embed_text(value, variables=None):
+    return str(value).format_map(SafeFormatDict(variables or {}))
+
+
+def build_json_embed(embed_key, variables=None):
+    data = load_embed_texts().get(embed_key, DEFAULT_EMBED_DATA.get(embed_key, {}))
+    variables = variables or {}
+    rgb = data.get("color_rgb", [255, 192, 203])
+    desc_raw = data.get("description", [])
+    if isinstance(desc_raw, list):
+        description = "\n".join(format_embed_text(line, variables) for line in desc_raw)
+    else:
+        description = format_embed_text(desc_raw, variables)
+    embed = discord.Embed(
+        title=format_embed_text(data.get("title", ""), variables),
+        description=description or None,
+        color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2])
+    )
+    for field in data.get("fields", []):
+        embed.add_field(
+            name=format_embed_text(field.get("name", ""), variables),
+            value=format_embed_text(field.get("value", ""), variables),
+            inline=field.get("inline", False)
+        )
+    footer = data.get("footer", "")
+    if footer:
+        embed.set_footer(text=format_embed_text(footer, variables))
+    thumbnail_url = data.get("thumbnail_url", "")
+    if thumbnail_url:
+        embed.set_thumbnail(url=thumbnail_url)
+    image_url = data.get("image_url", "")
+    image_key = data.get("image_key", "")
+    if image_key:
+        image_url = get_image_url(image_key, image_url)
+    if image_url:
+        embed.set_image(url=image_url)
+    return embed
 
 
 def apply_custom_brand_emojis(text: str):
@@ -285,18 +504,13 @@ async def create_product_ticket(interaction, product_key, amount):
         return
 
     paid_amount = round(amount * 0.70, 2)
-    embed = discord.Embed(
-        title=f"🎫 Commande — {cfg['display']}",
-        description=(
-            f"Bonjour {user.mention} !\n\n"
-            f"Ta commande a bien ete enregistree. Le <@&{STAFF_ROLE_ID}> va te prendre en charge rapidement."
-        ),
-        color=discord.Color.from_rgb(255, 192, 203)
-    )
-    embed.add_field(name="Service selectionne", value=f"{cfg['emoji']} **{cfg['display']}**", inline=False)
-    embed.add_field(name="Montant que tu vas recevoir", value=f"**{amount} €**", inline=True)
-    embed.add_field(name="Montant a payer (-30 %)", value=f"**{paid_amount:g} €**", inline=True)
-    embed.set_image(url=get_image_url("ticket_cree", TICKET_IMAGE_URL))
+    embed = build_json_embed("menu_ticket_embed", {
+        "user": user.mention,
+        "service": cfg["display"],
+        "emoji": cfg["emoji"],
+        "amount": amount,
+        "paid": f"{paid_amount:g}"
+    })
     await ticket_channel.send(
         content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
         embed=embed,
@@ -355,6 +569,24 @@ class ProductSelectView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(ProductServiceSelect())
+
+
+class OrderLauncherView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Commander",
+        emoji="🛍️",
+        style=discord.ButtonStyle.success,
+        custom_id="pinkgift_start_order"
+    )
+    async def start_order(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "Choisis d'abord la marque que tu souhaites commander :",
+            view=ProductSelectView(),
+            ephemeral=True
+        )
 
 
 class CloseTicketView(discord.ui.View):
@@ -465,17 +697,7 @@ class ValoTicketButton(discord.ui.View):
             overwrites=overwrites,
             reason=f"Ouverture ticket Valorant par {user}"
         )
-        embed_ticket = discord.Embed(
-            title="🎫 Ticket d'achat — VALORANT",
-            description=(
-                f"Bonjour {user.mention} !\n\n"
-                "Merci de l'interet que tu portes a PinkGift.\n"
-                "Indique le pack Valorant Points souhaite dans ce ticket.\n\n"
-                f"Le <@&{STAFF_ROLE_ID}> a ete prevenu et va te prendre en charge rapidement."
-            ),
-            color=discord.Color.from_rgb(255, 192, 203)
-        )
-        embed_ticket.set_image(url=get_image_url("ticket_cree", TICKET_IMAGE_URL))
+        embed_ticket = build_json_embed("valo_ticket_bienvenue_embed", {"user": user.mention})
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket Valorant a ete cree ici : {ticket_channel.mention}", ephemeral=True)
 
@@ -483,6 +705,7 @@ class ValoTicketButton(discord.ui.View):
 async def on_ready():
     bot.add_view(OpenTicketView())
     bot.add_view(ProductSelectView())
+    bot.add_view(OrderLauncherView())
     bot.add_view(ValoTicketButton())
     bot.add_view(CloseTicketView())
     await bot.change_presence(activity=discord.Game(name="🎀 PinkGift | Tickets ouverts"))
@@ -565,7 +788,7 @@ async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
     await ctx.send("❌ Aucun embed correspondant trouvé dans ce salon.", delete_after=6)
 async def update_public_embeds_without_ping(ctx):
     builders = [
-        (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, ProductSelectView()),
+        (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, None),
         (["Moyens de paiement", "Paiements"], build_paiements_embed, None),
     ]
@@ -620,23 +843,19 @@ async def debug_embed(ctx, embed_name: str = "tarifs_embed"):
 @bot.command(name="close_button")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_close_button(ctx):
-    embed = discord.Embed(
-        title="🔒 Fermeture du ticket",
-        description="Utilise le bouton ci-dessous pour fermer ce ticket.",
-        color=discord.Color.from_rgb(255, 192, 203)
-    )
+    embed = build_json_embed("close_ticket_embed")
     await ctx.send(embed=embed, view=CloseTicketView())
 
 @bot.command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
     embed = build_tarifs_embed()
-    await ctx.send(content="||@everyone||", embed=embed, view=ProductSelectView())
+    await ctx.send(content="||@everyone||", embed=embed, view=OrderLauncherView())
 
 @bot.command(name="maj_tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def update_tarifs(ctx):
-    await update_last_embed(ctx, build_tarifs_embed, ["COMMANDES PINKGIFT", "CARTE CADEAUX"], ProductSelectView())
+    await update_last_embed(ctx, build_tarifs_embed, ["COMMANDES PINKGIFT", "CARTE CADEAUX"], OrderLauncherView())
 
 @bot.command(name="valo")
 @commands.has_role(PURGE_ROLE_ID)
@@ -755,13 +974,11 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
         if msg.author != bot.user and not msg.author.bot:
             client_user = msg.author
             break
-    embed = discord.Embed(title=f"{emoji} Commande prise en charge", description=f"Merci pour votre confiance {client_user.mention} !", color=discord.Color.from_rgb(46, 204, 113))
-    embed.add_field(name="Article", value=f"**{display_name}**", inline=True)
-    embed.add_field(name="Montant", value=f"{amount_paid}€", inline=True)
-    embed.add_field(name="Payé", value=f"{paid_display}€", inline=True)
-    embed.add_field(name="Code", value=f"```\n{card_code}\n```", inline=False)
-    embed.set_image(url=get_image_url("commande_confirmee", ORDER_PENDING_IMAGE_URL))
-    embed.set_footer(text="PinkSoftware — Ticket commande")
+    embed = build_json_embed("commande_embed", {
+        "emoji": emoji, "user": client_user.mention, "service": display_name,
+        "amount": amount_paid, "paid": paid_display,
+        "code": (chr(96) * 3) + "\n" + card_code + "\n" + (chr(96) * 3)
+    })
     await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
 
 
@@ -798,17 +1015,11 @@ async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
             client_user = msg.author
             break
 
-    embed = discord.Embed(
-        title=f"{emoji} Commande Valorant prise en charge",
-        description=f"Merci pour votre confiance {client_user.mention} !",
-        color=discord.Color.from_rgb(46, 204, 113)
-    )
-    embed.add_field(name="Produit", value="**Valorant Points**", inline=True)
-    embed.add_field(name="Pack VP", value=f"**{pack}**", inline=True)
-    embed.add_field(name="Prix", value=f"{amount_paid}€", inline=True)
-    embed.add_field(name="Code", value=f"```\n{code}\n```", inline=False)
-    embed.set_image(url=get_image_url("commande_confirmee", ORDER_PENDING_IMAGE_URL))
-    embed.set_footer(text="PinkSoftware — Ticket Valorant")
+    embed = build_json_embed("commande_vp_embed", {
+        "emoji": emoji, "user": client_user.mention, "pack": pack,
+        "amount": amount_paid,
+        "code": (chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3)
+    })
     await ctx.send(content=f"{client_user.mention} commande Valorant enregistree : **{pack} — {amount_paid}€**", embed=embed)
 
 @bot.command(name="amazon")
@@ -931,7 +1142,9 @@ async def cmd_finish(ctx, *, code_carte: str):
         await ctx.send("❌ Aucun embed de commande trouve dans ce salon.", delete_after=5)
         return
     old_embed = embed_message.embeds[0]
-    new_embed = discord.Embed(title=old_embed.title, description=old_embed.description, color=discord.Color.from_rgb(46, 204, 113))
+    finish_data = load_embed_texts().get("commande_finalisee", DEFAULT_EMBED_DATA["commande_finalisee"])
+    finish_rgb = finish_data.get("color_rgb", [46, 204, 113])
+    new_embed = discord.Embed(title=old_embed.title, description=old_embed.description, color=discord.Color.from_rgb(*finish_rgb))
     code_updated = False
     for field in old_embed.fields:
         if "code" in field.name.lower():
@@ -941,59 +1154,17 @@ async def cmd_finish(ctx, *, code_carte: str):
             new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
     if not code_updated:
         new_embed.add_field(name="Code", value=f"```\n{code_carte}\n```", inline=False)
-    new_embed.set_image(url=get_image_url("commande_livree", ORDER_FINISHED_IMAGE_URL))
-    new_embed.set_footer(text="PinkSoftware — Commande finalisee")
+    finish_image_key = finish_data.get("image_key", "commande_livree")
+    finish_image_url = finish_data.get("image_url", ORDER_FINISHED_IMAGE_URL)
+    new_embed.set_image(url=get_image_url(finish_image_key, finish_image_url))
+    new_embed.set_footer(text=finish_data.get("footer", "PinkGift — Commande finalisee"))
     await embed_message.edit(embed=new_embed)
     await ctx.send("✅ Commande finalisee avec succes.", delete_after=5)
 
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
-    embed = discord.Embed(
-        title="📜 COMMANDES STAFF — PinkSoftware",
-        description="Liste des commandes actuellement actives sur le bot.",
-        color=discord.Color.from_rgb(255, 192, 203)
-    )
-    embed.add_field(
-        name="🎫 Tickets",
-        value=(
-            "!tarifs : envoie l'embed public avec le bouton Ouvrir un ticket.\n"
-            "!valo : envoie l'embed Valorant avec son bouton ticket.\n"
-            "!paiements : envoie l'embed des moyens de paiement.\n"
-            "!maj_tarifs, !maj_valo, !maj_paiements : modifient les embeds deja envoyes sans ping.\n!maj_categories : met a jour tous les embeds publics et leurs images sans ping.\n"
-            "Bouton Ouvrir un ticket : cree un salon prive dans la categorie configuree.\n"
-            "Bouton Close : ferme le ticket et retire l'acces au client.\n"
-            "!close_button : renvoie un bouton Close persistant dans un ancien ticket."
-        ),
-        inline=False
-    )
-    embed.add_field(
-        name="🛍️ Articles",
-        value=(
-            "Syntaxe : !article montant\n"
-            "Exemple : !deliveroo 60 renomme le ticket en 🍽️-DELIVEROO-60€\n\n"
-            "!amazon, !carrefour, !intermarche, !zara, !sephora, !ubereats\n"
-            "!apple, !googleplay, !steam, !netflix, !smyths, !zalando\n"
-            "!kingjouet, !lego, !adidas, !footlocker, !deliveroo, !claude\n"
-            "!airbnb, !xbox, !playstation, !paysafecard, !fnac, !nintendo, !nike, !vp"
-        ),
-        inline=False
-    )
-    embed.add_field(
-        name="✅ Finalisation",
-        value="!finish <code> : remplace ou ajoute le code dans l'embed de commande.",
-        inline=False
-    )
-    embed.add_field(
-        name="🛡️ Moderation / Staff",
-        value=(
-            "!clear <nombre> : supprime des messages.\n"
-            "!purge_all : supprime les tickets.\n"
-            "!ban, !tempban, !tempmute : moderation staff."
-        ),
-        inline=False
-    )
-    await ctx.send(embed=embed)
+    await ctx.send(embed=build_json_embed("commandes_embed"))
 
 @bot.event
 async def on_command_error(ctx, error):
