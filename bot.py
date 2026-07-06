@@ -15,7 +15,17 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "67 j aime le TastyCrousty"
+    if bot.is_ready():
+        return {
+            "service": "online",
+            "discord": "connected",
+            "bot": str(bot.user)
+        }
+
+    return {
+        "service": "online",
+        "discord": "disconnected"
+    }, 503
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
