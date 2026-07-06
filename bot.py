@@ -15,17 +15,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    if bot.is_ready():
-        return {
-            "service": "online",
-            "discord": "connected",
-            "bot": str(bot.user)
-        }
-
-    return {
-        "service": "online",
-        "discord": "disconnected"
-    }, 503
+    return "67 j aime le TastyCrousty"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -99,7 +89,7 @@ DEFAULT_EMBED_DATA = {
             "👟 **Foot Locker**", "🍽️ **Deliveroo**", "✨ **Claude**", "🏠 **Airbnb**", "🎮 **Xbox**",
             "🎮 **PlayStation**", "💳 **Paysafecard**", "📚 **Fnac**", "🎮 **Nintendo**", "👟 **Nike**",
             "",
-            "🎫 Clique sur le bouton ci-dessous pour creer un ticket prive."
+            "🎫 Choisis une marque dans le menu ci-dessous pour commander."
         ],
         "color_rgb": [255, 192, 203],
         "image_url": ""
@@ -249,6 +239,124 @@ def parse_duration(duration_str: str):
     if unit == "s": return amount
     return None
 
+async def create_product_ticket(interaction, product_key, amount):
+    guild = interaction.guild
+    user = interaction.user
+    cfg = PRODUCT_CONFIG.get(product_key)
+    if guild is None or cfg is None:
+        await interaction.followup.send("❌ Impossible de creer ce ticket.", ephemeral=True)
+        return
+
+    category = guild.get_channel(TICKET_CATEGORY_ID)
+    if category is None:
+        await interaction.followup.send("❌ Categorie ticket introuvable.", ephemeral=True)
+        return
+
+    for channel in category.text_channels:
+        if channel.topic == f"pinkgift-owner:{user.id}" and not channel.name.startswith("closed-"):
+            await interaction.followup.send(f"ℹ️ Tu as deja un ticket ouvert : {channel.mention}", ephemeral=True)
+            return
+
+    staff_role = guild.get_role(STAFF_ROLE_ID)
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    }
+    if staff_role:
+        overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+    safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
+    try:
+        ticket_channel = await guild.create_text_channel(
+            name=f"ticket-{product_key.lower().replace('_', '-')}-{safe_user}"[:95],
+            category=category,
+            topic=f"pinkgift-owner:{user.id}",
+            overwrites=overwrites,
+            reason=f"Commande {cfg['display']} {amount} euros par {user}"
+        )
+    except discord.HTTPException as error:
+        if error.status == 429:
+            message = "⏳ Discord limite temporairement la creation de salons. Attends quelques minutes avant de reessayer."
+        else:
+            message = "❌ Discord a refuse la creation du ticket. Verifie les permissions du bot."
+        await interaction.followup.send(message, ephemeral=True)
+        print(f"Erreur creation ticket menu pour {user}: {error}")
+        return
+
+    paid_amount = round(amount * 0.70, 2)
+    embed = discord.Embed(
+        title=f"🎫 Commande — {cfg['display']}",
+        description=(
+            f"Bonjour {user.mention} !\n\n"
+            f"Ta commande a bien ete enregistree. Le <@&{STAFF_ROLE_ID}> va te prendre en charge rapidement."
+        ),
+        color=discord.Color.from_rgb(255, 192, 203)
+    )
+    embed.add_field(name="Service selectionne", value=f"{cfg['emoji']} **{cfg['display']}**", inline=False)
+    embed.add_field(name="Montant que tu vas recevoir", value=f"**{amount} €**", inline=True)
+    embed.add_field(name="Montant a payer (-30 %)", value=f"**{paid_amount:g} €**", inline=True)
+    embed.set_image(url=get_image_url("ticket_cree", TICKET_IMAGE_URL))
+    await ticket_channel.send(
+        content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
+        embed=embed,
+        view=CloseTicketView(user.id)
+    )
+    await interaction.followup.send(f"✅ Ton ticket a ete cree : {ticket_channel.mention}", ephemeral=True)
+
+
+class ProductAmountSelect(discord.ui.Select):
+    def __init__(self, product_key):
+        self.product_key = product_key
+        options = [
+            discord.SelectOption(label=f"Carte cadeau {amount} €", value=str(amount), emoji="💳")
+            for amount in (100, 200, 400, 800)
+        ]
+        super().__init__(placeholder="Choisis le montant de la carte", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_product_ticket(interaction, self.product_key, int(self.values[0]))
+
+
+class ProductAmountView(discord.ui.View):
+    def __init__(self, product_key):
+        super().__init__(timeout=180)
+        self.add_item(ProductAmountSelect(product_key))
+
+
+class ProductServiceSelect(discord.ui.Select):
+    def __init__(self):
+        options = []
+        for key, cfg in PRODUCT_CONFIG.items():
+            if key == "VALORANT":
+                continue
+            emoji = discord.PartialEmoji.from_str(cfg["emoji"])
+            options.append(discord.SelectOption(label=cfg["display"], value=key, emoji=emoji))
+        super().__init__(
+            placeholder="Choisis une marque",
+            custom_id="pinkgift_product_service",
+            min_values=1,
+            max_values=1,
+            options=options[:25]
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        product_key = self.values[0]
+        cfg = PRODUCT_CONFIG[product_key]
+        await interaction.response.send_message(
+            f"{cfg['emoji']} **{cfg['display']}** — choisis maintenant le montant :",
+            view=ProductAmountView(product_key),
+            ephemeral=True
+        )
+
+
+class ProductSelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(ProductServiceSelect())
+
+
 class CloseTicketView(discord.ui.View):
     def __init__(self, client_id: int = 0):
         super().__init__(timeout=None)
@@ -374,6 +482,7 @@ class ValoTicketButton(discord.ui.View):
 @bot.event
 async def on_ready():
     bot.add_view(OpenTicketView())
+    bot.add_view(ProductSelectView())
     bot.add_view(ValoTicketButton())
     bot.add_view(CloseTicketView())
     await bot.change_presence(activity=discord.Game(name="🎀 PinkGift | Tickets ouverts"))
@@ -428,14 +537,17 @@ def build_paiements_embed():
         embed.set_image(url=image_url)
     return embed
 
-async def update_last_embed(ctx, embed_builder, title_keywords):
+async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
     embed = embed_builder()
     updated_count = 0
     async for msg in ctx.channel.history(limit=100):
         if msg.author == bot.user and msg.embeds:
             title = msg.embeds[0].title or ""
             if any(keyword.lower() in title.lower() for keyword in title_keywords):
-                await msg.edit(embed=embed)
+                if view is None:
+                    await msg.edit(embed=embed)
+                else:
+                    await msg.edit(embed=embed, view=view)
                 updated_count += 1
     if updated_count:
         preview = (embed.description or "").replace("\n", " ")[:120]
@@ -453,17 +565,20 @@ async def update_last_embed(ctx, embed_builder, title_keywords):
     await ctx.send("❌ Aucun embed correspondant trouvé dans ce salon.", delete_after=6)
 async def update_public_embeds_without_ping(ctx):
     builders = [
-        (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed),
-        (["VALORANT", "VALORANT POINTS"], build_valo_embed),
-        (["Moyens de paiement", "Paiements"], build_paiements_embed),
+        (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, ProductSelectView()),
+        (["VALORANT", "VALORANT POINTS"], build_valo_embed, None),
+        (["Moyens de paiement", "Paiements"], build_paiements_embed, None),
     ]
     updated_count = 0
     async for msg in ctx.channel.history(limit=150):
         if msg.author == bot.user and msg.embeds:
             title = msg.embeds[0].title or ""
-            for keywords, builder in builders:
+            for keywords, builder, view in builders:
                 if any(keyword.lower() in title.lower() for keyword in keywords):
-                    await msg.edit(embed=builder())
+                    if view is None:
+                        await msg.edit(embed=builder())
+                    else:
+                        await msg.edit(embed=builder(), view=view)
                     updated_count += 1
                     break
     return updated_count
@@ -516,12 +631,12 @@ async def cmd_close_button(ctx):
 @commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
     embed = build_tarifs_embed()
-    await ctx.send(content="||@everyone||", embed=embed, view=OpenTicketView())
+    await ctx.send(content="||@everyone||", embed=embed, view=ProductSelectView())
 
 @bot.command(name="maj_tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def update_tarifs(ctx):
-    await update_last_embed(ctx, build_tarifs_embed, ["COMMANDES PINKGIFT", "CARTE CADEAUX"])
+    await update_last_embed(ctx, build_tarifs_embed, ["COMMANDES PINKGIFT", "CARTE CADEAUX"], ProductSelectView())
 
 @bot.command(name="valo")
 @commands.has_role(PURGE_ROLE_ID)
