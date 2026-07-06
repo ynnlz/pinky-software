@@ -2,7 +2,7 @@
   "tarifs_embed": {
     "title": "🎟️ COMMANDES PINKGIFT",
     "description": [
-      "Choisis une option dans le menu ci-dessous pour ouvrir un ticket avec le staff. Toutes les cartes cadeaux à -30%.",
+      "Clique sur Commander pour choisir ta marque puis le montant en privé. Toutes les cartes cadeaux sont à -30%.",
       "",
       "<:amazon:1519907450403160104> **Amazon**",
       "<:carrefour:1519906825494073414> **Carrefour**",
@@ -30,7 +30,7 @@
       "<:nintendo:1519907394157678632> **Nintendo**",
       "<:nike:1519906735589167164> **Nike**",
       "",
-      "🎫 Sélectionne ton choix dans le menu pour créer un ticket privé."
+      "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus de sélection seront visibles uniquement par toi."
     ],
     "color_rgb": [
       255,
@@ -69,8 +69,8 @@
       "Pour finaliser votre achat chez **PinkGift**, nous acceptons :",
       "",
       "<:paypal:1517582845315649751> **PayPal**",
-      "<:banque:1523803303253905590> **Virements bancaires**",
-      "<:litecoin:1523802843352531147> **Cryptomonnaies**",
+      "🏦 **Virements bancaires**",
+      "₿ **Cryptomonnaies**",
       "",
       "Merci d'indiquer le moyen de paiement souhaité dans le ticket."
     ],
@@ -92,7 +92,7 @@
       "",
       "Le <@&1517487833886228550> a été prévenu et va te prendre en charge rapidement.",
       "",
-      "⚠️ Les seuls moyens de paiement acceptés sont PayPal, les Virements Bancaires et le Litecoin <:litecoin:1523802843352531147> ."
+      "⚠️ Les seuls moyens de paiement acceptés sont PayPal, les Virements Bancaires et la Cryptomonnaie **Solana**."
     ],
     "color_rgb": [
       255,
@@ -105,5 +105,177 @@
     "ticket_cree": "https://media.discordapp.net/attachments/1517516946390908949/1520055535632781475/ticket_cree.jpg?ex=6a3fcd88&is=6a3e7c08&hm=09bf5c3a14e418a2771408952bd21c6ae8cb5dcaae845d7948a8e1d3690be48a&=&format=webp&width=1768&height=573",
     "commande_confirmee": "https://media.discordapp.net/attachments/1517516946390908949/1520055535162888263/commande_confirme.jpg?ex=6a3fcd88&is=6a3e7c08&hm=cedcd1942d15b1cdd2a6a2d74566d4e89872d424578caf3e26dbf98c551c3d96&=&format=webp",
     "commande_livree": "https://media.discordapp.net/attachments/1517516946390908949/1520055534819086586/finito_la_commande.jpg?ex=6a3fcd88&is=6a3e7c08&hm=cad0daca6c8a92695ba99bdf18fad7007370c597b06e1dbfe4cecb6c7d2128f1&=&format=webp"
+  },
+  "menu_ticket_embed": {
+    "title": "🎫 Commande — {service}",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Ta commande a bien été enregistrée. Le staff va te prendre en charge rapidement."
+    ],
+    "fields": [
+      {
+        "name": "Service sélectionné",
+        "value": "{emoji} **{service}**",
+        "inline": false
+      },
+      {
+        "name": "Montant que tu vas recevoir",
+        "value": "**{amount} €**",
+        "inline": true
+      },
+      {
+        "name": "Montant à payer (-30 %)",
+        "value": "**{paid} €**",
+        "inline": true
+      }
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "image_key": "ticket_cree"
+  },
+  "valo_ticket_bienvenue_embed": {
+    "title": "🎫 Ticket d'achat — VALORANT",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Merci de l'intérêt que tu portes à PinkGift.",
+      "Indique le pack Valorant Points souhaité dans ce ticket.",
+      "",
+      "Le staff a été prévenu et va te prendre en charge rapidement."
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "image_key": "ticket_cree"
+  },
+  "close_ticket_embed": {
+    "title": "🔒 Fermeture du ticket",
+    "description": [
+      "Utilise le bouton ci-dessous pour fermer ce ticket."
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ]
+  },
+  "commande_embed": {
+    "title": "{emoji} Commande prise en charge",
+    "description": [
+      "Merci pour votre confiance {user} !"
+    ],
+    "fields": [
+      {
+        "name": "Article",
+        "value": "**{service}**",
+        "inline": true
+      },
+      {
+        "name": "Montant reçu",
+        "value": "{amount}€",
+        "inline": true
+      },
+      {
+        "name": "Payé",
+        "value": "{paid}€",
+        "inline": true
+      },
+      {
+        "name": "Code",
+        "value": "{code}",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      46,
+      204,
+      113
+    ],
+    "image_key": "commande_confirmee",
+    "footer": "PinkGift — Ticket commande"
+  },
+  "commande_vp_embed": {
+    "title": "{emoji} Commande Valorant prise en charge",
+    "description": [
+      "Merci pour votre confiance {user} !"
+    ],
+    "fields": [
+      {
+        "name": "Produit",
+        "value": "**Valorant Points**",
+        "inline": true
+      },
+      {
+        "name": "Pack VP",
+        "value": "**{pack}**",
+        "inline": true
+      },
+      {
+        "name": "Prix",
+        "value": "{amount}€",
+        "inline": true
+      },
+      {
+        "name": "Code",
+        "value": "{code}",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      46,
+      204,
+      113
+    ],
+    "image_key": "commande_confirmee",
+    "footer": "PinkGift — Ticket Valorant"
+  },
+  "commande_finalisee": {
+    "color_rgb": [
+      46,
+      204,
+      113
+    ],
+    "image_key": "commande_livree",
+    "footer": "PinkGift — Commande finalisée",
+    "code_field_name": "Code"
+  },
+  "commandes_embed": {
+    "title": "📜 COMMANDES STAFF — PinkGift",
+    "description": [
+      "Liste des commandes actuellement actives sur le bot."
+    ],
+    "fields": [
+      {
+        "name": "🎫 Tickets",
+        "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!paiements : envoie les moyens de paiement.\n!maj_tarifs, !maj_valo, !maj_paiements : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
+        "inline": false
+      },
+      {
+        "name": "🛍️ Articles",
+        "value": "Syntaxe : !article montant\n!amazon, !carrefour, !intermarche, !zara, !sephora, !ubereats\n!apple, !googleplay, !steam, !netflix, !smyths, !zalando\n!kingjouet, !lego, !adidas, !footlocker, !deliveroo, !claude\n!airbnb, !xbox, !playstation, !paysafecard, !fnac, !nintendo, !nike, !vp",
+        "inline": false
+      },
+      {
+        "name": "✅ Finalisation",
+        "value": "!finish <code> : ajoute le code et marque la commande comme livrée.",
+        "inline": false
+      },
+      {
+        "name": "🛡️ Modération / Staff",
+        "value": "!clear <nombre>, !purge_all, !ban, !tempban, !tempmute",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ]
   }
 }
