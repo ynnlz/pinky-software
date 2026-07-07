@@ -21,7 +21,8 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=True, SESS
 
 @app.route('/')
 def home():
-    return "67 j aime le TastyCrousty"
+    discord_status = "désactivé" if not DISCORD_ENABLED else ("connecté" if bot.is_ready() else "temporairement hors ligne")
+    return {"service": "PinkGift", "panel": "/panel", "discord": discord_status}
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -42,6 +43,7 @@ if SUPABASE_URL.endswith("/rest/v1"):
     SUPABASE_URL = SUPABASE_URL[:-8]
 SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
+DISCORD_ENABLED = os.environ.get("DISCORD_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 
 
 
@@ -1613,7 +1615,16 @@ async def on_command_error(ctx, error):
     else:
         print(f"Erreur commande [{ctx.command}] par [{ctx.author}] : {error}")
 
-Thread(target=run_web, daemon=True).start()
-
 token_discord = os.environ.get("TOKEN")
-bot.run(token_discord)
+
+def run_discord():
+    try:
+        bot.run(token_discord)
+    except Exception as error:
+        print(f"Le bot Discord est temporairement hors ligne : {error}")
+
+if DISCORD_ENABLED:
+    Thread(target=run_discord, daemon=True).start()
+else:
+    print("Connexion Discord désactivée par DISCORD_ENABLED=false")
+run_web()
