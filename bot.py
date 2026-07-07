@@ -34,6 +34,21 @@ BOT_LOOP = None
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
+USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
+
+
+
+def supabase_request(method, path, payload=None, prefer=None):
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    if prefer:
+        headers["Prefer"] = prefer
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/{path}", data=body, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=15) as response:
+        content = response.read().decode("utf-8")
+        return json.loads(content) if content else None
 
 
 def db_connect():
@@ -43,6 +58,8 @@ def db_connect():
 
 
 def init_database():
+    if USE_SUPABASE:
+        return
     with db_connect() as db:
         db.execute("CREATE TABLE IF NOT EXISTS balances (guild_id INTEGER, user_id INTEGER, cents INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guild_id, user_id))")
         db.execute("CREATE TABLE IF NOT EXISTS balance_history (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, user_id INTEGER, delta_cents INTEGER, staff_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
@@ -50,29 +67,37 @@ def init_database():
 
 
 def get_balance(guild_id, user_id):
+    if USE_SUPABASE:
+        rows = supabase_request("GET", f"balances?guild_id=eq.{guild_id}&user_id=eq.{user_id}&select=cents")
+        return (rows[0]["cents"] if rows else 0) / 100
     with db_connect() as db:
         row = db.execute("SELECT cents FROM balances WHERE guild_id=? AND user_id=?", (guild_id, user_id)).fetchone()
         return (row["cents"] if row else 0) / 100
 
-
 def change_balance(guild_id, user_id, delta, staff_id):
     delta_cents = round(float(delta) * 100)
+    if USE_SUPABASE:
+        result = supabase_request("POST", "rpc/change_balance", {"p_guild_id": guild_id, "p_user_id": user_id, "p_delta_cents": delta_cents, "p_staff_id": staff_id})
+        return float(result) / 100
     with db_connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT cents FROM balances WHERE guild_id=? AND user_id=?", (guild_id, user_id)).fetchone()
         current = row["cents"] if row else 0
         updated = current + delta_cents
-        if updated < 0:
-            raise ValueError("Solde insuffisant")
+        if updated < 0: raise ValueError("Solde insuffisant")
         db.execute("INSERT INTO balances(guild_id,user_id,cents) VALUES(?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET cents=excluded.cents", (guild_id, user_id, updated))
         db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
         return updated / 100
 
-
 def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid):
+    values = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "user_id": user_id, "service": service, "amount": amount, "paid": paid}
+    if USE_SUPABASE:
+        rows = supabase_request("POST", "orders", values, "return=representation")
+        return rows[0]["id"]
     with db_connect() as db:
-        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid) VALUES(?,?,?,?,?,?,?)", (guild_id, channel_id, message_id, user_id, service, amount, paid))
+        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid) VALUES(?,?,?,?,?,?,?)", tuple(values.values()))
         return cursor.lastrowid
+
 
 
 init_database()
@@ -1331,8 +1356,11 @@ def panel_logout():
 @app.route("/panel")
 @panel_required
 def panel_orders():
-    with db_connect() as db:
-        orders = db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 300").fetchall()
+    if USE_SUPABASE:
+        orders = supabase_request("GET", "orders?select=*&order=id.desc&limit=300")
+    else:
+        with db_connect() as db:
+            orders = db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 300").fetchall()
     return render_template_string(PANEL_TEMPLATE, orders=orders)
 
 
@@ -1365,8 +1393,12 @@ async def deliver_order_from_panel(order, code):
 @panel_required
 def panel_set_code(order_id):
     code = request.form.get("code", "").strip()
-    with db_connect() as db:
-        order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if USE_SUPABASE:
+        rows = supabase_request("GET", f"orders?id=eq.{order_id}&select=*")
+        order = rows[0] if rows else None
+    else:
+        with db_connect() as db:
+            order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not order or not code:
         flash("Commande ou code invalide.")
         return redirect(url_for("panel_orders"))
@@ -1375,8 +1407,11 @@ def panel_set_code(order_id):
         return redirect(url_for("panel_orders"))
     try:
         asyncio.run_coroutine_threadsafe(deliver_order_from_panel(order, code), BOT_LOOP).result(timeout=25)
-        with db_connect() as db:
-            db.execute("UPDATE orders SET code=?, status='done', updated_at=CURRENT_TIMESTAMP WHERE id=?", (code, order_id))
+        if USE_SUPABASE:
+            supabase_request("PATCH", f"orders?id=eq.{order_id}", {"code": code, "status": "done", "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+        else:
+            with db_connect() as db:
+                db.execute("UPDATE orders SET code=?, status='done', updated_at=CURRENT_TIMESTAMP WHERE id=?", (code, order_id))
         flash(f"Commande #{order_id} livrée et embed Discord mis à jour.")
     except Exception as error:
         flash(f"Erreur Discord : {error}")
