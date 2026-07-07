@@ -296,7 +296,8 @@
   "balance_embed": {
     "title": "💰 Solde PinkGift",
     "description": [
-      "Consulte ton solde personnel ou ouvre un ticket pour le recharger.",
+      "Consulte ton solde personnel ou ouvre un ticket pour le recharger. ",
+      "Les moyens de paiements sont disponibles ici **https://discord.com/channels/1418873020004438018/1517525795193491587/1520013678420693023** !",
       "Les informations de chaque client restent privées."
     ],
     "color_rgb": [
