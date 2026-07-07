@@ -70,7 +70,11 @@ def init_database():
     with db_connect() as db:
         db.execute("CREATE TABLE IF NOT EXISTS balances (guild_id INTEGER, user_id INTEGER, cents INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guild_id, user_id))")
         db.execute("CREATE TABLE IF NOT EXISTS balance_history (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, user_id INTEGER, delta_cents INTEGER, staff_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
-        db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, channel_id INTEGER, message_id INTEGER, user_id INTEGER, service TEXT, amount REAL, paid REAL, status TEXT DEFAULT 'pending', code TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, channel_id INTEGER, message_id INTEGER, user_id INTEGER, service TEXT, amount REAL, paid REAL, status TEXT DEFAULT 'pending', code TEXT DEFAULT '', user_name TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        try:
+            db.execute("ALTER TABLE orders ADD COLUMN user_name TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
 
 
 def get_balance(guild_id, user_id):
@@ -96,13 +100,13 @@ def change_balance(guild_id, user_id, delta, staff_id):
         db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
         return updated / 100
 
-def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid):
-    values = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "user_id": user_id, "service": service, "amount": amount, "paid": paid}
+def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid, user_name=""):
+    values = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "user_id": user_id, "service": service, "amount": amount, "paid": paid, "user_name": user_name}
     if USE_SUPABASE:
         rows = supabase_request("POST", "orders", values, "return=representation")
         return rows[0]["id"]
     with db_connect() as db:
-        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid) VALUES(?,?,?,?,?,?,?)", tuple(values.values()))
+        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid,user_name) VALUES(?,?,?,?,?,?,?,?)", tuple(values.values()))
         return cursor.lastrowid
 
 
@@ -565,6 +569,11 @@ async def create_product_ticket(interaction, product_key, amount):
         for channel in category.text_channels:
             if channel.topic == f"pinkgift-owner:{user.id}" and not channel.name.startswith("closed-"):
                 ticket_channel = channel
+                if not channel.name.startswith("🎁"):
+                    try:
+                        await channel.edit(name=f"🎁・{user.display_name}"[:95])
+                    except discord.HTTPException:
+                        pass
                 break
         if ticket_channel is None:
             staff_role = guild.get_role(STAFF_ROLE_ID)
@@ -577,7 +586,7 @@ async def create_product_ticket(interaction, product_key, amount):
                 overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
             safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
             try:
-                ticket_channel = await guild.create_text_channel(name=f"commandes-{safe_user}"[:95], category=category, topic=f"pinkgift-owner:{user.id}", overwrites=overwrites, reason=f"Commandes PinkGift de {user}")
+                ticket_channel = await guild.create_text_channel(name=f"🎁・{user.display_name}"[:95], category=category, topic=f"pinkgift-owner:{user.id}", overwrites=overwrites, reason=f"Commandes PinkGift de {user}")
             except discord.HTTPException as error:
                 await interaction.followup.send("⏳ Discord ne peut pas créer le ticket actuellement. Réessaie dans quelques minutes.", ephemeral=True)
                 print(f"Erreur création ticket commande pour {user}: {error}")
@@ -603,10 +612,104 @@ async def create_product_ticket(interaction, product_key, amount):
             print(f"Erreur envoi commande pour {user}: {error}")
             return
         try:
-            save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount)
+            save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount, user.name)
         except Exception as error:
             print(f"Erreur sauvegarde commande panneau: {error}")
         await interaction.followup.send(f"✅ Commande ajoutée dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+
+
+VALO_PACKS = {15: "2925 VP", 20: "4325 VP", 30: "3650 VP", 40: "5350 VP", 45: "8900 VP", 60: "8700 VP"}
+
+
+async def create_valo_order(interaction, price):
+    guild = interaction.guild
+    user = interaction.user
+    pack = VALO_PACKS.get(price)
+    if guild is None or pack is None:
+        await interaction.followup.send("❌ Pack Valorant invalide.", ephemeral=True)
+        return
+    lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
+    async with lock:
+        current_balance = get_balance(guild.id, user.id)
+        if current_balance < price:
+            await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{price} €**, ton solde est de **{current_balance:.2f} €**.", ephemeral=True)
+            return
+        category = guild.get_channel(VALO_TICKET_CATEGORY_ID)
+        if category is None:
+            await interaction.followup.send("❌ Catégorie Valorant introuvable.", ephemeral=True)
+            return
+        ticket_channel = None
+        for channel in category.text_channels:
+            if channel.topic == f"pinkgift-valorant-owner:{user.id}" and not channel.name.startswith("closed-"):
+                ticket_channel = channel
+                if not channel.name.startswith("🎁"):
+                    try:
+                        await channel.edit(name=f"🎁・{user.display_name}"[:95])
+                    except discord.HTTPException:
+                        pass
+                break
+        if ticket_channel is None:
+            staff_role = guild.get_role(STAFF_ROLE_ID)
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            }
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            try:
+                ticket_channel = await guild.create_text_channel(name=f"🎁・{user.display_name}"[:95], category=category, topic=f"pinkgift-valorant-owner:{user.id}", overwrites=overwrites, reason=f"Commande Valorant de {user}")
+            except discord.HTTPException as error:
+                await interaction.followup.send("⏳ Discord ne peut pas créer le ticket actuellement.", ephemeral=True)
+                print(f"Erreur création ticket Valorant pour {user}: {error}")
+                return
+        try:
+            remaining_balance = change_balance(guild.id, user.id, -price, bot.user.id if bot.user else 0)
+        except Exception as error:
+            print(f"Erreur débit Valorant de {user}: {error}")
+            await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
+            return
+        code_pending = (chr(96) * 3) + "\nEn attente...\n" + (chr(96) * 3)
+        embed = build_json_embed("commande_vp_embed", {"emoji": "<:vp:1519915966476320901>", "user": user.mention, "pack": pack, "amount": price, "code": code_pending, "balance": f"{remaining_balance:.2f}"})
+        try:
+            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+        except Exception as error:
+            try:
+                change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
+            except Exception as refund_error:
+                print(f"ERREUR REMBOURSEMENT VALORANT {user}: {refund_error}")
+            await interaction.followup.send("❌ L'envoi a échoué. Le montant a été recrédité.", ephemeral=True)
+            return
+        try:
+            save_order(guild.id, ticket_channel.id, order_message.id, user.id, "Valorant " + pack, price, price, user.name)
+        except Exception as error:
+            print(f"Erreur sauvegarde commande Valorant: {error}")
+        await interaction.followup.send(f"✅ **{pack}** commandés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+
+
+class ValoPackSelect(discord.ui.Select):
+    def __init__(self):
+        options = [discord.SelectOption(label=f"{pack} — {price} €", value=str(price), emoji=discord.PartialEmoji.from_str("<:vp:1519915966476320901>")) for price, pack in sorted(VALO_PACKS.items())]
+        super().__init__(placeholder="Choisis ton pack Valorant Points", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_valo_order(interaction, int(self.values[0]))
+
+
+class ValoPackView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(ValoPackSelect())
+
+
+class ValoOrderLauncherView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Commander des VP", emoji="<:vp:1519915966476320901>", style=discord.ButtonStyle.success, custom_id="pinkgift_start_valo_order")
+    async def start_valo_order(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Choisis ton pack Valorant Points :", view=ValoPackView(), ephemeral=True)
 
 
 class ProductAmountSelect(discord.ui.Select):
@@ -836,6 +939,7 @@ async def on_ready():
     bot.add_view(OrderLauncherView())
     bot.add_view(BalanceView())
     bot.add_view(ValoTicketButton())
+    bot.add_view(ValoOrderLauncherView())
     bot.add_view(CloseTicketView())
     await bot.change_presence(activity=discord.Game(name="🎀 PinkGift | Tickets ouverts"))
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
@@ -918,7 +1022,7 @@ async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
 async def update_public_embeds_without_ping(ctx):
     builders = [
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
-        (["VALORANT", "VALORANT POINTS"], build_valo_embed, None),
+        (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["Moyens de paiement", "Paiements"], build_paiements_embed, None),
     ]
     updated_count = 0
@@ -990,12 +1094,12 @@ async def update_tarifs(ctx):
 @commands.has_role(PURGE_ROLE_ID)
 async def cmd_valo(ctx):
     embed = build_valo_embed()
-    await ctx.send(content="||@everyone||", embed=embed, view=ValoTicketButton())
+    await ctx.send(content="||@everyone||", embed=embed, view=ValoOrderLauncherView())
 
 @bot.command(name="maj_valo")
 @commands.has_role(PURGE_ROLE_ID)
 async def update_valo(ctx):
-    await update_last_embed(ctx, build_valo_embed, ["VALORANT", "VALORANT POINTS"])
+    await update_last_embed(ctx, build_valo_embed, ["VALORANT", "VALORANT POINTS"], ValoOrderLauncherView())
 
 @bot.command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
@@ -1138,7 +1242,7 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
         "code": (chr(96) * 3) + "\n" + card_code + "\n" + (chr(96) * 3)
     })
     order_message = await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
-    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, display_name, amount_paid, paid_display)
+    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, display_name, amount_paid, paid_display, client_user.name)
 
 
 async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
@@ -1180,7 +1284,7 @@ async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
         "code": (chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3)
     })
     order_message = await ctx.send(content=f"{client_user.mention} commande Valorant enregistree : **{pack} — {amount_paid}€**", embed=embed)
-    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, "Valorant " + pack, amount_paid, amount_paid)
+    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, "Valorant " + pack, amount_paid, amount_paid, client_user.name)
 
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
@@ -1343,13 +1447,14 @@ def panel_required(view):
 
 
 PANEL_TEMPLATE = """
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Commandes</title>
-<style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:22px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:24px}main{padding:24px 5%}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:12px;border-bottom:1px solid #332630}th{color:#ff9dce}input{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:180px}button{background:#e8509a;color:white;border:0;padding:10px 14px;cursor:pointer}.done{color:#74d99f}.pending{color:#ffd27b}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
-<header><h1>PinkGift — Commandes</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Panel</title>
+<style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}nav{display:flex;gap:8px;margin-bottom:18px}.tab{color:#e8dce3;text-decoration:none;padding:10px 14px;border:1px solid #4c3543}.tab.active{background:#e8509a;color:white;border-color:#e8509a}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}input{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:160px}button{background:#e8509a;color:white;border:0;padding:10px 13px;cursor:pointer}.delete{background:#9d294b;margin-left:5px}.done{color:#74d99f}.pending{color:#ffd27b}.muted{color:#aa98a4;font-size:12px}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
+<header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
+<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
-<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Code cadeau</th></tr></thead><tbody>
-{% for order in orders %}<tr><td>#{{ order.id }}</td><td>{{ order.user_id }}</td><td>{{ order.service }}</td><td>{{ order.amount }} €</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}"><input name="code" required placeholder="Code de la carte" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}
-</tbody></table></main></body></html>"""
+{% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><strong>{{ client.user_name }}</strong></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
+{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ order.id }}</td><td>{{ order.user_name or order.user_id }}</td><td>{{ order.service }}</td><td>{{ order.amount }} €</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
+</main></body></html>"""
 
 
 LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift</title><style>body{background:#0e0d11;color:#fff;font-family:Arial;display:grid;place-items:center;height:100vh;margin:0}form{background:#19151b;padding:28px;border:1px solid #4a3040;width:min(340px,80vw)}h1{color:#ff8fc8}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:10px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d}button{background:#e8509a;color:#fff;border:0}</style></head><body><form method="post"><h1>PinkGift Staff</h1><input type="password" name="password" placeholder="Mot de passe" required><button>Connexion</button></form></body></html>"""
@@ -1369,6 +1474,7 @@ def panel_login():
         session.clear()
         session["panel_auth"] = panel_auth_token()
         session["panel_login_at"] = time.time()
+        session["csrf"] = secrets.token_urlsafe(24)
         return redirect(url_for("panel_orders"))
     return render_template_string(LOGIN_TEMPLATE)
 
@@ -1382,17 +1488,34 @@ def panel_logout():
 @app.route("/panel")
 @panel_required
 def panel_orders():
+    tab = request.args.get("tab", "orders")
+    if tab not in ("orders", "valorant", "clients"):
+        tab = "orders"
     try:
         if USE_SUPABASE:
-            orders = supabase_request("GET", "orders?select=*&order=id.desc&limit=300")
+            orders = supabase_request("GET", "orders?select=*&order=id.desc&limit=1000")
         else:
             with db_connect() as db:
-                orders = db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 300").fetchall()
+                orders = [dict(row) for row in db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 1000").fetchall()]
     except Exception as error:
         print(f"Erreur chargement panneau : {error}")
-        flash("Connexion à Supabase impossible. Vérifie SUPABASE_URL, SUPABASE_SECRET_KEY et le script SQL.")
+        flash("Connexion à Supabase impossible. Vérifie la configuration et le script SQL.")
         orders = []
-    return render_template_string(PANEL_TEMPLATE, orders=orders)
+    all_orders = orders
+    if tab == "valorant":
+        orders = [order for order in all_orders if str(order.get("service", "")).lower().startswith("valorant")]
+    elif tab == "orders":
+        orders = [order for order in all_orders if not str(order.get("service", "")).lower().startswith("valorant")]
+    clients_by_id = {}
+    for order in all_orders:
+        user_id = order.get("user_id")
+        client = clients_by_id.setdefault(user_id, {"user_id": user_id, "user_name": order.get("user_name") or str(user_id), "order_count": 0, "total_spent": 0.0})
+        if order.get("user_name"):
+            client["user_name"] = order["user_name"]
+        client["order_count"] += 1
+        client["total_spent"] += float(order.get("paid") or 0)
+    clients = sorted(clients_by_id.values(), key=lambda item: item["total_spent"], reverse=True)
+    return render_template_string(PANEL_TEMPLATE, orders=orders, clients=clients, tab=tab)
 
 
 async def deliver_order_from_panel(order, code):
@@ -1420,9 +1543,37 @@ async def deliver_order_from_panel(order, code):
     await message.edit(embed=updated)
 
 
+def valid_panel_csrf():
+    expected = session.get("csrf", "")
+    received = request.form.get("csrf", "")
+    return bool(expected and secrets.compare_digest(expected, received))
+
+
+@app.post("/panel/orders/<int:order_id>/delete")
+@panel_required
+def panel_delete_order(order_id):
+    if not valid_panel_csrf():
+        flash("Session invalide. Recharge la page.")
+        return redirect(url_for("panel_orders"))
+    try:
+        if USE_SUPABASE:
+            supabase_request("DELETE", f"orders?id=eq.{order_id}")
+        else:
+            with db_connect() as db:
+                db.execute("DELETE FROM orders WHERE id=?", (order_id,))
+        flash(f"Commande #{order_id} supprimée du panel.")
+    except Exception as error:
+        print(f"Erreur suppression commande {order_id}: {error}")
+        flash("La suppression a échoué.")
+    return redirect(url_for("panel_orders"))
+
+
 @app.post("/panel/orders/<int:order_id>/code")
 @panel_required
 def panel_set_code(order_id):
+    if not valid_panel_csrf():
+        flash("Session invalide. Recharge la page.")
+        return redirect(url_for("panel_orders"))
     code = request.form.get("code", "").strip()
     if USE_SUPABASE:
         rows = supabase_request("GET", f"orders?id=eq.{order_id}&select=*")
