@@ -34,14 +34,18 @@ BOT_LOOP = None
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+if SUPABASE_URL.endswith("/rest/v1"):
+    SUPABASE_URL = SUPABASE_URL[:-8]
 SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 
 
 
 def supabase_request(method, path, payload=None, prefer=None):
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    headers = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
+    if SUPABASE_KEY.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {SUPABASE_KEY}"
     if prefer:
         headers["Prefer"] = prefer
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -1356,11 +1360,16 @@ def panel_logout():
 @app.route("/panel")
 @panel_required
 def panel_orders():
-    if USE_SUPABASE:
-        orders = supabase_request("GET", "orders?select=*&order=id.desc&limit=300")
-    else:
-        with db_connect() as db:
-            orders = db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 300").fetchall()
+    try:
+        if USE_SUPABASE:
+            orders = supabase_request("GET", "orders?select=*&order=id.desc&limit=300")
+        else:
+            with db_connect() as db:
+                orders = db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 300").fetchall()
+    except Exception as error:
+        print(f"Erreur chargement panneau : {error}")
+        flash("Connexion à Supabase impossible. Vérifie SUPABASE_URL, SUPABASE_SECRET_KEY et le script SQL.")
+        orders = []
     return render_template_string(PANEL_TEMPLATE, orders=orders)
 
 
