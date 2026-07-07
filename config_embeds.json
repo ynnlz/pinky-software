@@ -128,6 +128,11 @@
         "name": "Montant à payer (-30 %)",
         "value": "**{paid} €**",
         "inline": true
+      },
+      {
+        "name": "Solde restant",
+        "value": "**{balance} €**",
+        "inline": false
       }
     ],
     "color_rgb": [
@@ -286,9 +291,8 @@
   "balance_embed": {
     "title": "💰 Solde PinkGift",
     "description": [
-      "{user}, ton solde actuel est de **{balance} €**.",
-      "",
-      "Utilise les boutons ci-dessous pour consulter ou recharger ton solde."
+      "Consulte ton solde personnel ou ouvre un ticket pour le recharger.",
+      "Les informations de chaque client restent privées."
     ],
     "color_rgb": [
       255,
