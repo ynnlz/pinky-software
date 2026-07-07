@@ -1444,6 +1444,8 @@ def panel_required(view):
         if not valid_token or time.time() - login_time > 1800:
             session.clear()
             return redirect(url_for("panel_login"))
+        if not session.get("csrf"):
+            session["csrf"] = secrets.token_urlsafe(24)
         return view(*args, **kwargs)
     return wrapped
 
@@ -1454,8 +1456,8 @@ PANEL_TEMPLATE = """
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
 <nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
-{% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><strong>{{ client.user_name }}</strong></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
-{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ order.id }}</td><td>{{ order.user_name or order.user_id }}</td><td>{{ order.service }}</td><td>{{ order.amount }} €</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
+{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ order.id }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.amount }} €</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
 
@@ -1508,6 +1510,12 @@ def panel_orders():
         orders = [order for order in all_orders if str(order.get("service", "")).lower().startswith("valorant")]
     elif tab == "orders":
         orders = [order for order in all_orders if not str(order.get("service", "")).lower().startswith("valorant")]
+    for order in all_orders:
+        if not order.get("user_name"):
+            guild = bot.get_guild(int(order.get("guild_id") or 0))
+            member = guild.get_member(int(order.get("user_id") or 0)) if guild else None
+            if member:
+                order["user_name"] = member.name
     clients_by_id = {}
     for order in all_orders:
         user_id = order.get("user_id")
@@ -1559,15 +1567,19 @@ def panel_delete_order(order_id):
         return redirect(url_for("panel_orders"))
     try:
         if USE_SUPABASE:
-            supabase_request("DELETE", f"orders?id=eq.{order_id}")
+            deleted = supabase_request("DELETE", f"orders?id=eq.{order_id}", prefer="return=representation")
+            if not deleted:
+                raise RuntimeError("Aucune ligne supprimée. Vérifie que SUPABASE_SECRET_KEY est bien une clé secrète et non la clé publishable/anon.")
         else:
             with db_connect() as db:
-                db.execute("DELETE FROM orders WHERE id=?", (order_id,))
+                cursor = db.execute("DELETE FROM orders WHERE id=?", (order_id,))
+                if cursor.rowcount == 0:
+                    raise RuntimeError("Commande introuvable")
         flash(f"Commande #{order_id} supprimée du panel.")
     except Exception as error:
         print(f"Erreur suppression commande {order_id}: {error}")
         flash("La suppression a échoué.")
-    return redirect(url_for("panel_orders"))
+    return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders")))
 
 
 @app.post("/panel/orders/<int:order_id>/code")
