@@ -230,6 +230,11 @@
         "name": "Code",
         "value": "{code}",
         "inline": false
+      },
+      {
+        "name": "Solde restant",
+        "value": "**{balance} €**",
+        "inline": false
       }
     ],
     "color_rgb": [
