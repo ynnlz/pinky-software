@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from flask import Flask
+from flask import Flask, request, session, redirect, url_for, render_template_string, flash
 from threading import Thread
 import os
 import json
@@ -10,8 +10,12 @@ import re
 import time
 import urllib.request
 import urllib.error
+import sqlite3
+import secrets
+from functools import wraps
 
 app = Flask('')
+app.secret_key = os.environ.get("PANEL_SECRET_KEY", os.urandom(32))
 
 @app.route('/')
 def home():
@@ -21,12 +25,58 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-Thread(target=run_web).start()
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+BOT_LOOP = None
+
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
+PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
+
+
+def db_connect():
+    connection = sqlite3.connect(DB_PATH, timeout=20)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def init_database():
+    with db_connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS balances (guild_id INTEGER, user_id INTEGER, cents INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guild_id, user_id))")
+        db.execute("CREATE TABLE IF NOT EXISTS balance_history (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, user_id INTEGER, delta_cents INTEGER, staff_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, channel_id INTEGER, message_id INTEGER, user_id INTEGER, service TEXT, amount REAL, paid REAL, status TEXT DEFAULT 'pending', code TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+
+
+def get_balance(guild_id, user_id):
+    with db_connect() as db:
+        row = db.execute("SELECT cents FROM balances WHERE guild_id=? AND user_id=?", (guild_id, user_id)).fetchone()
+        return (row["cents"] if row else 0) / 100
+
+
+def change_balance(guild_id, user_id, delta, staff_id):
+    delta_cents = round(float(delta) * 100)
+    with db_connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT cents FROM balances WHERE guild_id=? AND user_id=?", (guild_id, user_id)).fetchone()
+        current = row["cents"] if row else 0
+        updated = current + delta_cents
+        if updated < 0:
+            raise ValueError("Solde insuffisant")
+        db.execute("INSERT INTO balances(guild_id,user_id,cents) VALUES(?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET cents=excluded.cents", (guild_id, user_id, updated))
+        db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
+        return updated / 100
+
+
+def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid):
+    with db_connect() as db:
+        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid) VALUES(?,?,?,?,?,?,?)", (guild_id, channel_id, message_id, user_id, service, amount, paid))
+        return cursor.lastrowid
+
+
+init_database()
+
 
 PAYPAL_EMOJI = "<:paypal:1517582845315649751>"
 STAFF_ROLE_ID = 1517487833886228550
@@ -34,6 +84,7 @@ PURGE_ROLE_ID = 1517495087825817691
 NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
 VALO_TICKET_CATEGORY_ID = 1519913523440779404
+BALANCE_CATEGORY_ID = int(os.environ.get("BALANCE_CATEGORY_ID", TICKET_CATEGORY_ID))
 CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
 EMBED_CONFIG_URL = os.environ.get("EMBED_CONFIG_URL", "https://raw.githubusercontent.com/ynnlz/pinky-software/main/config_embeds.json")
 TICKET_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517071217332424/Ticket_cree.png?ex=6a369167&is=6a353fe7&hm=ce29c76d8a92020dd78c32b4ef8c7a7a41338df78ecf9455f930b9c0dcb1bd08&=&format=webp&quality=lossless"
@@ -319,6 +370,8 @@ DEFAULT_EMBED_DATA.update({
     }
 })
 
+DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde PinkGift","description":["{user}, ton solde actuel est de **{balance} €**.","","Utilise les boutons ci-dessous pour consulter ou recharger ton solde."],"color_rgb":[255,192,203]},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
+
 def load_embed_texts():
     if EMBED_CONFIG_URL:
         try:
@@ -511,11 +564,12 @@ async def create_product_ticket(interaction, product_key, amount):
         "amount": amount,
         "paid": f"{paid_amount:g}"
     })
-    await ticket_channel.send(
+    order_message = await ticket_channel.send(
         content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
         embed=embed,
         view=CloseTicketView(user.id)
     )
+    save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount)
     await interaction.followup.send(f"✅ Ton ticket a ete cree : {ticket_channel.mention}", ephemeral=True)
 
 
@@ -587,6 +641,42 @@ class OrderLauncherView(discord.ui.View):
             view=ProductSelectView(),
             ephemeral=True
         )
+
+
+class BalanceView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Voir mon solde", emoji="💰", style=discord.ButtonStyle.secondary, custom_id="pinkgift_view_balance")
+    async def view_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        balance = get_balance(interaction.guild.id, interaction.user.id)
+        await interaction.response.send_message(f"💰 Ton solde PinkGift est de **{balance:.2f} €**.", ephemeral=True)
+
+    @discord.ui.button(label="Recharger mon solde", emoji="➕", style=discord.ButtonStyle.success, custom_id="pinkgift_recharge_balance")
+    async def recharge_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        guild = interaction.guild
+        user = interaction.user
+        category = guild.get_channel(BALANCE_CATEGORY_ID) if guild else None
+        if category is None:
+            await interaction.followup.send("❌ Catégorie de recharge introuvable.", ephemeral=True)
+            return
+        for channel in category.text_channels:
+            if channel.topic == f"pinkgift-balance:{user.id}" and not channel.name.startswith("closed-"):
+                await interaction.followup.send(f"ℹ️ Ton ticket de recharge existe déjà : {channel.mention}", ephemeral=True)
+                return
+        staff_role = guild.get_role(STAFF_ROLE_ID)
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        }
+        if staff_role:
+            overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+        channel = await guild.create_text_channel(name=f"solde-{user.name}"[:95], category=category, topic=f"pinkgift-balance:{user.id}", overwrites=overwrites, reason=f"Recharge solde de {user}")
+        embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": f"{get_balance(guild.id, user.id):.2f}"})
+        await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+        await interaction.followup.send(f"✅ Ticket de recharge créé : {channel.mention}", ephemeral=True)
 
 
 class CloseTicketView(discord.ui.View):
@@ -703,9 +793,12 @@ class ValoTicketButton(discord.ui.View):
 
 @bot.event
 async def on_ready():
+    global BOT_LOOP
+    BOT_LOOP = asyncio.get_running_loop()
     bot.add_view(OpenTicketView())
     bot.add_view(ProductSelectView())
     bot.add_view(OrderLauncherView())
+    bot.add_view(BalanceView())
     bot.add_view(ValoTicketButton())
     bot.add_view(CloseTicketView())
     await bot.change_presence(activity=discord.Game(name="🎀 PinkGift | Tickets ouverts"))
@@ -935,6 +1028,37 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
     await ctx.send(f"🔇 {member.name} mute pendant {duration}.")
 
+@bot.command(name="solde")
+async def cmd_solde(ctx):
+    balance = get_balance(ctx.guild.id, ctx.author.id)
+    embed = build_json_embed("balance_embed", {"user": ctx.author.mention, "balance": f"{balance:.2f}"})
+    await ctx.send(embed=embed, view=BalanceView())
+
+
+@bot.command(name="ajouter_solde")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
+    if montant <= 0:
+        await ctx.send("❌ Le montant doit être positif.", delete_after=5)
+        return
+    balance = change_balance(ctx.guild.id, member.id, montant, ctx.author.id)
+    await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
+
+
+@bot.command(name="retirer_solde")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
+    if montant <= 0:
+        await ctx.send("❌ Le montant doit être positif.", delete_after=5)
+        return
+    try:
+        balance = change_balance(ctx.guild.id, member.id, -montant, ctx.author.id)
+    except ValueError:
+        await ctx.send("❌ Solde insuffisant.", delete_after=5)
+        return
+    await ctx.send(f"✅ **{montant:.2f} €** retirés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
+
+
 @bot.command(name="paiements")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_paiements(ctx):
@@ -979,7 +1103,8 @@ async def process_order(ctx, product_name, amount_paid: int, card_code: str = "E
         "amount": amount_paid, "paid": paid_display,
         "code": (chr(96) * 3) + "\n" + card_code + "\n" + (chr(96) * 3)
     })
-    await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
+    order_message = await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
+    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, display_name, amount_paid, paid_display)
 
 
 async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
@@ -1020,7 +1145,8 @@ async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
         "amount": amount_paid,
         "code": (chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3)
     })
-    await ctx.send(content=f"{client_user.mention} commande Valorant enregistree : **{pack} — {amount_paid}€**", embed=embed)
+    order_message = await ctx.send(content=f"{client_user.mention} commande Valorant enregistree : **{pack} — {amount_paid}€**", embed=embed)
+    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, "Valorant " + pack, amount_paid, amount_paid)
 
 @bot.command(name="amazon")
 @commands.has_role(STAFF_ROLE_ID)
@@ -1166,6 +1292,97 @@ async def cmd_finish(ctx, *, code_carte: str):
 async def cmd_directory(ctx):
     await ctx.send(embed=build_json_embed("commandes_embed"))
 
+def panel_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("panel_authenticated"):
+            return redirect(url_for("panel_login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+PANEL_TEMPLATE = """
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Commandes</title>
+<style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:22px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:24px}main{padding:24px 5%}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:12px;border-bottom:1px solid #332630}th{color:#ff9dce}input{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:180px}button{background:#e8509a;color:white;border:0;padding:10px 14px;cursor:pointer}.done{color:#74d99f}.pending{color:#ffd27b}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
+<header><h1>PinkGift — Commandes</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
+{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
+<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Code cadeau</th></tr></thead><tbody>
+{% for order in orders %}<tr><td>#{{ order.id }}</td><td>{{ order.user_id }}</td><td>{{ order.service }}</td><td>{{ order.amount }} €</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}"><input name="code" required placeholder="Code de la carte" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}
+</tbody></table></main></body></html>"""
+
+
+LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift</title><style>body{background:#0e0d11;color:#fff;font-family:Arial;display:grid;place-items:center;height:100vh;margin:0}form{background:#19151b;padding:28px;border:1px solid #4a3040;width:min(340px,80vw)}h1{color:#ff8fc8}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:10px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d}button{background:#e8509a;color:#fff;border:0}</style></head><body><form method="post"><h1>PinkGift Staff</h1><input type="password" name="password" placeholder="Mot de passe" required><button>Connexion</button></form></body></html>"""
+
+
+@app.route("/panel/login", methods=["GET", "POST"])
+def panel_login():
+    if request.method == "POST" and PANEL_PASSWORD and secrets.compare_digest(request.form.get("password", ""), PANEL_PASSWORD):
+        session["panel_authenticated"] = True
+        return redirect(url_for("panel_orders"))
+    return render_template_string(LOGIN_TEMPLATE)
+
+
+@app.route("/panel/logout")
+def panel_logout():
+    session.clear()
+    return redirect(url_for("panel_login"))
+
+
+@app.route("/panel")
+@panel_required
+def panel_orders():
+    with db_connect() as db:
+        orders = db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 300").fetchall()
+    return render_template_string(PANEL_TEMPLATE, orders=orders)
+
+
+async def deliver_order_from_panel(order, code):
+    channel = bot.get_channel(order["channel_id"])
+    if channel is None:
+        channel = await bot.fetch_channel(order["channel_id"])
+    message = await channel.fetch_message(order["message_id"])
+    if not message.embeds:
+        raise RuntimeError("Embed Discord introuvable")
+    old = message.embeds[0]
+    finish_data = load_embed_texts().get("commande_finalisee", DEFAULT_EMBED_DATA["commande_finalisee"])
+    rgb = finish_data.get("color_rgb", [46, 204, 113])
+    updated = discord.Embed(title=old.title, description=old.description, color=discord.Color.from_rgb(*rgb))
+    code_found = False
+    for field in old.fields:
+        if "code" in field.name.lower():
+            updated.add_field(name=finish_data.get("code_field_name", field.name), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
+            code_found = True
+        else:
+            updated.add_field(name=field.name, value=field.value, inline=field.inline)
+    if not code_found:
+        updated.add_field(name=finish_data.get("code_field_name", "Code"), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
+    updated.set_image(url=get_image_url(finish_data.get("image_key", "commande_livree"), finish_data.get("image_url", ORDER_FINISHED_IMAGE_URL)))
+    updated.set_footer(text=finish_data.get("footer", "PinkGift — Commande finalisée"))
+    await message.edit(embed=updated)
+
+
+@app.post("/panel/orders/<int:order_id>/code")
+@panel_required
+def panel_set_code(order_id):
+    code = request.form.get("code", "").strip()
+    with db_connect() as db:
+        order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not order or not code:
+        flash("Commande ou code invalide.")
+        return redirect(url_for("panel_orders"))
+    if BOT_LOOP is None:
+        flash("Le bot Discord n'est pas encore prêt.")
+        return redirect(url_for("panel_orders"))
+    try:
+        asyncio.run_coroutine_threadsafe(deliver_order_from_panel(order, code), BOT_LOOP).result(timeout=25)
+        with db_connect() as db:
+            db.execute("UPDATE orders SET code=?, status='done', updated_at=CURRENT_TIMESTAMP WHERE id=?", (code, order_id))
+        flash(f"Commande #{order_id} livrée et embed Discord mis à jour.")
+    except Exception as error:
+        flash(f"Erreur Discord : {error}")
+    return redirect(url_for("panel_orders"))
+
+
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRole):
@@ -1178,6 +1395,8 @@ async def on_command_error(ctx, error):
         await ctx.send("❌ Format invalide. Exemple : !deliveroo 60", delete_after=5)
     else:
         print(f"Erreur commande [{ctx.command}] par [{ctx.author}] : {error}")
+
+Thread(target=run_web, daemon=True).start()
 
 token_discord = os.environ.get("TOKEN")
 bot.run(token_discord)
