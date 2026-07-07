@@ -33,6 +33,7 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 BOT_LOOP = None
+ORDER_LOCKS = {}
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
@@ -547,61 +548,65 @@ async def create_product_ticket(interaction, product_key, amount):
     user = interaction.user
     cfg = PRODUCT_CONFIG.get(product_key)
     if guild is None or cfg is None:
-        await interaction.followup.send("❌ Impossible de creer ce ticket.", ephemeral=True)
+        await interaction.followup.send("❌ Impossible de créer cette commande.", ephemeral=True)
         return
-
-    category = guild.get_channel(TICKET_CATEGORY_ID)
-    if category is None:
-        await interaction.followup.send("❌ Categorie ticket introuvable.", ephemeral=True)
-        return
-
-    for channel in category.text_channels:
-        if channel.topic == f"pinkgift-owner:{user.id}" and not channel.name.startswith("closed-"):
-            await interaction.followup.send(f"ℹ️ Tu as deja un ticket ouvert : {channel.mention}", ephemeral=True)
-            return
-
-    staff_role = guild.get_role(STAFF_ROLE_ID)
-    overwrites = {
-        guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-    }
-    if staff_role:
-        overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-
-    safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
-    try:
-        ticket_channel = await guild.create_text_channel(
-            name=f"ticket-{product_key.lower().replace('_', '-')}-{safe_user}"[:95],
-            category=category,
-            topic=f"pinkgift-owner:{user.id}",
-            overwrites=overwrites,
-            reason=f"Commande {cfg['display']} {amount} euros par {user}"
-        )
-    except discord.HTTPException as error:
-        if error.status == 429:
-            message = "⏳ Discord limite temporairement la creation de salons. Attends quelques minutes avant de reessayer."
-        else:
-            message = "❌ Discord a refuse la creation du ticket. Verifie les permissions du bot."
-        await interaction.followup.send(message, ephemeral=True)
-        print(f"Erreur creation ticket menu pour {user}: {error}")
-        return
-
     paid_amount = round(amount * 0.70, 2)
-    embed = build_json_embed("menu_ticket_embed", {
-        "user": user.mention,
-        "service": cfg["display"],
-        "emoji": cfg["emoji"],
-        "amount": amount,
-        "paid": f"{paid_amount:g}"
-    })
-    order_message = await ticket_channel.send(
-        content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
-        embed=embed,
-        view=CloseTicketView(user.id)
-    )
-    save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount)
-    await interaction.followup.send(f"✅ Ton ticket a ete cree : {ticket_channel.mention}", ephemeral=True)
+    lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
+    async with lock:
+        current_balance = get_balance(guild.id, user.id)
+        if current_balance < paid_amount:
+            await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{paid_amount:g} €**, ton solde est de **{current_balance:.2f} €**. Utilise le panneau !solde pour le recharger.", ephemeral=True)
+            return
+        category = guild.get_channel(TICKET_CATEGORY_ID)
+        if category is None:
+            await interaction.followup.send("❌ Catégorie ticket introuvable.", ephemeral=True)
+            return
+        ticket_channel = None
+        for channel in category.text_channels:
+            if channel.topic == f"pinkgift-owner:{user.id}" and not channel.name.startswith("closed-"):
+                ticket_channel = channel
+                break
+        if ticket_channel is None:
+            staff_role = guild.get_role(STAFF_ROLE_ID)
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            }
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
+            try:
+                ticket_channel = await guild.create_text_channel(name=f"commandes-{safe_user}"[:95], category=category, topic=f"pinkgift-owner:{user.id}", overwrites=overwrites, reason=f"Commandes PinkGift de {user}")
+            except discord.HTTPException as error:
+                await interaction.followup.send("⏳ Discord ne peut pas créer le ticket actuellement. Réessaie dans quelques minutes.", ephemeral=True)
+                print(f"Erreur création ticket commande pour {user}: {error}")
+                return
+        try:
+            remaining_balance = change_balance(guild.id, user.id, -paid_amount, bot.user.id if bot.user else 0)
+        except Exception as error:
+            print(f"Erreur débit solde de {user}: {error}")
+            await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
+            return
+        embed = build_json_embed("menu_ticket_embed", {
+            "user": user.mention, "service": cfg["display"], "emoji": cfg["emoji"],
+            "amount": amount, "paid": f"{paid_amount:g}", "balance": f"{remaining_balance:.2f}"
+        })
+        try:
+            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+        except Exception as error:
+            try:
+                change_balance(guild.id, user.id, paid_amount, bot.user.id if bot.user else 0)
+            except Exception as refund_error:
+                print(f"ERREUR REMBOURSEMENT {user}: {refund_error}")
+            await interaction.followup.send("❌ L'envoi de la commande a échoué. Le montant a été recrédité.", ephemeral=True)
+            print(f"Erreur envoi commande pour {user}: {error}")
+            return
+        try:
+            save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount)
+        except Exception as error:
+            print(f"Erreur sauvegarde commande panneau: {error}")
+        await interaction.followup.send(f"✅ Commande ajoutée dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
 
 
 class ProductAmountSelect(discord.ui.Select):
@@ -1061,9 +1066,7 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
 
 @bot.command(name="solde")
 async def cmd_solde(ctx):
-    balance = get_balance(ctx.guild.id, ctx.author.id)
-    embed = build_json_embed("balance_embed", {"user": ctx.author.mention, "balance": f"{balance:.2f}"})
-    await ctx.send(embed=embed, view=BalanceView())
+    await ctx.send(embed=build_json_embed("balance_embed"), view=BalanceView())
 
 
 @bot.command(name="ajouter_solde")
