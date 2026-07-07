@@ -21,8 +21,8 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=True, SESS
 
 @app.route('/')
 def home():
-    discord_status = "désactivé" if not DISCORD_ENABLED else ("connecté" if bot.is_ready() else "temporairement hors ligne")
-    return {"service": "PinkGift", "panel": "/panel", "discord": discord_status}
+    discord_status = "désactivé" if not DISCORD_ENABLED else ("connecté" if bot.is_ready() else DISCORD_STATE)
+    return {"service": "PinkGift", "panel": "/panel", "discord": discord_status, "derniere_erreur": DISCORD_LAST_ERROR}
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -34,6 +34,8 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 BOT_LOOP = None
+DISCORD_STATE = "démarrage"
+DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
@@ -1630,9 +1632,51 @@ async def on_command_error(ctx, error):
 token_discord = os.environ.get("TOKEN")
 
 def run_discord():
+    global DISCORD_STATE, DISCORD_LAST_ERROR
+    if not token_discord:
+        DISCORD_STATE = "token manquant"
+        DISCORD_LAST_ERROR = "La variable TOKEN est absente."
+        return
+    while True:
+        try:
+            DISCORD_STATE = "connexion en cours"
+            request_discord = urllib.request.Request(
+                "https://discord.com/api/v10/users/@me",
+                headers={"Authorization": f"Bot {token_discord}", "User-Agent": "PinkGiftBot/1.0"}
+            )
+            with urllib.request.urlopen(request_discord, timeout=20):
+                pass
+            break
+        except urllib.error.HTTPError as error:
+            if error.code == 401:
+                DISCORD_STATE = "token invalide"
+                DISCORD_LAST_ERROR = "Discord refuse le token (401)."
+                print(DISCORD_LAST_ERROR)
+                return
+            if error.code == 429:
+                wait_seconds = 900
+                try:
+                    payload = json.loads(error.read().decode("utf-8"))
+                    wait_seconds = max(60, min(int(float(payload.get("retry_after", 900))) + 5, 1800))
+                except Exception:
+                    pass
+                DISCORD_STATE = f"bloqué par Discord, nouvel essai dans {wait_seconds // 60} min"
+                DISCORD_LAST_ERROR = "Discord 429 Too Many Requests"
+                print(f"{DISCORD_LAST_ERROR}. Nouvel essai dans {wait_seconds} secondes.")
+                time.sleep(wait_seconds)
+                continue
+            DISCORD_LAST_ERROR = f"Discord HTTP {error.code}"
+        except Exception as error:
+            DISCORD_LAST_ERROR = str(error)[:200]
+        DISCORD_STATE = "nouvel essai dans 1 min"
+        print(f"Connexion Discord impossible : {DISCORD_LAST_ERROR}")
+        time.sleep(60)
     try:
+        DISCORD_STATE = "connexion à la passerelle Discord"
         bot.run(token_discord)
     except Exception as error:
+        DISCORD_STATE = "temporairement hors ligne"
+        DISCORD_LAST_ERROR = str(error)[:200]
         print(f"Le bot Discord est temporairement hors ligne : {error}")
 
 if DISCORD_ENABLED:
