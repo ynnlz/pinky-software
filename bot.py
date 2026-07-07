@@ -12,10 +12,12 @@ import urllib.request
 import urllib.error
 import sqlite3
 import secrets
+import hashlib
 from functools import wraps
 
 app = Flask('')
 app.secret_key = os.environ.get("PANEL_SECRET_KEY", os.urandom(32))
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE="Lax")
 
 @app.route('/')
 def home():
@@ -1321,10 +1323,17 @@ async def cmd_finish(ctx, *, code_carte: str):
 async def cmd_directory(ctx):
     await ctx.send(embed=build_json_embed("commandes_embed"))
 
+def panel_auth_token():
+    return hashlib.sha256(("pinkgift-panel:" + PANEL_PASSWORD).encode("utf-8")).hexdigest()
+
+
 def panel_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("panel_authenticated"):
+        login_time = session.get("panel_login_at", 0)
+        valid_token = PANEL_PASSWORD and secrets.compare_digest(session.get("panel_auth", ""), panel_auth_token())
+        if not valid_token or time.time() - login_time > 1800:
+            session.clear()
             return redirect(url_for("panel_login"))
         return view(*args, **kwargs)
     return wrapped
@@ -1343,10 +1352,20 @@ PANEL_TEMPLATE = """
 LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift</title><style>body{background:#0e0d11;color:#fff;font-family:Arial;display:grid;place-items:center;height:100vh;margin:0}form{background:#19151b;padding:28px;border:1px solid #4a3040;width:min(340px,80vw)}h1{color:#ff8fc8}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:10px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d}button{background:#e8509a;color:#fff;border:0}</style></head><body><form method="post"><h1>PinkGift Staff</h1><input type="password" name="password" placeholder="Mot de passe" required><button>Connexion</button></form></body></html>"""
 
 
+@app.after_request
+def secure_panel_response(response):
+    if request.path.startswith("/panel"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @app.route("/panel/login", methods=["GET", "POST"])
 def panel_login():
     if request.method == "POST" and PANEL_PASSWORD and secrets.compare_digest(request.form.get("password", ""), PANEL_PASSWORD):
-        session["panel_authenticated"] = True
+        session.clear()
+        session["panel_auth"] = panel_auth_token()
+        session["panel_login_at"] = time.time()
         return redirect(url_for("panel_orders"))
     return render_template_string(LOGIN_TEMPLATE)
 
