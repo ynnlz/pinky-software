@@ -270,6 +270,11 @@
         "name": "🛡️ Modération / Staff",
         "value": "!clear <nombre>, !purge_all, !ban, !tempban, !tempmute",
         "inline": false
+      },
+      {
+        "name": "💰 Solde",
+        "value": "!solde : affiche le panneau de solde.\n!ajouter_solde @membre montant\n!retirer_solde @membre montant",
+        "inline": false
       }
     ],
     "color_rgb": [
@@ -277,5 +282,33 @@
       192,
       203
     ]
+  },
+  "balance_embed": {
+    "title": "💰 Solde PinkGift",
+    "description": [
+      "{user}, ton solde actuel est de **{balance} €**.",
+      "",
+      "Utilise les boutons ci-dessous pour consulter ou recharger ton solde."
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ]
+  },
+  "balance_ticket_embed": {
+    "title": "➕ Recharge de solde",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Ton solde actuel est de **{balance} €**.",
+      "Indique au staff le montant et le moyen de paiement souhaités."
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "image_key": "paiement_securise"
   }
 }
