@@ -2,35 +2,48 @@
   "tarifs_embed": {
     "title": "🎟️ COMMANDES PINKGIFT",
     "description": [
-      "Clique sur Commander pour choisir ta marque puis le montant en privé. Toutes les cartes cadeaux sont à -30%.",
+      "Clique sur **Commander** pour choisir ta marque puis le montant en privé. Cartes cadeaux à **-30 %**, sauf Uber Eats avec une grille fixe.",
       "",
-      "<:amazon:1519907450403160104> **Amazon**",
-      "<:carrefour:1519906825494073414> **Carrefour**",
-      "<:intermarche:1519907100057276546> **Intermarché**",
-      "<:zara:1519907265681948773> **Zara**",
-      "<:sephora:1519907492862103742> **Sephora**",
-      "<:ubereats:1519907186636099604> **Uber Eats**",
-      "<:apple:1519906800411869204> **Apple**",
-      "<:googleplay:1519907060555186278> **Google Play**",
-      "<:steam:1519907154545610873> **Steam**",
-      "<:netflix:1519907125160316928> **Netflix**",
-      "<:smythstoys:1519907368429944832> **Smyths Toys**",
-      "<:zalando:1519907231812816906> **Zalando**",
-      "<:kingjouet:1519907322783338557> **King Jouet**",
-      "<:lego:1519907470854852720> **LEGO**",
-      "<:adidas:1519906784515588116> **Adidas**",
-      "<:footlocker:1519907296342310952> **Foot Locker**",
-      "<:deliveroo:1519906860356993174> **Deliveroo**",
-      "<:claude:1519906842006913065> **Claude**",
-      "<:airbnb:1519906701900386344> **Airbnb**",
-      "<:xbox:1519907418836828230> **Xbox**",
-      "<:playstation:1519906767268741200> **PlayStation**",
-      "<:paysafecard:1519906750571085995> **Paysafecard**",
-      "<:fnac:1519906718140727387> **Fnac**",
-      "<:nintendo:1519907394157678632> **Nintendo**",
-      "<:nike:1519906735589167164> **Nike**",
+      "🎮 **GAMING**",
+      "🎮 **Google Play**",
+      "🎮 **Steam**",
+      "💎 **Discord Nitro**",
+      "🎮 **PlayStation**",
+      "🎮 **Nintendo**",
       "",
-      "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus de sélection seront visibles uniquement par toi."
+      "👗 **MODE & BEAUTÉ**",
+      "👕 **Zara**",
+      "💄 **Sephora**",
+      "👟 **Zalando**",
+      "👟 **Adidas**",
+      "👟 **Foot Locker**",
+      "👗 **Shein**",
+      "👟 **Nike**",
+      "",
+      "🍔 **FOOD & LIVRAISON**",
+      "🍔 **Uber Eats**",
+      "🍽️ **Deliveroo**",
+      "",
+      "🛍️ **SHOPPING & COURSES**",
+      "📦 **Amazon**",
+      "🛒 **Carrefour**",
+      "🏬 **Intermarché**",
+      "🍎 **Apple**",
+      "🛍️ **Joybuy**",
+      "",
+      "🧸 **JOUETS**",
+      "🧸 **Smyths Toys**",
+      "🧱 **LEGO**",
+      "",
+      "🚗 **VOYAGE & AUTO**",
+      "🚗 **Tesla**",
+      "🏠 **Airbnb**",
+      "",
+      "💳 **PRÉPAYÉ**",
+      "💳 **Skrill**",
+      "💳 **Paysafecard**",
+      "",
+      "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus sont visibles uniquement par toi."
     ],
     "color_rgb": [
       255,
@@ -42,19 +55,21 @@
   "valo_embed": {
     "title": "💘 VALORANT POINTS 💘",
     "description": [
-      "Choisis ton montant. 💞",
+      "Choisis ta région puis ton pack. Le prix est débité automatiquement de ton solde PinkGift.",
       "",
       "🇪🇺 **Europe**",
-      "<:vp:1519915966476320901> **3650 VP** — `30€`",
-      "<:vp:1519915966476320901> **5350 VP** — `40€`",
-      "<:vp:1519915966476320901> **8700 VP** — `60€`",
+      "<:vp:1519915966476320901> **3650 VP** — 30€",
+      "<:vp:1519915966476320901> **5350 VP** — 40€",
+      "<:vp:1519915966476320901> **8700 VP** — 60€",
+      "<:vp:1519915966476320901> **11000 VP** — 80€",
       "",
       "🇹🇷 **Turquie**",
-      "<:vp:1519915966476320901> **2925 VP** — `15€`",
-      "<:vp:1519915966476320901> **4325 VP** — `20€`",
-      "<:vp:1519915966476320901> **8900 VP** — `45€`",
+      "<:vp:1519915966476320901> **2925 VP** — 15€",
+      "<:vp:1519915966476320901> **4325 VP** — 20€",
+      "<:vp:1519915966476320901> **8900 VP** — 45€",
+      "<:vp:1519915966476320901> **11000 VP** — 55€",
       "",
-      "🛒 Pour commander : ouvre un ticket."
+      "🛒 Clique sur **Commander des VP**, puis choisis ta région et ton pack en privé."
     ],
     "color_rgb": [
       255,
@@ -183,7 +198,7 @@
       },
       {
         "name": "Montant reçu",
-        "value": "{amount}€",
+        "value": "{received}",
         "inline": true
       },
       {
@@ -214,6 +229,11 @@
       {
         "name": "Produit",
         "value": "**Valorant Points**",
+        "inline": true
+      },
+      {
+        "name": "Région",
+        "value": "**{region}**",
         "inline": true
       },
       {
@@ -258,32 +278,32 @@
   "commandes_embed": {
     "title": "📜 COMMANDES STAFF — PinkGift",
     "description": [
-      "Liste des commandes actuellement actives sur le bot."
+      "Les commandes clients et les livraisons sont désormais entièrement automatisées."
     ],
     "fields": [
       {
-        "name": "🎫 Tickets",
-        "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!paiements : envoie les moyens de paiement.\n!maj_tarifs, !maj_valo, !maj_paiements : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
+        "name": "🎫 Panneaux publics",
+        "value": "!tarifs — cartes cadeaux et commande automatique\n!valo — Valorant Points par région\n!solde — consultation et recharge du solde\n!paiements — moyens de paiement",
         "inline": false
       },
       {
-        "name": "🛍️ Articles",
-        "value": "Syntaxe : !article montant\n!amazon, !carrefour, !intermarche, !zara, !sephora, !ubereats\n!apple, !googleplay, !steam, !netflix, !smyths, !zalando\n!kingjouet, !lego, !adidas, !footlocker, !deliveroo, !claude\n!airbnb, !xbox, !playstation, !paysafecard, !fnac, !nintendo, !nike, !vp",
+        "name": "🔄 Mise à jour des embeds",
+        "value": "!maj_tarifs\n!maj_valo\n!maj_paiements\n!maj_categories",
         "inline": false
       },
       {
-        "name": "✅ Finalisation",
-        "value": "!finish <code> : ajoute le code et marque la commande comme livrée.",
+        "name": "💰 Gestion des soldes",
+        "value": "!ajouter_solde @membre montant\n!retirer_solde @membre montant",
         "inline": false
       },
       {
-        "name": "🛡️ Modération / Staff",
-        "value": "!clear <nombre>, !purge_all, !ban, !tempban, !tempmute",
+        "name": "🎁 Commandes et livraisons",
+        "value": "Les commandes sont créées depuis les menus et débitées automatiquement.\nLes codes cadeaux et suppressions sont gérés depuis le panneau web.",
         "inline": false
       },
       {
-        "name": "💰 Solde",
-        "value": "!solde : affiche le panneau de solde.\n!ajouter_solde @membre montant\n!retirer_solde @membre montant",
+        "name": "🛡️ Modération",
+        "value": "!clear nombre · !purge_all · !ban · !tempban · !tempmute · !close_button",
         "inline": false
       }
     ],
@@ -296,8 +316,7 @@
   "balance_embed": {
     "title": "💰 Solde PinkGift",
     "description": [
-      "Consulte ton solde personnel ou ouvre un ticket pour le recharger. ",
-      "Les moyens de paiements sont disponibles ici **https://discord.com/channels/1418873020004438018/1517525795193491587/1520013678420693023** !",
+      "Consulte ton solde personnel ou ouvre un ticket pour le recharger.",
       "Les informations de chaque client restent privées."
     ],
     "color_rgb": [
@@ -320,5 +339,41 @@
       203
     ],
     "image_key": "paiement_securise"
+  },
+  "uber_eats_ticket_embed": {
+    "title": "🍔 Commande — UBER EATS",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Ta commande Uber Eats a bien été enregistrée selon la grille fixe. Le staff va te prendre en charge rapidement."
+    ],
+    "fields": [
+      {
+        "name": "Service sélectionné",
+        "value": "{emoji} **{service}**",
+        "inline": false
+      },
+      {
+        "name": "Prix payé",
+        "value": "**{paid} €**",
+        "inline": true
+      },
+      {
+        "name": "Drop estimé",
+        "value": "**{drop}**",
+        "inline": true
+      },
+      {
+        "name": "Solde restant",
+        "value": "**{balance} €**",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "image_key": "ticket_cree"
   }
 }
