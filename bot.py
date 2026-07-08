@@ -140,7 +140,7 @@ ORDER_FINISHED_IMAGE_URL = "https://media.discordapp.net/attachments/15175169463
 PRODUCT_CONFIG = {
     "GOOGLE_PLAY": {"display": "GOOGLE PLAY", "emoji": "<:googleplay:1519907060555186278>", "emoji_ch": "🎮"},
     "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "🎮"},
-    "DISCORD_NITRO": {"display": "DISCORD NITRO", "emoji": "💎", "emoji_ch": "💎"},
+    "DISCORD_NITRO": {"display": "DISCORD NITRO", "emoji": "<:nitroboost:1524439577656561846>", "emoji_ch": "💎"},
     "PLAYSTATION": {"display": "PLAYSTATION", "emoji": "<:playstation:1519906767268741200>", "emoji_ch": "🎮"},
     "NINTENDO": {"display": "NINTENDO", "emoji": "<:nintendo:1519907394157678632>", "emoji_ch": "🎮"},
     "ZARA": {"display": "ZARA", "emoji": "<:zara:1519907265681948773>", "emoji_ch": "👕"},
@@ -148,7 +148,7 @@ PRODUCT_CONFIG = {
     "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "👟"},
     "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "👟"},
     "FOOT_LOCKER": {"display": "FOOT LOCKER", "emoji": "<:footlocker:1519907296342310952>", "emoji_ch": "👟"},
-    "SHEIN": {"display": "SHEIN", "emoji": "👗", "emoji_ch": "👗"},
+    "SHEIN": {"display": "SHEIN", "emoji": "<:shein:1524439283367411793>", "emoji_ch": "👗"},
     "NIKE": {"display": "NIKE", "emoji": "<:nike:1519906735589167164>", "emoji_ch": "👟"},
     "UBEREATS": {"display": "UBER EATS", "emoji": "<:ubereats:1519907186636099604>", "emoji_ch": "🍔"},
     "DELIVEROO": {"display": "DELIVEROO", "emoji": "<:deliveroo:1519906860356993174>", "emoji_ch": "🍽️"},
@@ -156,17 +156,18 @@ PRODUCT_CONFIG = {
     "CARREFOUR": {"display": "CARREFOUR", "emoji": "<:carrefour:1519906825494073414>", "emoji_ch": "🛒"},
     "INTERMARCHE": {"display": "INTERMARCHE", "emoji": "<:intermarche:1519907100057276546>", "emoji_ch": "🏬"},
     "APPLE": {"display": "APPLE", "emoji": "<:apple:1519906800411869204>", "emoji_ch": "🍎"},
-    "JOYBUY": {"display": "JOYBUY", "emoji": "🛍️", "emoji_ch": "🛍️"},
+    "JOYBUY": {"display": "JOYBUY", "emoji": "<:Joybuy:1524439360638943242>", "emoji_ch": "🛍️"},
     "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smythstoys:1519907368429944832>", "emoji_ch": "🧸"},
     "LEGO": {"display": "LEGO", "emoji": "<:lego:1519907470854852720>", "emoji_ch": "🧱"},
-    "TESLA": {"display": "TESLA", "emoji": "🚗", "emoji_ch": "🚗"},
+    "TESLA": {"display": "TESLA", "emoji": "<:tesla:1524439914811359293>", "emoji_ch": "🚗"},
     "AIRBNB": {"display": "AIRBNB", "emoji": "<:airbnb:1519906701900386344>", "emoji_ch": "🏠"},
-    "SKRILL": {"display": "SKRILL", "emoji": "💳", "emoji_ch": "💳"},
+    "SKRILL": {"display": "SKRILL", "emoji": "<:skrill:1524440310489288755>", "emoji_ch": "💳"},
     "PAYSAFECARD": {"display": "PAYSAFECARD", "emoji": "<:paysafecard:1519906750571085995>", "emoji_ch": "💳"},
     "VALORANT": {"display": "VALORANT", "emoji": "🎮", "emoji_ch": "🎮"},
 }
 
 UBEREATS_PACKS = {20: "28–42", 65: "85–115", 125: "165–225", 350: "501–680"}
+NITRO_PRICE = 8
 
 DEFAULT_EMBED_DATA = {
     "images": {
@@ -178,15 +179,28 @@ DEFAULT_EMBED_DATA = {
     "tarifs_embed": {
         "title": "🎟️ COMMANDES PINKGIFT",
         "description": [
-            "Choisis une option puis clique sur le bouton pour ouvrir un ticket avec le staff. Toutes les cartes cadeaux à -30%.",
+            "Clique sur **Commander** pour choisir ton produit en privé. Cartes cadeaux à **-30 %**, sauf Uber Eats avec sa grille fixe et Discord Nitro à **8 €**.",
             "",
-            "📦 **Amazon**", "🛒 **Carrefour**", "🏬 **Intermarché**", "👕 **Zara**", "💄 **Sephora**",
-            "🍔 **Uber Eats**", "🍎 **Apple**", "🎮 **Google Play**", "🎮 **Steam**", "🎬 **Netflix**",
-            "🧸 **Smyths Toys**", "<:zalando:1519907231812816906> **Zalando**", "🧸 **King Jouet**", "🧱 **LEGO**", "👟 **Adidas**",
-            "👟 **Foot Locker**", "🍽️ **Deliveroo**", "✨ **Claude**", "🏠 **Airbnb**", "🎮 **Xbox**",
-            "🎮 **PlayStation**", "💳 **Paysafecard**", "📚 **Fnac**", "🎮 **Nintendo**", "👟 **Nike**",
+            "🎮 **GAMING**",
+            "<:googleplay:1519907060555186278> **Google Play**", " <:steam:1519907154545610873> **Steam**",
+            "<:nitroboost:1524439577656561846> **Discord Nitro — 8 €**", "<:playstation:1519906767268741200> **PlayStation**", "<:nintendo:1519907394157678632> **Nintendo**",
             "",
-            "🎫 Clique sur le bouton Commander ci-dessous pour choisir ta marque et ton montant en privé."
+            "👗 **MODE & BEAUTÉ**",
+            "<:zara:1519907265681948773> **Zara**", "<:sephora:1519907492862103742> **Sephora**", "<:zalando:1519907231812816906> **Zalando**",
+            "<:adidas:1519906784515588116> **Adidas**", "<:footlocker:1519907296342310952> **Foot Locker**", "<:shein:1524439283367411793> **Shein**", "<:nike:1519906735589167164> **Nike**",
+            "",
+            "🍔 **FOOD & LIVRAISON**", "<:ubereats:1519907186636099604> **Uber Eats**", "<:deliveroo:1519906860356993174> **Deliveroo**",
+            "",
+            "🛍️ **SHOPPING & COURSES**", "<:amazon:1519907450403160104> **Amazon**", "<:carrefour:1519906825494073414> **Carrefour**",
+            "<:intermarche:1519907100057276546> **Intermarché**", "<:apple:1519906800411869204> **Apple**", "<:Joybuy:1524439360638943242> **Joybuy**",
+            "",
+            "🧸 **JOUETS**", "<:smythstoys:1519907368429944832> **Smyths Toys**", "<:lego:1519907470854852720> **LEGO**",
+            "",
+            "🚗 **VOYAGE & AUTO**", "<:tesla:1524439914811359293> **Tesla**", "<:airbnb:1519906701900386344> **Airbnb**",
+            "",
+            "💳 **PRÉPAYÉ**", "<:skrill:1524440310489288755> **Skrill**", "<:paysafecard:1519906750571085995> **Paysafecard**",
+            "",
+            "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus sont visibles uniquement par toi."
         ],
         "color_rgb": [255, 192, 203],
         "image_url": ""
@@ -271,6 +285,17 @@ DEFAULT_EMBED_DATA.update({
             192,
             203
         ],
+        "image_key": "ticket_cree"
+    },
+    "nitro_ticket_embed": {
+        "title": "<:nitroboost:1524439577656561846> Commande — DISCORD NITRO",
+        "description": ["Bonjour {user} !", "", "Ta commande Discord Nitro a bien été enregistrée. Le staff va te prendre en charge rapidement."],
+        "fields": [
+            {"name": "Produit", "value": "{emoji} **{service}**", "inline": False},
+            {"name": "Prix", "value": "**{paid} €**", "inline": True},
+            {"name": "Solde restant", "value": "**{balance} €**", "inline": True}
+        ],
+        "color_rgb": [255, 192, 203],
         "image_key": "ticket_cree"
     },
     "valo_ticket_bienvenue_embed": {
@@ -566,12 +591,15 @@ async def create_product_ticket(interaction, product_key, amount):
     if guild is None or cfg is None:
         await interaction.followup.send("❌ Impossible de créer cette commande.", ephemeral=True)
         return
+    if product_key == "DISCORD_NITRO":
+        amount = NITRO_PRICE
     uber_drop = UBEREATS_PACKS.get(amount) if product_key == "UBEREATS" else None
     if product_key == "UBEREATS" and uber_drop is None:
         await interaction.followup.send("❌ Pack Uber Eats invalide.", ephemeral=True)
         return
-    paid_amount = float(amount) if product_key == "UBEREATS" else round(amount * 0.70, 2)
-    received_display = f"{uber_drop} € estimés" if uber_drop else f"{amount} €"
+    fixed_price = product_key in {"UBEREATS", "DISCORD_NITRO"}
+    paid_amount = float(amount) if fixed_price else round(amount * 0.70, 2)
+    received_display = "Discord Nitro" if product_key == "DISCORD_NITRO" else (f"{uber_drop} € estimés" if uber_drop else f"{amount} €")
     lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
     async with lock:
         current_balance = get_balance(guild.id, user.id)
@@ -614,7 +642,12 @@ async def create_product_ticket(interaction, product_key, amount):
             print(f"Erreur débit solde de {user}: {error}")
             await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
             return
-        embed_key = "uber_eats_ticket_embed" if product_key == "UBEREATS" else "menu_ticket_embed"
+        if product_key == "UBEREATS":
+            embed_key = "uber_eats_ticket_embed"
+        elif product_key == "DISCORD_NITRO":
+            embed_key = "nitro_ticket_embed"
+        else:
+            embed_key = "menu_ticket_embed"
         embed = build_json_embed(embed_key, {
             "user": user.mention, "service": cfg["display"], "emoji": cfg["emoji"],
             "amount": amount, "paid": f"{paid_amount:g}", "drop": received_display, "balance": f"{remaining_balance:.2f}"
@@ -630,7 +663,7 @@ async def create_product_ticket(interaction, product_key, amount):
             print(f"Erreur envoi commande pour {user}: {error}")
             return
         try:
-            save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount, user.name, received_display if product_key == "UBEREATS" else "")
+            save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount, user.name, received_display if product_key in {"UBEREATS", "DISCORD_NITRO"} else "")
         except Exception as error:
             print(f"Erreur sauvegarde commande panneau: {error}")
         await interaction.followup.send(f"✅ Commande ajoutée dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
@@ -784,11 +817,25 @@ class UberEatsAmountView(discord.ui.View):
         self.add_item(UberEatsAmountSelect())
 
 
+class NitroOrderView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+
+    @discord.ui.button(
+        label="Commander Discord Nitro — 8 €",
+        emoji="<:nitroboost:1524439577656561846>",
+        style=discord.ButtonStyle.success
+    )
+    async def confirm_nitro(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_product_ticket(interaction, "DISCORD_NITRO", NITRO_PRICE)
+
+
 class ProductAmountSelect(discord.ui.Select):
     def __init__(self, product_key):
         self.product_key = product_key
         options = [
-            discord.SelectOption(label=f"Carte cadeau {amount} €", value=str(amount), emoji="💳")
+            discord.SelectOption(label=f"Carte cadeau {amount} € → {amount * 0.70:g} € débités", value=str(amount), emoji="💳")
             for amount in (100, 200, 400, 800)
         ]
         super().__init__(placeholder="Choisis le montant de la carte", options=options)
@@ -823,9 +870,17 @@ class ProductServiceSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         product_key = self.values[0]
         cfg = PRODUCT_CONFIG[product_key]
-        amount_view = UberEatsAmountView() if product_key == "UBEREATS" else ProductAmountView(product_key)
+        if product_key == "UBEREATS":
+            amount_view = UberEatsAmountView()
+            prompt = "choisis maintenant ton pack :"
+        elif product_key == "DISCORD_NITRO":
+            amount_view = NitroOrderView()
+            prompt = "confirme l'achat du produit à **8 €** :"
+        else:
+            amount_view = ProductAmountView(product_key)
+            prompt = "choisis maintenant le montant :"
         await interaction.response.send_message(
-            f"{cfg['emoji']} **{cfg['display']}** — choisis maintenant le montant :",
+            f"{cfg['emoji']} **{cfg['display']}** — {prompt}",
             view=amount_view,
             ephemeral=True
         )
