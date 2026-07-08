@@ -2,12 +2,13 @@
   "tarifs_embed": {
     "title": "🎟️ COMMANDES PINKGIFT",
     "description": [
-      "Clique sur **Commander** pour choisir ton produit en privé. Cartes cadeaux à **-30 %**, sauf Uber Eats avec sa grille fixe et Discord Nitro à **8 €**.",
+      "Clique sur **Commander** pour choisir ton produit en privé.",
+      "Les cartes cadeaux sont à **-30 %** du prix d'origine",
       "",
       "🎮 **GAMING**",
       "🎮 **Google Play**",
       "🎮 **Steam**",
-      "<:nitroboost:1524439577656561846> **Discord Nitro — 8 €**",
+      "<:nitroboost:1524439577656561846>",
       "🎮 **PlayStation**",
       "🎮 **Nintendo**",
       "",
@@ -43,7 +44,8 @@
       "<:skrill:1524440310489288755> **Skrill**",
       "💳 **Paysafecard**",
       "",
-      "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus sont visibles uniquement par toi."
+      "🎫 Clique sur le bouton **Commander** ci-dessous.",
+      "`Les menus ne sont visibles uniquement par toi.`"
     ],
     "color_rgb": [
       255,
@@ -55,7 +57,8 @@
   "valo_embed": {
     "title": "💘 VALORANT POINTS 💘",
     "description": [
-      "Choisis ta région puis ton pack. Le prix est débité automatiquement de ton solde PinkGift.",
+      "Choisis ta région puis ton pack.",
+      "Le prix est débité automatiquement de ton solde.",
       "",
       "🇪🇺 **Europe**",
       "<:vp:1519915966476320901> **3650 VP** — 30€",
@@ -69,7 +72,7 @@
       "<:vp:1519915966476320901> **8900 VP** — 45€",
       "<:vp:1519915966476320901> **11000 VP** — 55€",
       "",
-      "🛒 Clique sur **Commander des VP**, puis choisis ta région et ton pack en privé."
+      "🛒 Clique sur **Commander des VP**, puis choisis ta région et ton pack."
     ],
     "color_rgb": [
       255,
