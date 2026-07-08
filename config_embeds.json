@@ -2,12 +2,12 @@
   "tarifs_embed": {
     "title": "🎟️ COMMANDES PINKGIFT",
     "description": [
-      "Clique sur **Commander** pour choisir ta marque puis le montant en privé. Cartes cadeaux à **-30 %**, sauf Uber Eats avec une grille fixe.",
+      "Clique sur **Commander** pour choisir ton produit en privé. Cartes cadeaux à **-30 %**, sauf Uber Eats avec sa grille fixe et Discord Nitro à **8 €**.",
       "",
       "🎮 **GAMING**",
       "🎮 **Google Play**",
       "🎮 **Steam**",
-      "💎 **Discord Nitro**",
+      "<:nitroboost:1524439577656561846> **Discord Nitro — 8 €**",
       "🎮 **PlayStation**",
       "🎮 **Nintendo**",
       "",
@@ -17,7 +17,7 @@
       "👟 **Zalando**",
       "👟 **Adidas**",
       "👟 **Foot Locker**",
-      "👗 **Shein**",
+      "<:shein:1524439283367411793> **Shein**",
       "👟 **Nike**",
       "",
       "🍔 **FOOD & LIVRAISON**",
@@ -29,18 +29,18 @@
       "🛒 **Carrefour**",
       "🏬 **Intermarché**",
       "🍎 **Apple**",
-      "🛍️ **Joybuy**",
+      "<:Joybuy:1524439360638943242> **Joybuy**",
       "",
       "🧸 **JOUETS**",
       "🧸 **Smyths Toys**",
       "🧱 **LEGO**",
       "",
       "🚗 **VOYAGE & AUTO**",
-      "🚗 **Tesla**",
+      "<:tesla:1524439914811359293> **Tesla**",
       "🏠 **Airbnb**",
       "",
       "💳 **PRÉPAYÉ**",
-      "💳 **Skrill**",
+      "<:skrill:1524440310489288755> **Skrill**",
       "💳 **Paysafecard**",
       "",
       "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus sont visibles uniquement par toi."
@@ -367,6 +367,37 @@
         "name": "Solde restant",
         "value": "**{balance} €**",
         "inline": false
+      }
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "image_key": "ticket_cree"
+  },
+  "nitro_ticket_embed": {
+    "title": "<:nitroboost:1524439577656561846> Commande — DISCORD NITRO",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Ta commande Discord Nitro a bien été enregistrée. Le staff va te prendre en charge rapidement."
+    ],
+    "fields": [
+      {
+        "name": "Produit",
+        "value": "{emoji} **{service}**",
+        "inline": false
+      },
+      {
+        "name": "Prix",
+        "value": "**{paid} €**",
+        "inline": true
+      },
+      {
+        "name": "Solde restant",
+        "value": "**{balance} €**",
+        "inline": true
       }
     ],
     "color_rgb": [
