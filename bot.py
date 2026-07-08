@@ -32,7 +32,16 @@ def run_web():
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+class PinkGiftBot(commands.Bot):
+    async def setup_hook(self):
+        try:
+            synced = await self.tree.sync()
+            print(f"{len(synced)} commande(s) slash synchronisée(s).")
+        except discord.HTTPException as error:
+            print(f"Synchronisation des commandes slash impossible : {error}")
+
+
+bot = PinkGiftBot(command_prefix="!", intents=intents)
 BOT_LOOP = None
 DISCORD_STATE = "démarrage"
 DISCORD_LAST_ERROR = ""
@@ -1168,7 +1177,7 @@ async def update_public_embeds_without_ping(ctx):
     return updated_count
 
 
-@bot.command(name="maj_categories")
+@bot.hybrid_command(name="maj_categories")
 @commands.has_role(PURGE_ROLE_ID)
 async def update_categories(ctx):
     updated_count = await update_public_embeds_without_ping(ctx)
@@ -1187,7 +1196,7 @@ async def update_categories(ctx):
         await ctx.send("❌ Aucun embed public trouvé dans ce salon.", delete_after=6)
 
 
-@bot.command(name="debug_embed")
+@bot.hybrid_command(name="debug_embed")
 @commands.has_role(PURGE_ROLE_ID)
 async def debug_embed(ctx, embed_name: str = "tarifs_embed"):
     data = load_embed_texts()
@@ -1201,35 +1210,35 @@ async def debug_embed(ctx, embed_name: str = "tarifs_embed"):
     await ctx.send(f"📦 JSON lu pour **{embed_name}** : {preview}", delete_after=20)
 
 
-@bot.command(name="close_button")
+@bot.hybrid_command(name="close_button")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_close_button(ctx):
     embed = build_json_embed("close_ticket_embed")
     await ctx.send(embed=embed, view=CloseTicketView())
 
-@bot.command(name="tarifs")
+@bot.hybrid_command(name="tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def send_tarifs(ctx):
     embed = build_tarifs_embed()
     await ctx.send(content="||@everyone||", embed=embed, view=OrderLauncherView())
 
-@bot.command(name="maj_tarifs")
+@bot.hybrid_command(name="maj_tarifs")
 @commands.has_role(PURGE_ROLE_ID)
 async def update_tarifs(ctx):
     await update_last_embed(ctx, build_tarifs_embed, ["COMMANDES PINKGIFT", "CARTE CADEAUX"], OrderLauncherView())
 
-@bot.command(name="valo")
+@bot.hybrid_command(name="valo")
 @commands.has_role(PURGE_ROLE_ID)
 async def cmd_valo(ctx):
     embed = build_valo_embed()
     await ctx.send(content="||@everyone||", embed=embed, view=ValoOrderLauncherView())
 
-@bot.command(name="maj_valo")
+@bot.hybrid_command(name="maj_valo")
 @commands.has_role(PURGE_ROLE_ID)
 async def update_valo(ctx):
     await update_last_embed(ctx, build_valo_embed, ["VALORANT", "VALORANT POINTS"], ValoOrderLauncherView())
 
-@bot.command(name="purge_all")
+@bot.hybrid_command(name="purge_all")
 @commands.has_role(PURGE_ROLE_ID)
 async def cmd_purge_all(ctx):
     status_msg = await ctx.send("🔄 Purge complete des tickets et commandes...")
@@ -1247,7 +1256,7 @@ async def cmd_purge_all(ctx):
     except:
         pass
 
-@bot.command(name="clear", aliases=["purge"])
+@bot.hybrid_command(name="clear", aliases=["purge"])
 @commands.has_role(PURGE_ROLE_ID)
 async def cmd_clear_messages(ctx, amount: int):
     if amount <= 0:
@@ -1265,13 +1274,13 @@ async def cmd_clear_messages(ctx, amount: int):
     except:
         pass
 
-@bot.command(name="ban")
+@bot.hybrid_command(name="ban")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_ban(ctx, member: discord.Member, *, reason: str = "Aucune raison fournie"):
     await member.ban(reason=reason)
     await ctx.send(f"🔨 {member.name} a ete banni. Raison : {reason}")
 
-@bot.command(name="tempban")
+@bot.hybrid_command(name="tempban")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_tempban(ctx, member: discord.Member, duration: str, *, reason: str = "Aucune raison fournie"):
     seconds = parse_duration(duration)
@@ -1286,7 +1295,7 @@ async def cmd_tempban(ctx, member: discord.Member, duration: str, *, reason: str
     except:
         pass
 
-@bot.command(name="tempmute")
+@bot.hybrid_command(name="tempmute")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: str = "Aucune raison fournie"):
     seconds = parse_duration(duration)
@@ -1296,12 +1305,12 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
     await ctx.send(f"🔇 {member.name} mute pendant {duration}.")
 
-@bot.command(name="solde")
+@bot.hybrid_command(name="solde")
 async def cmd_solde(ctx):
     await ctx.send(embed=build_json_embed("balance_embed"), view=BalanceView())
 
 
-@bot.command(name="ajouter_solde")
+@bot.hybrid_command(name="ajouter_solde")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
     if montant <= 0:
@@ -1311,7 +1320,7 @@ async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
     await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
 
 
-@bot.command(name="retirer_solde")
+@bot.hybrid_command(name="retirer_solde")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
     if montant <= 0:
@@ -1325,7 +1334,7 @@ async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
     await ctx.send(f"✅ **{montant:.2f} €** retirés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
 
 
-@bot.command(name="paiements")
+@bot.hybrid_command(name="paiements")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_paiements(ctx):
     try:
@@ -1335,12 +1344,12 @@ async def cmd_paiements(ctx):
     embed = build_paiements_embed()
     await ctx.send(content="||@everyone||", embed=embed)
 
-@bot.command(name="maj_paiements")
+@bot.hybrid_command(name="maj_paiements")
 @commands.has_role(STAFF_ROLE_ID)
 async def update_paiements(ctx):
     await update_last_embed(ctx, build_paiements_embed, ["Moyens de paiement", "Paiements"])
 
-@bot.command(name="commandes")
+@bot.hybrid_command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
     await ctx.send(embed=build_json_embed("commandes_embed"))
@@ -1525,6 +1534,23 @@ def panel_set_code(order_id):
     except Exception as error:
         flash(f"Erreur Discord : {error}")
     return redirect(url_for("panel_orders"))
+
+
+async def send_slash_error(interaction, message):
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.response.send_message(message, ephemeral=True)
+
+
+@bot.tree.error
+async def on_app_command_error(interaction, error):
+    original = getattr(error, "original", error)
+    if isinstance(original, (commands.MissingRole, commands.MissingPermissions, commands.CheckFailure, discord.app_commands.CheckFailure)):
+        await send_slash_error(interaction, "❌ Tu n'as pas la permission requise.")
+    else:
+        print(f"Erreur commande slash [{interaction.command}] par [{interaction.user}] : {error}")
+        await send_slash_error(interaction, "❌ Une erreur est survenue pendant cette commande.")
 
 
 @bot.event
