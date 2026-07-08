@@ -74,9 +74,13 @@ def init_database():
     with db_connect() as db:
         db.execute("CREATE TABLE IF NOT EXISTS balances (guild_id INTEGER, user_id INTEGER, cents INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guild_id, user_id))")
         db.execute("CREATE TABLE IF NOT EXISTS balance_history (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, user_id INTEGER, delta_cents INTEGER, staff_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
-        db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, channel_id INTEGER, message_id INTEGER, user_id INTEGER, service TEXT, amount REAL, paid REAL, status TEXT DEFAULT 'pending', code TEXT DEFAULT '', user_name TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, channel_id INTEGER, message_id INTEGER, user_id INTEGER, service TEXT, amount REAL, paid REAL, status TEXT DEFAULT 'pending', code TEXT DEFAULT '', user_name TEXT DEFAULT '', received_label TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         try:
             db.execute("ALTER TABLE orders ADD COLUMN user_name TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            db.execute("ALTER TABLE orders ADD COLUMN received_label TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
 
@@ -104,13 +108,13 @@ def change_balance(guild_id, user_id, delta, staff_id):
         db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
         return updated / 100
 
-def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid, user_name=""):
-    values = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "user_id": user_id, "service": service, "amount": amount, "paid": paid, "user_name": user_name}
+def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid, user_name="", received_label=""):
+    values = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "user_id": user_id, "service": service, "amount": amount, "paid": paid, "user_name": user_name, "received_label": received_label}
     if USE_SUPABASE:
         rows = supabase_request("POST", "orders", values, "return=representation")
         return rows[0]["id"]
     with db_connect() as db:
-        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid,user_name) VALUES(?,?,?,?,?,?,?,?)", tuple(values.values()))
+        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid,user_name,received_label) VALUES(?,?,?,?,?,?,?,?,?)", tuple(values.values()))
         return cursor.lastrowid
 
 
@@ -134,33 +138,35 @@ ORDER_PENDING_IMAGE_URL = "https://media.discordapp.net/attachments/151751694639
 ORDER_FINISHED_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless"
 
 PRODUCT_CONFIG = {
+    "GOOGLE_PLAY": {"display": "GOOGLE PLAY", "emoji": "<:googleplay:1519907060555186278>", "emoji_ch": "🎮"},
+    "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "🎮"},
+    "DISCORD_NITRO": {"display": "DISCORD NITRO", "emoji": "💎", "emoji_ch": "💎"},
+    "PLAYSTATION": {"display": "PLAYSTATION", "emoji": "<:playstation:1519906767268741200>", "emoji_ch": "🎮"},
+    "NINTENDO": {"display": "NINTENDO", "emoji": "<:nintendo:1519907394157678632>", "emoji_ch": "🎮"},
+    "ZARA": {"display": "ZARA", "emoji": "<:zara:1519907265681948773>", "emoji_ch": "👕"},
+    "SEPHORA": {"display": "SEPHORA", "emoji": "<:sephora:1519907492862103742>", "emoji_ch": "💄"},
+    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "👟"},
+    "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "👟"},
+    "FOOT_LOCKER": {"display": "FOOT LOCKER", "emoji": "<:footlocker:1519907296342310952>", "emoji_ch": "👟"},
+    "SHEIN": {"display": "SHEIN", "emoji": "👗", "emoji_ch": "👗"},
+    "NIKE": {"display": "NIKE", "emoji": "<:nike:1519906735589167164>", "emoji_ch": "👟"},
+    "UBEREATS": {"display": "UBER EATS", "emoji": "<:ubereats:1519907186636099604>", "emoji_ch": "🍔"},
+    "DELIVEROO": {"display": "DELIVEROO", "emoji": "<:deliveroo:1519906860356993174>", "emoji_ch": "🍽️"},
     "AMAZON": {"display": "AMAZON", "emoji": "<:amazon:1519907450403160104>", "emoji_ch": "📦"},
     "CARREFOUR": {"display": "CARREFOUR", "emoji": "<:carrefour:1519906825494073414>", "emoji_ch": "🛒"},
     "INTERMARCHE": {"display": "INTERMARCHE", "emoji": "<:intermarche:1519907100057276546>", "emoji_ch": "🏬"},
-    "ZARA": {"display": "ZARA", "emoji": "<:zara:1519907265681948773>", "emoji_ch": "👕"},
-    "SEPHORA": {"display": "SEPHORA", "emoji": "<:sephora:1519907492862103742>", "emoji_ch": "💄"},
-    "UBEREATS": {"display": "UBER EATS", "emoji": "<:ubereats:1519907186636099604>", "emoji_ch": "🍔"},
     "APPLE": {"display": "APPLE", "emoji": "<:apple:1519906800411869204>", "emoji_ch": "🍎"},
-    "GOOGLE_PLAY": {"display": "GOOGLE PLAY", "emoji": "<:googleplay:1519907060555186278>", "emoji_ch": "🎮"},
-    "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "🎮"},
-    "NETFLIX": {"display": "NETFLIX", "emoji": "<:netflix:1519907125160316928>", "emoji_ch": "🎬"},
+    "JOYBUY": {"display": "JOYBUY", "emoji": "🛍️", "emoji_ch": "🛍️"},
     "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smythstoys:1519907368429944832>", "emoji_ch": "🧸"},
-    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "👟"},
-    "KING_JOUET": {"display": "KING JOUET", "emoji": "<:kingjouet:1519907322783338557>", "emoji_ch": "🧸"},
     "LEGO": {"display": "LEGO", "emoji": "<:lego:1519907470854852720>", "emoji_ch": "🧱"},
-    "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "👟"},
-    "FOOT_LOCKER": {"display": "FOOT LOCKER", "emoji": "<:footlocker:1519907296342310952>", "emoji_ch": "👟"},
-    "DELIVEROO": {"display": "DELIVEROO", "emoji": "<:deliveroo:1519906860356993174>", "emoji_ch": "🍽️"},
-    "CLAUDE": {"display": "CLAUDE", "emoji": "<:claude:1519906842006913065>", "emoji_ch": "✨"},
+    "TESLA": {"display": "TESLA", "emoji": "🚗", "emoji_ch": "🚗"},
     "AIRBNB": {"display": "AIRBNB", "emoji": "<:airbnb:1519906701900386344>", "emoji_ch": "🏠"},
-    "XBOX": {"display": "XBOX", "emoji": "<:xbox:1519907418836828230>", "emoji_ch": "🎮"},
-    "PLAYSTATION": {"display": "PLAYSTATION", "emoji": "<:playstation:1519906767268741200>", "emoji_ch": "🎮"},
+    "SKRILL": {"display": "SKRILL", "emoji": "💳", "emoji_ch": "💳"},
     "PAYSAFECARD": {"display": "PAYSAFECARD", "emoji": "<:paysafecard:1519906750571085995>", "emoji_ch": "💳"},
-    "FNAC": {"display": "FNAC", "emoji": "<:fnac:1519906718140727387>", "emoji_ch": "📚"},
-    "NINTENDO": {"display": "NINTENDO", "emoji": "<:nintendo:1519907394157678632>", "emoji_ch": "🎮"},
-    "NIKE": {"display": "NIKE", "emoji": "<:nike:1519906735589167164>", "emoji_ch": "👟"},
     "VALORANT": {"display": "VALORANT", "emoji": "🎮", "emoji_ch": "🎮"},
 }
+
+UBEREATS_PACKS = {20: "28–42", 65: "85–115", 125: "165–225", 350: "501–680"}
 
 DEFAULT_EMBED_DATA = {
     "images": {
@@ -412,6 +418,8 @@ DEFAULT_EMBED_DATA.update({
 
 DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde PinkGift","description":["{user}, ton solde actuel est de **{balance} €**.","","Utilise les boutons ci-dessous pour consulter ou recharger ton solde."],"color_rgb":[255,192,203]},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
 
+DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée selon la grille fixe."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
+
 def load_embed_texts():
     if EMBED_CONFIG_URL:
         try:
@@ -558,7 +566,12 @@ async def create_product_ticket(interaction, product_key, amount):
     if guild is None or cfg is None:
         await interaction.followup.send("❌ Impossible de créer cette commande.", ephemeral=True)
         return
-    paid_amount = round(amount * 0.70, 2)
+    uber_drop = UBEREATS_PACKS.get(amount) if product_key == "UBEREATS" else None
+    if product_key == "UBEREATS" and uber_drop is None:
+        await interaction.followup.send("❌ Pack Uber Eats invalide.", ephemeral=True)
+        return
+    paid_amount = float(amount) if product_key == "UBEREATS" else round(amount * 0.70, 2)
+    received_display = f"{uber_drop} € estimés" if uber_drop else f"{amount} €"
     lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
     async with lock:
         current_balance = get_balance(guild.id, user.id)
@@ -601,9 +614,10 @@ async def create_product_ticket(interaction, product_key, amount):
             print(f"Erreur débit solde de {user}: {error}")
             await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
             return
-        embed = build_json_embed("menu_ticket_embed", {
+        embed_key = "uber_eats_ticket_embed" if product_key == "UBEREATS" else "menu_ticket_embed"
+        embed = build_json_embed(embed_key, {
             "user": user.mention, "service": cfg["display"], "emoji": cfg["emoji"],
-            "amount": amount, "paid": f"{paid_amount:g}", "balance": f"{remaining_balance:.2f}"
+            "amount": amount, "paid": f"{paid_amount:g}", "drop": received_display, "balance": f"{remaining_balance:.2f}"
         })
         try:
             order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
@@ -616,22 +630,34 @@ async def create_product_ticket(interaction, product_key, amount):
             print(f"Erreur envoi commande pour {user}: {error}")
             return
         try:
-            save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount, user.name)
+            save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount, user.name, received_display if product_key == "UBEREATS" else "")
         except Exception as error:
             print(f"Erreur sauvegarde commande panneau: {error}")
         await interaction.followup.send(f"✅ Commande ajoutée dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
 
 
-VALO_PACKS = {15: "2925 VP", 20: "4325 VP", 30: "3650 VP", 40: "5350 VP", 45: "8900 VP", 60: "8700 VP"}
+VALO_REGIONS = {
+    "EUROPE": {
+        "label": "Europe", "emoji": "🇪🇺",
+        "packs": {30: "3650 VP", 40: "5350 VP", 60: "8700 VP", 80: "11000 VP"}
+    },
+    "TURQUIE": {
+        "label": "Turquie", "emoji": "🇹🇷",
+        "packs": {15: "2925 VP", 20: "4325 VP", 45: "8900 VP", 55: "11000 VP"}
+    }
+}
 
 
-async def create_valo_order(interaction, price):
+async def create_valo_order(interaction, region_key, price):
     guild = interaction.guild
     user = interaction.user
-    pack = VALO_PACKS.get(price)
+    region = VALO_REGIONS.get(region_key)
+    pack = region["packs"].get(price) if region else None
     if guild is None or pack is None:
-        await interaction.followup.send("❌ Pack Valorant invalide.", ephemeral=True)
+        await interaction.followup.send("❌ Région ou pack Valorant invalide.", ephemeral=True)
         return
+    region_label = region["label"]
+    region_emoji = region["emoji"]
     lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
     async with lock:
         current_balance = get_balance(guild.id, user.id)
@@ -674,7 +700,11 @@ async def create_valo_order(interaction, price):
             await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
             return
         code_pending = (chr(96) * 3) + "\nEn attente...\n" + (chr(96) * 3)
-        embed = build_json_embed("commande_vp_embed", {"emoji": "<:vp:1519915966476320901>", "user": user.mention, "pack": pack, "amount": price, "code": code_pending, "balance": f"{remaining_balance:.2f}"})
+        embed = build_json_embed("commande_vp_embed", {
+            "emoji": "<:vp:1519915966476320901>", "user": user.mention,
+            "region": f"{region_emoji} {region_label}", "pack": pack, "amount": price,
+            "code": code_pending, "balance": f"{remaining_balance:.2f}"
+        })
         try:
             order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
         except Exception as error:
@@ -685,26 +715,45 @@ async def create_valo_order(interaction, price):
             await interaction.followup.send("❌ L'envoi a échoué. Le montant a été recrédité.", ephemeral=True)
             return
         try:
-            save_order(guild.id, ticket_channel.id, order_message.id, user.id, "Valorant " + pack, price, price, user.name)
+            save_order(guild.id, ticket_channel.id, order_message.id, user.id, f"Valorant {region_label} {pack}", price, price, user.name, pack)
         except Exception as error:
             print(f"Erreur sauvegarde commande Valorant: {error}")
-        await interaction.followup.send(f"✅ **{pack}** commandés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+        await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+
+
+class ValoRegionSelect(discord.ui.Select):
+    def __init__(self):
+        options = [discord.SelectOption(label=data["label"], value=key, emoji=data["emoji"]) for key, data in VALO_REGIONS.items()]
+        super().__init__(placeholder="Choisis ta région Valorant", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        region_key = self.values[0]
+        region = VALO_REGIONS[region_key]
+        await interaction.response.edit_message(content=f"{region['emoji']} **{region['label']}** — choisis ton pack :", view=ValoPackView(region_key))
+
+
+class ValoRegionView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(ValoRegionSelect())
 
 
 class ValoPackSelect(discord.ui.Select):
-    def __init__(self):
-        options = [discord.SelectOption(label=f"{pack} — {price} €", value=str(price), emoji=discord.PartialEmoji.from_str("<:vp:1519915966476320901>")) for price, pack in sorted(VALO_PACKS.items())]
+    def __init__(self, region_key):
+        self.region_key = region_key
+        packs = VALO_REGIONS[region_key]["packs"]
+        options = [discord.SelectOption(label=f"{pack} — {price} €", value=str(price), emoji=discord.PartialEmoji.from_str("<:vp:1519915966476320901>")) for price, pack in packs.items()]
         super().__init__(placeholder="Choisis ton pack Valorant Points", options=options)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await create_valo_order(interaction, int(self.values[0]))
+        await create_valo_order(interaction, self.region_key, int(self.values[0]))
 
 
 class ValoPackView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, region_key):
         super().__init__(timeout=180)
-        self.add_item(ValoPackSelect())
+        self.add_item(ValoPackSelect(region_key))
 
 
 class ValoOrderLauncherView(discord.ui.View):
@@ -713,7 +762,26 @@ class ValoOrderLauncherView(discord.ui.View):
 
     @discord.ui.button(label="Commander des VP", emoji="<:vp:1519915966476320901>", style=discord.ButtonStyle.success, custom_id="pinkgift_start_valo_order")
     async def start_valo_order(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Choisis ton pack Valorant Points :", view=ValoPackView(), ephemeral=True)
+        await interaction.response.send_message("Choisis d'abord ta région Valorant :", view=ValoRegionView(), ephemeral=True)
+
+
+class UberEatsAmountSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label=f"{price} € → {drop} € estimés", value=str(price), emoji="🍔")
+            for price, drop in UBEREATS_PACKS.items()
+        ]
+        super().__init__(placeholder="Choisis ton pack Uber Eats", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_product_ticket(interaction, "UBEREATS", int(self.values[0]))
+
+
+class UberEatsAmountView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(UberEatsAmountSelect())
 
 
 class ProductAmountSelect(discord.ui.Select):
@@ -755,9 +823,10 @@ class ProductServiceSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         product_key = self.values[0]
         cfg = PRODUCT_CONFIG[product_key]
+        amount_view = UberEatsAmountView() if product_key == "UBEREATS" else ProductAmountView(product_key)
         await interaction.response.send_message(
             f"{cfg['emoji']} **{cfg['display']}** — choisis maintenant le montant :",
-            view=ProductAmountView(product_key),
+            view=amount_view,
             ephemeral=True
         )
 
@@ -1216,219 +1285,6 @@ async def cmd_paiements(ctx):
 async def update_paiements(ctx):
     await update_last_embed(ctx, build_paiements_embed, ["Moyens de paiement", "Paiements"])
 
-async def process_order(ctx, product_name, amount_paid: int, card_code: str = "En attente..."):
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-    cfg = PRODUCT_CONFIG.get(product_name)
-    if cfg is None:
-        await ctx.send("❌ Article introuvable.", delete_after=5)
-        return
-    display_name = cfg["display"]
-    emoji = cfg["emoji_ch"]
-    paid_amount = round(amount_paid * 0.7, 2)
-    paid_display = int(paid_amount) if paid_amount.is_integer() else paid_amount
-    new_name = ticket_channel_name(emoji, display_name, f"{amount_paid}€")
-    try:
-        await ctx.channel.edit(name=new_name)
-    except Exception as e:
-        await ctx.send(f"❌ Impossible de renommer le ticket : {e}", delete_after=5)
-        return
-    client_user = ctx.author
-    async for msg in ctx.channel.history(oldest_first=True, limit=8):
-        if msg.author != bot.user and not msg.author.bot:
-            client_user = msg.author
-            break
-    embed = build_json_embed("commande_embed", {
-        "emoji": emoji, "user": client_user.mention, "service": display_name,
-        "amount": amount_paid, "paid": paid_display,
-        "code": (chr(96) * 3) + "\n" + card_code + "\n" + (chr(96) * 3)
-    })
-    order_message = await ctx.send(content=f"{client_user.mention} commande enregistree : **{display_name}-{amount_paid}€**", embed=embed)
-    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, display_name, amount_paid, paid_display, client_user.name)
-
-
-async def process_vp_order(ctx, amount_paid: int, code: str = "En attente..."):
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-
-    vp_packs = {
-        30: "3650 VP",
-        40: "5350 VP",
-        60: "8700 VP",
-        15: "2925 VP",
-        20: "4325 VP",
-        45: "8900 VP",
-    }
-    pack = vp_packs.get(amount_paid)
-    if pack is None:
-        await ctx.send("❌ Pack Valorant introuvable. Montants disponibles : 15, 20, 30, 40, 45 ou 60 euros.", delete_after=8)
-        return
-
-    cfg = PRODUCT_CONFIG.get("VALORANT")
-    emoji = cfg["emoji_ch"] if cfg else "🎮"
-    try:
-        await ctx.channel.edit(name=ticket_channel_name(emoji, "VALORANT", pack))
-    except Exception as e:
-        await ctx.send(f"❌ Impossible de renommer le ticket : {e}", delete_after=5)
-        return
-
-    client_user = ctx.author
-    async for msg in ctx.channel.history(oldest_first=True, limit=8):
-        if msg.author != bot.user and not msg.author.bot:
-            client_user = msg.author
-            break
-
-    embed = build_json_embed("commande_vp_embed", {
-        "emoji": emoji, "user": client_user.mention, "pack": pack,
-        "amount": amount_paid,
-        "code": (chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3)
-    })
-    order_message = await ctx.send(content=f"{client_user.mention} commande Valorant enregistree : **{pack} — {amount_paid}€**", embed=embed)
-    save_order(ctx.guild.id, ctx.channel.id, order_message.id, client_user.id, "Valorant " + pack, amount_paid, amount_paid, client_user.name)
-
-@bot.command(name="amazon")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_amazon(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AMAZON", amount, code)
-
-@bot.command(name="carrefour")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_carrefour(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "CARREFOUR", amount, code)
-
-@bot.command(name="intermarche")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_intermarche(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "INTERMARCHE", amount, code)
-
-@bot.command(name="zara")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_zara(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "ZARA", amount, code)
-
-@bot.command(name="sephora")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_sephora(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "SEPHORA", amount, code)
-
-@bot.command(name="ubereats")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_ubereats(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "UBEREATS", amount, code)
-
-@bot.command(name="apple")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_apple(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "APPLE", amount, code)
-
-@bot.command(name="googleplay")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_googleplay(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "GOOGLE_PLAY", amount, code)
-
-@bot.command(name="steam")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_steam(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "STEAM", amount, code)
-
-@bot.command(name="netflix")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_netflix(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "NETFLIX", amount, code)
-
-@bot.command(name="smyths")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_smyths(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "SMYTHS_TOYS", amount, code)
-
-@bot.command(name="zalando")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_zalando(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "ZALANDO", amount, code)
-
-@bot.command(name="kingjouet")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_kingjouet(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "KING_JOUET", amount, code)
-
-@bot.command(name="lego")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_lego(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "LEGO", amount, code)
-
-@bot.command(name="adidas")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_adidas(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "ADIDAS", amount, code)
-
-@bot.command(name="footlocker")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_footlocker(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "FOOT_LOCKER", amount, code)
-
-@bot.command(name="deliveroo")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_deliveroo(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "DELIVEROO", amount, code)
-
-@bot.command(name="claude")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_claude(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "CLAUDE", amount, code)
-
-@bot.command(name="airbnb")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_airbnb(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "AIRBNB", amount, code)
-
-@bot.command(name="xbox")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_xbox(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "XBOX", amount, code)
-
-@bot.command(name="playstation")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_playstation(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "PLAYSTATION", amount, code)
-
-@bot.command(name="paysafecard")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_paysafecard(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "PAYSAFECARD", amount, code)
-
-@bot.command(name="fnac")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_fnac(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "FNAC", amount, code)
-
-@bot.command(name="nintendo")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_nintendo(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "NINTENDO", amount, code)
-
-@bot.command(name="nike")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_nike(ctx, amount: int, *, code: str = "En attente..."): await process_order(ctx, "NIKE", amount, code)
-
-@bot.command(name="vp")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_vp(ctx, amount: int, *, code: str = "En attente..."): await process_vp_order(ctx, amount, code)
-
-@bot.command(name="finish")
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_finish(ctx, *, code_carte: str):
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-    embed_message = None
-    async for msg in ctx.channel.history(limit=30):
-        if msg.author == bot.user and msg.embeds:
-            embed_message = msg
-            break
-    if not embed_message:
-        await ctx.send("❌ Aucun embed de commande trouve dans ce salon.", delete_after=5)
-        return
-    old_embed = embed_message.embeds[0]
-    finish_data = load_embed_texts().get("commande_finalisee", DEFAULT_EMBED_DATA["commande_finalisee"])
-    finish_rgb = finish_data.get("color_rgb", [46, 204, 113])
-    new_embed = discord.Embed(title=old_embed.title, description=old_embed.description, color=discord.Color.from_rgb(*finish_rgb))
-    code_updated = False
-    for field in old_embed.fields:
-        if "code" in field.name.lower():
-            new_embed.add_field(name=field.name, value=f"```\n{code_carte}\n```", inline=False)
-            code_updated = True
-        else:
-            new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
-    if not code_updated:
-        new_embed.add_field(name="Code", value=f"```\n{code_carte}\n```", inline=False)
-    finish_image_key = finish_data.get("image_key", "commande_livree")
-    finish_image_url = finish_data.get("image_url", ORDER_FINISHED_IMAGE_URL)
-    new_embed.set_image(url=get_image_url(finish_image_key, finish_image_url))
-    new_embed.set_footer(text=finish_data.get("footer", "PinkGift — Commande finalisee"))
-    await embed_message.edit(embed=new_embed)
-    await ctx.send("✅ Commande finalisee avec succes.", delete_after=5)
-
 @bot.command(name="commandes")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
@@ -1459,7 +1315,7 @@ PANEL_TEMPLATE = """
 <nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
 {% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
-{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ order.id }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.amount }} €</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ order.id }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
 
@@ -1623,9 +1479,9 @@ async def on_command_error(ctx, error):
         except: pass
         await ctx.send(f"❌ {ctx.author.mention}, tu n as pas la permission requise.", delete_after=5)
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send("❌ Argument manquant. Exemple : !deliveroo 60", delete_after=5)
+        await ctx.send("❌ Argument manquant pour cette commande.", delete_after=5)
     elif isinstance(error, commands.BadArgument):
-        await ctx.send("❌ Format invalide. Exemple : !deliveroo 60", delete_after=5)
+        await ctx.send("❌ Format de commande invalide.", delete_after=5)
     else:
         print(f"Erreur commande [{ctx.command}] par [{ctx.author}] : {error}")
 
