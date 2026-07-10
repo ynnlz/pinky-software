@@ -87,8 +87,8 @@
       "Pour finaliser votre achat chez **PinkGift**, nous acceptons :",
       "",
       "<:paypal:1517582845315649751> **PayPal**",
-      "🏦 **Virements bancaires**",
-      "₿ **Cryptomonnaies**",
+      "<:banque:1523803303253905590> **Virements bancaires**",
+      "<:litecoin:1523802843352531147> **Cryptomonnaies**",
       "",
       "Merci d'indiquer le moyen de paiement souhaité dans le ticket."
     ],
