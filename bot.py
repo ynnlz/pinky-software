@@ -10,6 +10,7 @@ import re
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 import sqlite3
 import secrets
 import hashlib
@@ -116,6 +117,60 @@ def change_balance(guild_id, user_id, delta, staff_id):
         db.execute("INSERT INTO balances(guild_id,user_id,cents) VALUES(?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET cents=excluded.cents", (guild_id, user_id, updated))
         db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
         return updated / 100
+
+
+
+def is_balance_ticket(channel) -> bool:
+    return bool(getattr(channel, "topic", "") and channel.topic.startswith("pinkgift-balance:"))
+
+
+def get_balance_ticket_user_id(channel):
+    if not is_balance_ticket(channel):
+        return None
+    parts = channel.topic.split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
+        return None
+
+
+def balance_ticket_marked_credited(channel) -> bool:
+    return is_balance_ticket(channel) and channel.topic.endswith(":credited")
+
+
+def balance_was_added_after(guild_id, user_id, created_at) -> bool:
+    if created_at is None:
+        return False
+    created_at_utc = created_at.astimezone(datetime.timezone.utc)
+    if USE_SUPABASE:
+        since = urllib.parse.quote(created_at_utc.strftime("%Y-%m-%dT%H:%M:%SZ"), safe="")
+        rows = supabase_request(
+            "GET",
+            f"balance_history?guild_id=eq.{guild_id}&user_id=eq.{user_id}&delta_cents=gt.0&created_at=gte.{since}&select=id&limit=1"
+        )
+        return bool(rows)
+    with db_connect() as db:
+        since = created_at_utc.strftime("%Y-%m-%d %H:%M:%S")
+        row = db.execute(
+            "SELECT id FROM balance_history WHERE guild_id=? AND user_id=? AND delta_cents>0 AND created_at>=? LIMIT 1",
+            (guild_id, user_id, since)
+        ).fetchone()
+        return row is not None
+
+
+async def mark_balance_ticket_credited(guild, user_id: int):
+    if guild is None:
+        return
+    expected_prefix = f"pinkgift-balance:{user_id}"
+    for channel in guild.text_channels:
+        topic = channel.topic or ""
+        if topic.startswith(expected_prefix) and not channel.name.startswith("closed-") and not topic.endswith(":credited"):
+            try:
+                await channel.edit(topic=f"{expected_prefix}:credited", reason="Solde ajoute au client")
+            except discord.HTTPException as error:
+                print(f"Erreur marquage ticket solde credite pour {user_id}: {error}")
 
 def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid, user_name="", received_label=""):
     values = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "user_id": user_id, "service": service, "amount": amount, "paid": paid, "user_name": user_name, "received_label": received_label}
@@ -938,7 +993,7 @@ class BalanceView(discord.ui.View):
             await interaction.followup.send("❌ Catégorie de recharge introuvable.", ephemeral=True)
             return
         for channel in category.text_channels:
-            if channel.topic == f"pinkgift-balance:{user.id}" and not channel.name.startswith("closed-"):
+            if (channel.topic or "").startswith(f"pinkgift-balance:{user.id}") and not channel.name.startswith("closed-"):
                 await interaction.followup.send(f"ℹ️ Ton ticket de recharge existe déjà : {channel.mention}", ephemeral=True)
                 return
         staff_role = guild.get_role(STAFF_ROLE_ID)
@@ -949,7 +1004,7 @@ class BalanceView(discord.ui.View):
         }
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-        channel = await guild.create_text_channel(name=f"solde-{user.name}"[:95], category=category, topic=f"pinkgift-balance:{user.id}", overwrites=overwrites, reason=f"Recharge solde de {user}")
+        channel = await guild.create_text_channel(name=f"solde-{user.name}"[:95], category=category, topic=f"pinkgift-balance:{user.id}:pending", overwrites=overwrites, reason=f"Recharge solde de {user}")
         embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": f"{get_balance(guild.id, user.id):.2f}"})
         await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
         await interaction.followup.send(f"✅ Ticket de recharge créé : {channel.mention}", ephemeral=True)
@@ -967,9 +1022,8 @@ class CloseTicketView(discord.ui.View):
         client = guild.get_member(self.client_id) if guild and self.client_id else None
         staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
         is_staff = staff_role in interaction.user.roles if hasattr(interaction.user, "roles") and staff_role else False
-        is_client = self.client_id and interaction.user.id == self.client_id
-        if not is_staff and not is_client:
-            await interaction.response.send_message("❌ Tu n as pas la permission de fermer ce ticket.", ephemeral=True)
+        if not is_staff:
+            await interaction.response.send_message("❌ Seul le staff peut fermer ce ticket.", ephemeral=True)
             return
         if client:
             await channel.set_permissions(client, view_channel=False, send_messages=False, read_message_history=False)
@@ -979,6 +1033,19 @@ class CloseTicketView(discord.ui.View):
                     has_staff_role = staff_role in target.roles if staff_role else False
                     if not target.bot and not has_staff_role:
                         await channel.set_permissions(target, view_channel=False, send_messages=False, read_message_history=False)
+        if is_balance_ticket(channel):
+            balance_user_id = get_balance_ticket_user_id(channel)
+            credited = balance_ticket_marked_credited(channel)
+            if not credited and balance_user_id and guild:
+                try:
+                    credited = balance_was_added_after(guild.id, balance_user_id, channel.created_at)
+                except Exception as error:
+                    print(f"Erreur verification credit ticket solde {channel.id}: {error}")
+            if not credited:
+                await interaction.response.send_message("🗑️ Ticket de recharge ferme sans ajout de solde : suppression du salon.", ephemeral=True)
+                await channel.delete(reason=f"Ticket solde sans ajout ferme par {interaction.user}")
+                return
+
         closed_category = guild.get_channel(CLOSED_TICKET_CATEGORY_ID) if guild else None
         await interaction.response.send_message("🔒 Ticket ferme : le client n a plus acces a ce salon.")
         try:
@@ -1338,6 +1405,7 @@ async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
         await ctx.send("❌ Le montant doit être positif.", delete_after=5)
         return
     balance = change_balance(ctx.guild.id, member.id, montant, ctx.author.id)
+    await mark_balance_ticket_credited(ctx.guild, member.id)
     await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
 
 
@@ -1405,7 +1473,7 @@ PANEL_TEMPLATE = """
 <nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
 {% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
-{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ order.id }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
 
@@ -1523,7 +1591,7 @@ def panel_delete_order(order_id):
                 cursor = db.execute("DELETE FROM orders WHERE id=?", (order_id,))
                 if cursor.rowcount == 0:
                     raise RuntimeError("Commande introuvable")
-        flash(f"Commande #{order_id} supprimée du panel.")
+        flash("Commande supprimée du panel. Les numéros ont été recalculés.")
     except Exception as error:
         print(f"Erreur suppression commande {order_id}: {error}")
         flash("La suppression a échoué.")
