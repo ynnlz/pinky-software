@@ -1431,12 +1431,12 @@ def panel_required(view):
 
 PANEL_TEMPLATE = """
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Panel</title>
-<style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}nav{display:flex;gap:8px;margin-bottom:18px}.tab{color:#e8dce3;text-decoration:none;padding:10px 14px;border:1px solid #4c3543}.tab.active{background:#e8509a;color:white;border-color:#e8509a}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}input{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:160px}button{background:#e8509a;color:white;border:0;padding:10px 13px;cursor:pointer}.delete{background:#9d294b;margin-left:5px}.done{color:#74d99f}.pending{color:#ffd27b}.muted{color:#aa98a4;font-size:12px}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
+<style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}nav{display:flex;gap:8px;margin-bottom:18px}.tab{color:#e8dce3;text-decoration:none;padding:10px 14px;border:1px solid #4c3543}.tab.active{background:#e8509a;color:white;border-color:#e8509a}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}input,select{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:160px}select{cursor:pointer}.filters{display:flex;gap:10px;align-items:center;margin:0 0 16px 0}.filters label{color:#ff9dce;font-weight:bold}button{background:#e8509a;color:white;border:0;padding:10px 13px;cursor:pointer}.delete{background:#9d294b;margin-left:5px}.done{color:#74d99f}.pending{color:#ffd27b}.muted{color:#aa98a4;font-size:12px}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
 <nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
 {% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
-{% else %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% else %}{% if tab == 'orders' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="orders"><label for="service-filter">Service</label><select id="service-filter" name="service" onchange="this.form.submit()"><option value="">Tous les services</option>{% for service in service_options %}<option value="{{ service }}" {% if service == service_filter %}selected{% endif %}>{{ service }}</option>{% endfor %}</select></form>{% endif %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
 
@@ -1485,10 +1485,16 @@ def panel_orders():
         flash("Connexion à Supabase impossible. Vérifie la configuration et le script SQL.")
         orders = []
     all_orders = orders
+    service_filter = request.args.get("service", "").strip()
+    command_orders = [order for order in all_orders if not str(order.get("service", "")).lower().startswith("valorant")]
+    service_options = sorted({str(order.get("service") or "Service inconnu") for order in command_orders})
     if tab == "valorant":
         orders = [order for order in all_orders if str(order.get("service", "")).lower().startswith("valorant")]
+        service_filter = ""
     elif tab == "orders":
-        orders = [order for order in all_orders if not str(order.get("service", "")).lower().startswith("valorant")]
+        orders = command_orders
+        if service_filter:
+            orders = [order for order in orders if str(order.get("service") or "Service inconnu") == service_filter]
     for order in all_orders:
         if not order.get("user_name"):
             guild = bot.get_guild(int(order.get("guild_id") or 0))
@@ -1504,7 +1510,7 @@ def panel_orders():
         client["order_count"] += 1
         client["total_spent"] += float(order.get("paid") or 0)
     clients = sorted(clients_by_id.values(), key=lambda item: item["total_spent"], reverse=True)
-    return render_template_string(PANEL_TEMPLATE, orders=orders, clients=clients, tab=tab)
+    return render_template_string(PANEL_TEMPLATE, orders=orders, clients=clients, tab=tab, service_options=service_options, service_filter=service_filter)
 
 
 async def deliver_order_from_panel(order, code):
@@ -1543,7 +1549,7 @@ def valid_panel_csrf():
 def panel_delete_order(order_id):
     if not valid_panel_csrf():
         flash("Session invalide. Recharge la page.")
-        return redirect(url_for("panel_orders"))
+        return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders"), service=request.form.get("return_service", "")))
     try:
         if USE_SUPABASE:
             deleted = supabase_request("DELETE", f"orders?id=eq.{order_id}", prefer="return=representation")
@@ -1558,7 +1564,7 @@ def panel_delete_order(order_id):
     except Exception as error:
         print(f"Erreur suppression commande {order_id}: {error}")
         flash("La suppression a échoué.")
-    return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders")))
+    return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders"), service=request.form.get("return_service", "")))
 
 
 @app.post("/panel/orders/<int:order_id>/code")
@@ -1566,7 +1572,7 @@ def panel_delete_order(order_id):
 def panel_set_code(order_id):
     if not valid_panel_csrf():
         flash("Session invalide. Recharge la page.")
-        return redirect(url_for("panel_orders"))
+        return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders"), service=request.form.get("return_service", "")))
     code = request.form.get("code", "").strip()
     if USE_SUPABASE:
         rows = supabase_request("GET", f"orders?id=eq.{order_id}&select=*")
@@ -1576,10 +1582,10 @@ def panel_set_code(order_id):
             order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not order or not code:
         flash("Commande ou code invalide.")
-        return redirect(url_for("panel_orders"))
+        return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders"), service=request.form.get("return_service", "")))
     if BOT_LOOP is None:
         flash("Le bot Discord n'est pas encore prêt.")
-        return redirect(url_for("panel_orders"))
+        return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders"), service=request.form.get("return_service", "")))
     try:
         asyncio.run_coroutine_threadsafe(deliver_order_from_panel(order, code), BOT_LOOP).result(timeout=25)
         if USE_SUPABASE:
@@ -1590,7 +1596,7 @@ def panel_set_code(order_id):
         flash(f"Commande #{order_id} livrée et embed Discord mis à jour.")
     except Exception as error:
         flash(f"Erreur Discord : {error}")
-    return redirect(url_for("panel_orders"))
+    return redirect(url_for("panel_orders", tab=request.form.get("return_tab", "orders"), service=request.form.get("return_service", "")))
 
 
 async def send_slash_error(interaction, message):
