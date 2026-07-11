@@ -47,6 +47,7 @@ BOT_LOOP = None
 DISCORD_STATE = "démarrage"
 DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
+DISCORD_THREAD_STARTED = False
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
@@ -964,7 +965,6 @@ class OrderLauncherView(discord.ui.View):
         )
 
 
-class BalanceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
