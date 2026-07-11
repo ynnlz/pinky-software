@@ -56,6 +56,7 @@ if SUPABASE_URL.endswith("/rest/v1"):
 SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 DISCORD_ENABLED = os.environ.get("DISCORD_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+PANEL_AUDIT_KEY = os.environ.get("PANEL_AUDIT_KEY", "").strip()
 
 
 
@@ -85,6 +86,7 @@ def init_database():
         db.execute("CREATE TABLE IF NOT EXISTS balances (guild_id INTEGER, user_id INTEGER, cents INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guild_id, user_id))")
         db.execute("CREATE TABLE IF NOT EXISTS balance_history (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, user_id INTEGER, delta_cents INTEGER, staff_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, channel_id INTEGER, message_id INTEGER, user_id INTEGER, service TEXT, amount REAL, paid REAL, status TEXT DEFAULT 'pending', code TEXT DEFAULT '', user_name TEXT DEFAULT '', received_label TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        db.execute("CREATE TABLE IF NOT EXISTS panel_access_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', method TEXT NOT NULL DEFAULT '', device TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         try:
             db.execute("ALTER TABLE orders ADD COLUMN user_name TEXT DEFAULT ''")
         except sqlite3.OperationalError:
@@ -1415,6 +1417,66 @@ def panel_auth_token():
     return hashlib.sha256(("pinkgift-panel:" + PANEL_PASSWORD).encode("utf-8")).hexdigest()
 
 
+def panel_client_ip():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or "inconnue"
+    real_ip = request.headers.get("X-Real-IP", "").strip()
+    return real_ip or request.remote_addr or "inconnue"
+
+
+def panel_device_type(user_agent):
+    ua = (user_agent or "").lower()
+    if any(marker in ua for marker in ("bot", "curl", "python", "httpclient", "postman", "uptime")):
+        return "Script/API"
+    if any(marker in ua for marker in ("ipad", "tablet")):
+        return "Tablette"
+    if any(marker in ua for marker in ("mobi", "iphone", "android", "windows phone")):
+        return "Téléphone"
+    if any(marker in ua for marker in ("windows", "macintosh", "linux", "x11", "cros")):
+        return "PC"
+    return "Inconnu"
+
+
+def panel_logged_path():
+    query_items = [(key, value) for key, value in request.args.items(multi=True) if key.lower() != "key"]
+    query = urllib.parse.urlencode(query_items)
+    return request.path + (f"?{query}" if query else "")
+
+
+def log_panel_access():
+    if not request.path.startswith("/panel"):
+        return
+    user_agent = request.headers.get("User-Agent", "")[:500]
+    values = {
+        "ip": panel_client_ip()[:80],
+        "path": panel_logged_path()[:300],
+        "method": request.method[:20],
+        "device": panel_device_type(user_agent),
+        "user_agent": user_agent
+    }
+    try:
+        if USE_SUPABASE:
+            supabase_request("POST", "panel_access_logs", values, "return=minimal")
+        else:
+            with db_connect() as db:
+                db.execute("INSERT INTO panel_access_logs(ip,path,method,device,user_agent) VALUES(?,?,?,?,?)", (values["ip"], values["path"], values["method"], values["device"], values["user_agent"]))
+    except Exception as error:
+        print(f"Journal panel indisponible : {error}")
+
+
+def panel_audit_allowed():
+    if not PANEL_AUDIT_KEY:
+        return True
+    if session.get("panel_audit_ok"):
+        return True
+    key = request.args.get("key", "")
+    if key and secrets.compare_digest(key, PANEL_AUDIT_KEY):
+        session["panel_audit_ok"] = True
+        return True
+    return False
+
+
 def panel_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -1441,6 +1503,13 @@ PANEL_TEMPLATE = """
 
 
 LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift</title><style>body{background:#0e0d11;color:#fff;font-family:Arial;display:grid;place-items:center;height:100vh;margin:0}form{background:#19151b;padding:28px;border:1px solid #4a3040;width:min(340px,80vw)}h1{color:#ff8fc8}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:10px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d}button{background:#e8509a;color:#fff;border:0}</style></head><body><form method="post"><h1>PinkGift Staff</h1><input type="password" name="password" placeholder="Mot de passe" required><button>Connexion</button></form></body></html>"""
+
+PANEL_ACCESS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Accès panel</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630;vertical-align:top}th{color:#ff9dce}.muted{color:#aa98a4;font-size:12px}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:11px;min-width:260px}button{background:#e8509a;color:#fff;border:0;padding:12px 14px;cursor:pointer}a{color:#ff9dce}.ua{max-width:520px;word-break:break-word}</style></head><body><header><h1>PinkGift — Accès panel</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}{% if locked %}<form method="get"><h2>Accès protégé</h2><p class="muted">Entre la clé privée configurée dans PANEL_AUDIT_KEY.</p><input type="password" name="key" placeholder="Clé privée" required><button type="submit">Ouvrir</button></form>{% else %}<table><thead><tr><th>Heure</th><th>IP</th><th>Mode</th><th>Page</th><th>Méthode</th><th>User-agent</th></tr></thead><tbody>{% for log in logs %}<tr><td>{{ log.created_at }}</td><td>{{ log.ip }}</td><td>{{ log.device }}</td><td>{{ log.path }}</td><td>{{ log.method }}</td><td class="ua muted">{{ log.user_agent }}</td></tr>{% else %}<tr><td colspan="6">Aucun accès enregistré.</td></tr>{% endfor %}</tbody></table>{% endif %}</main></body></html>"""
+
+
+@app.before_request
+def track_panel_access():
+    log_panel_access()
 
 
 @app.after_request
@@ -1527,6 +1596,24 @@ def panel_valorant_pack(order):
         if number_match:
             return f"{number_match.group(0)} VP"
     return "Pack inconnu"
+
+
+@app.route("/panel/acces")
+@panel_required
+def panel_access_logs():
+    if not panel_audit_allowed():
+        return render_template_string(PANEL_ACCESS_TEMPLATE, logs=[], locked=True)
+    try:
+        if USE_SUPABASE:
+            logs = supabase_request("GET", "panel_access_logs?select=*&order=id.desc&limit=500") or []
+        else:
+            with db_connect() as db:
+                logs = [dict(row) for row in db.execute("SELECT * FROM panel_access_logs ORDER BY id DESC LIMIT 500").fetchall()]
+    except Exception as error:
+        print(f"Erreur lecture journal panel : {error}")
+        flash("Journal indisponible. Vérifie que la table Supabase panel_access_logs existe.")
+        logs = []
+    return render_template_string(PANEL_ACCESS_TEMPLATE, logs=logs, locked=False)
 
 
 @app.route("/panel")
