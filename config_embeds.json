@@ -81,25 +81,6 @@
     ],
     "image_url": ""
   },
-  "paiements_embed": {
-    "title": "💳 Moyens de paiement",
-    "description": [
-      "Pour finaliser votre achat chez **PinkGift**, nous acceptons :",
-      "",
-      "<:paypal:1517582845315649751> **PayPal**",
-      "<:banque:1523803303253905590> **Virements bancaires**",
-      "<:litecoin:1523802843352531147> **Cryptomonnaies**",
-      "",
-      "Merci d'indiquer le moyen de paiement souhaité dans le ticket."
-    ],
-    "color_rgb": [
-      255,
-      192,
-      203
-    ],
-    "footer": "PinkGift — Paiements",
-    "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1524539313482629140/QkSetxV2-text-shapes-1x.jpg?ex=6a501d60&is=6a4ecbe0&hm=aeba97900488f2391081963eb90dd1649a7c3a404c2c567dcf71bb2541b7ead7&=&format=webp&width=1872&height=794"
-  },
   "ticket_bienvenue": {
     "title": "🎫 Ticket d'achat",
     "description": [
