@@ -960,7 +960,6 @@ class OrderLauncherView(discord.ui.View):
         await interaction.response.send_message(
             "Choisis d'abord la marque que tu souhaites commander :",
             view=ProductSelectView(),
-            DISCORD_THREAD_STARTED = False
             ephemeral=True
         )
 
