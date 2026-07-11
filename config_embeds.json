@@ -302,10 +302,10 @@
     "description": [
       "Consulte ton solde personnel ou ouvre un ticket pour le recharger.",
       "",
-      "    > Minimum dépôt : 20€",
+      "> Minimum dépôt : 20€",
       "Les informations de chaque client restent privées.",
       "",
-      ">**Moyens de paiement acceptés**",
+      "> Moyens de paiement acceptés",
       "",
       "<:revolut:1525568035392459023> **Revolut**",
       "<:paypal:1517582845315649751> **PayPal**",
