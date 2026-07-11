@@ -289,20 +289,6 @@ DEFAULT_EMBED_DATA = {
         "color_rgb": [255, 192, 203],
         "image_url": ""
     },
-    "paiements_embed": {
-        "title": "💳 Moyens de paiement",
-        "description": [
-            "Pour finaliser votre achat chez **PinkGift**, nous acceptons :",
-            "",
-            "<:paypal:1517582845315649751> **PayPal**",
-            "🏦 **Virements bancaires**",
-            "₿ **Cryptomonnaies**",
-            "",
-            "Merci d'indiquer le moyen de paiement souhaite dans le ticket."
-        ],
-        "color_rgb": [255, 192, 203],
-        "footer": "PinkGift — Paiements"
-    },
     "ticket_bienvenue": {
         "title": "🎫 Ticket d achat",
         "description": [
@@ -478,7 +464,7 @@ DEFAULT_EMBED_DATA.update({
         "fields": [
             {
                 "name": "🎫 Tickets",
-                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!paiements : envoie les moyens de paiement.\n!maj_tarifs, !maj_valo, !maj_paiements, !maj_solde : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
+                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!maj_tarifs, !maj_valo, !maj_solde : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
                 "inline": False
             },
             {
@@ -1183,20 +1169,6 @@ def build_valo_embed():
     embed.set_footer(text="PinkGift — Valorant Points")
     return embed
 
-def build_paiements_embed():
-    texts = load_embed_texts().get("paiements_embed", DEFAULT_EMBED_DATA["paiements_embed"])
-    rgb = texts.get("color_rgb", [255, 192, 203])
-    desc_raw = texts.get("description", [])
-    description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
-    embed = discord.Embed(title=texts.get("title", "💳 Moyens de paiement"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
-    footer = texts.get("footer", "PinkGift — Paiements")
-    if footer:
-        embed.set_footer(text=footer)
-    image_url = texts.get("image_url", "") or get_image_url("paiement_securise", "")
-    if image_url:
-        embed.set_image(url=image_url)
-    return embed
-
 async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
     embed = embed_builder()
     updated_count = 0
@@ -1227,7 +1199,6 @@ async def update_public_embeds_without_ping(ctx):
     builders = [
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
-        (["Moyens de paiement", "Paiements"], build_paiements_embed, None),
         (["Solde PinkGift", "Solde & paiements", "Solde"], lambda: build_json_embed("balance_embed"), BalanceView()),
     ]
     updated_count = 0
@@ -1433,22 +1404,6 @@ async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
     await ctx.send(f"✅ **{montant:.2f} €** retirés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
 
 
-@bot.hybrid_command(name="paiements", description="Publier les moyens de paiement acceptés")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_paiements(ctx):
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-    embed = build_paiements_embed()
-    await ctx.send(content="||@everyone||", embed=embed)
-
-@bot.hybrid_command(name="maj_paiements", description="Mettre à jour l'embed des paiements sans ping")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def update_paiements(ctx):
-    await update_last_embed(ctx, build_paiements_embed, ["Moyens de paiement", "Paiements"])
 
 @bot.hybrid_command(name="commandes", description="Afficher le répertoire des commandes réservées au staff")
 @discord.app_commands.default_permissions(manage_messages=True)
