@@ -478,7 +478,7 @@ DEFAULT_EMBED_DATA.update({
         "fields": [
             {
                 "name": "🎫 Tickets",
-                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!paiements : envoie les moyens de paiement.\n!maj_tarifs, !maj_valo, !maj_paiements : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
+                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!paiements : envoie les moyens de paiement.\n!maj_tarifs, !maj_valo, !maj_paiements, !maj_solde : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
                 "inline": False
             },
             {
@@ -505,7 +505,7 @@ DEFAULT_EMBED_DATA.update({
     }
 })
 
-DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde PinkGift","description":["{user}, ton solde actuel est de **{balance} €**.","","Utilise les boutons ci-dessous pour consulter ou recharger ton solde."],"color_rgb":[255,192,203]},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
+DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde & paiements PinkGift","description":["Consulte ton solde ou ouvre un ticket de recharge avec les boutons ci-dessous.","","💳 **Moyens de paiement acceptés**","<:paypal:1517582845315649751> **PayPal**","🏦 **Virement bancaire**","₿ **Cryptomonnaies**","","Une fois le paiement confirmé par le staff, ton solde sera ajouté et utilisable pour commander."],"color_rgb":[255,192,203],"image_key":"paiement_securise","footer":"PinkGift — Solde & paiements"},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
 
 DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée selon la grille fixe."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
 
@@ -1228,6 +1228,7 @@ async def update_public_embeds_without_ping(ctx):
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["Moyens de paiement", "Paiements"], build_paiements_embed, None),
+        (["Solde PinkGift", "Solde & paiements", "Solde"], lambda: build_json_embed("balance_embed"), BalanceView()),
     ]
     updated_count = 0
     async for msg in ctx.channel.history(limit=150):
@@ -1394,6 +1395,13 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_solde(ctx):
     await ctx.send(embed=build_json_embed("balance_embed"), view=BalanceView())
+
+
+@bot.hybrid_command(name="maj_solde", description="Mettre à jour le panneau solde sans ping")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def update_solde(ctx):
+    await update_last_embed(ctx, lambda: build_json_embed("balance_embed"), ["Solde PinkGift", "Solde & paiements", "Solde"], BalanceView())
 
 
 @bot.hybrid_command(name="ajouter_solde", description="Ajouter un montant au solde d'un client")
