@@ -1154,7 +1154,6 @@ def build_tarifs_embed():
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
     description = apply_custom_brand_emojis(description)
     embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
-    embed.set_thumbnail(url=TARIFS_THUMBNAIL_URL)
     image_url = texts.get("image_url", TARIFS_IMAGE_URL)
     if image_url:
         embed.set_image(url=image_url)
