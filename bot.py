@@ -58,7 +58,6 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 DISCORD_ENABLED = os.environ.get("DISCORD_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 PANEL_AUDIT_KEY = os.environ.get("PANEL_AUDIT_KEY", "").strip()
-PANEL_WEBHOOK_NAME = os.environ.get("PANEL_WEBHOOK_NAME", "PinkSoftware").strip() or "PinkSoftware"
 
 
 
@@ -1173,86 +1172,18 @@ def build_valo_embed():
     embed.set_footer(text="PinkGift — Valorant Points")
     return embed
 
-async def get_public_webhook(channel):
-    if not isinstance(channel, discord.TextChannel):
-        return None
-    guild = channel.guild
-    me = guild.me or guild.get_member(bot.user.id if bot.user else 0)
-    if not me or not channel.permissions_for(me).manage_webhooks:
-        return None
-    try:
-        webhooks = await channel.webhooks()
-        for webhook in webhooks:
-            if webhook.name == PANEL_WEBHOOK_NAME and webhook.user and bot.user and webhook.user.id == bot.user.id:
-                return webhook
-        return await channel.create_webhook(name=PANEL_WEBHOOK_NAME, reason="PinkSoftware public embed panels")
-    except Exception as error:
-        print(f"Webhook PinkSoftware indisponible dans {channel}: {error}")
-        return None
-
-
-async def get_public_webhook_by_id(channel, webhook_id):
-    if not isinstance(channel, discord.TextChannel):
-        return None
-    try:
-        for webhook in await channel.webhooks():
-            if webhook.id == webhook_id:
-                return webhook
-    except Exception as error:
-        print(f"Lecture webhook impossible dans {channel}: {error}")
-    return None
-
-
-async def send_public_panel(ctx, embed, view=None, content=None):
-    webhook = await get_public_webhook(ctx.channel)
-    if webhook:
-        try:
-            kwargs = {"content": content, "embed": embed, "wait": True}
-            if view is not None:
-                kwargs["view"] = view
-            if bot.user:
-                kwargs["username"] = ctx.guild.me.display_name if ctx.guild and ctx.guild.me else PANEL_WEBHOOK_NAME
-                kwargs["avatar_url"] = bot.user.display_avatar.url
-            return await webhook.send(**kwargs)
-        except Exception as error:
-            print(f"Envoi webhook impossible, fallback bot : {error}")
-    return await ctx.send(content=content, embed=embed, view=view)
-
-
-async def edit_public_panel_message(message, embed, view=None):
-    try:
-        if message.webhook_id:
-            webhook = await get_public_webhook_by_id(message.channel, message.webhook_id)
-            if webhook:
-                kwargs = {"embed": embed}
-                if view is not None:
-                    kwargs["view"] = view
-                await webhook.edit_message(message.id, **kwargs)
-                return True
-            return False
-        kwargs = {"embed": embed}
-        if view is not None:
-            kwargs["view"] = view
-        await message.edit(**kwargs)
-        return True
-    except Exception as error:
-        print(f"Modification embed public impossible : {error}")
-        return False
-
-
-def is_public_panel_message(message):
-    return bool(message.embeds) and (message.author == bot.user or message.webhook_id)
-
-
 async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
     embed = embed_builder()
     updated_count = 0
     async for msg in ctx.channel.history(limit=100):
-        if is_public_panel_message(msg):
+        if msg.author == bot.user and msg.embeds:
             title = msg.embeds[0].title or ""
             if any(keyword.lower() in title.lower() for keyword in title_keywords):
-                if await edit_public_panel_message(msg, embed, view):
-                    updated_count += 1
+                if view is None:
+                    await msg.edit(embed=embed)
+                else:
+                    await msg.edit(embed=embed, view=view)
+                updated_count += 1
     if updated_count:
         preview = (embed.description or "").replace("\n", " ")[:120]
         confirmation = await ctx.send(f"✅ {updated_count} embed(s) mis à jour sans ping. Aperçu chargé : {preview}")
@@ -1267,6 +1198,7 @@ async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
             pass
         return
     await ctx.send("❌ Aucun embed correspondant trouvé dans ce salon.", delete_after=6)
+
 async def update_public_embeds_without_ping(ctx):
     builders = [
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
@@ -1275,12 +1207,15 @@ async def update_public_embeds_without_ping(ctx):
     ]
     updated_count = 0
     async for msg in ctx.channel.history(limit=150):
-        if is_public_panel_message(msg):
+        if msg.author == bot.user and msg.embeds:
             title = msg.embeds[0].title or ""
             for keywords, builder, view in builders:
                 if any(keyword.lower() in title.lower() for keyword in keywords):
-                    if await edit_public_panel_message(msg, builder(), view):
-                        updated_count += 1
+                    if view is None:
+                        await msg.edit(embed=builder())
+                    else:
+                        await msg.edit(embed=builder(), view=view)
+                    updated_count += 1
                     break
     return updated_count
 
@@ -1333,7 +1268,7 @@ async def cmd_close_button(ctx):
 @commands.has_role(STAFF_ROLE_ID)
 async def send_tarifs(ctx):
     embed = build_tarifs_embed()
-    await send_public_panel(ctx, embed, view=OrderLauncherView(), content="||@everyone||")
+    await ctx.send(content="||@everyone||", embed=embed, view=OrderLauncherView())
 
 @bot.hybrid_command(name="maj_tarifs", description="Mettre à jour le panneau des tarifs sans ping")
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -1346,7 +1281,7 @@ async def update_tarifs(ctx):
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_valo(ctx):
     embed = build_valo_embed()
-    await send_public_panel(ctx, embed, view=ValoOrderLauncherView(), content="||@everyone||")
+    await ctx.send(content="||@everyone||", embed=embed, view=ValoOrderLauncherView())
 
 @bot.hybrid_command(name="maj_valo", description="Mettre à jour le panneau Valorant sans ping")
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -1434,7 +1369,7 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_solde(ctx):
-    await send_public_panel(ctx, build_json_embed("balance_embed"), view=BalanceView())
+    await ctx.send(embed=build_json_embed("balance_embed"), view=BalanceView())
 
 
 @bot.hybrid_command(name="maj_solde", description="Mettre à jour le panneau solde sans ping")
@@ -1478,7 +1413,7 @@ async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
-    await send_public_panel(ctx, build_json_embed("commandes_embed"))
+    await ctx.send(embed=build_json_embed("commandes_embed"))
 
 def panel_auth_token():
     return hashlib.sha256(("pinkgift-panel:" + PANEL_PASSWORD).encode("utf-8")).hexdigest()
