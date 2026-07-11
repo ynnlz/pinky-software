@@ -959,6 +959,7 @@ class OrderLauncherView(discord.ui.View):
         await interaction.response.send_message(
             "Choisis d'abord la marque que tu souhaites commander :",
             view=ProductSelectView(),
+            DISCORD_THREAD_STARTED = False
             ephemeral=True
         )
 
@@ -1914,8 +1915,18 @@ def run_discord():
         DISCORD_LAST_ERROR = str(error)[:200]
         print(f"Le bot Discord est temporairement hors ligne : {error}")
 
-if DISCORD_ENABLED:
-    Thread(target=run_discord, daemon=True).start()
-else:
-    print("Connexion Discord désactivée par DISCORD_ENABLED=false")
-run_web()
+def start_discord_background():
+    global DISCORD_THREAD_STARTED
+    if DISCORD_THREAD_STARTED:
+        return
+    DISCORD_THREAD_STARTED = True
+    if DISCORD_ENABLED:
+        Thread(target=run_discord, daemon=True).start()
+    else:
+        print("Connexion Discord désactivée par DISCORD_ENABLED=false")
+
+
+start_discord_background()
+
+if __name__ == "__main__":
+    run_web()
