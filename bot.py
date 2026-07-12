@@ -36,7 +36,13 @@ intents.message_content = True
 intents.members = True
 class PinkGiftBot(commands.Bot):
     async def setup_hook(self):
-        print("Préparation des commandes slash. Synchronisation serveur au démarrage.")
+        self.add_view(OrderLauncherView())
+        self.add_view(ProductSelectView())
+        self.add_view(ValoOrderLauncherView())
+        self.add_view(BalanceView())
+        self.add_view(OpenTicketView())
+
+        print("✅ Boutons et menus persistants enregistrés.")
 
 
 bot = PinkGiftBot(command_prefix="!", intents=intents)
