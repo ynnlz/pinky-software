@@ -55,6 +55,11 @@ AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "❤️", "🔥")
 STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
 STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
 
+GIVEAWAY_JOIN_EMOJI = "🎉"
+BOT_AUTH_KEY = os.environ.get("BOT_AUTH_KEY", "").strip()
+AUTHORIZED_GUILD_IDS_ENV = os.environ.get("AUTHORIZED_GUILD_IDS", "").strip()
+GUILD_AUTH_GRACE_SECONDS = int(os.environ.get("GUILD_AUTH_GRACE_SECONDS", "600") or 600)
+
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
@@ -163,6 +168,27 @@ def set_panel_setting(key, value):
             "INSERT INTO panel_settings(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP",
             (key, json.dumps(value, ensure_ascii=False))
         )
+
+
+def list_panel_settings(prefix=""):
+    try:
+        if USE_SUPABASE:
+            rows = supabase_request("GET", "panel_settings?select=key,value&limit=1000") or []
+            result = []
+            for row in rows:
+                key = str(row.get("key", ""))
+                if not prefix or key.startswith(prefix):
+                    result.append({"key": key, "value": decode_setting_value(row.get("value"), {})})
+            return result
+        with db_connect() as db:
+            if prefix:
+                rows = db.execute("SELECT key,value FROM panel_settings WHERE key LIKE ?", (f"{prefix}%",)).fetchall()
+            else:
+                rows = db.execute("SELECT key,value FROM panel_settings").fetchall()
+            return [{"key": row["key"], "value": decode_setting_value(row["value"], {})} for row in rows]
+    except Exception as error:
+        print(f"Erreur liste settings panel {prefix}: {error}")
+        return []
 
 
 def apply_embed_overrides(data):
@@ -552,6 +578,56 @@ DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde & paiements Pink
 
 DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée selon la grille fixe."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
 
+DEFAULT_EMBED_DATA.update({
+    "rules_embed": {
+        "title": "📜 Règlement PinkGift",
+        "description": [
+            "En restant sur le serveur, tu acceptes ces règles.",
+            "",
+            "**Respect** : aucune insulte, menace, provocation ou discrimination.",
+            "**Commandes** : utilise uniquement les salons et tickets prévus.",
+            "**Paiements** : fausses preuves, fraude ou arnaque = bannissement.",
+            "**Tickets** : sois clair, patient et évite le spam.",
+            "**Livraison** : vérifie tes informations avant validation. Code livré = commande finalisée.",
+            "**Pub & spam** : publicité non autorisée, flood et liens suspects interdits.",
+            "",
+            "Le staff peut sanctionner tout comportement nuisible pour protéger la communauté."
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Merci de respecter le serveur"
+    },
+    "leaderboard_embed": {
+        "title": "🏆 Classement PinkGift",
+        "description": [
+            "Classement synchronisé avec les commandes du panel."
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Top clients"
+    },
+    "giveaway_embed": {
+        "title": "🎉 Giveaway — {name}",
+        "description": [
+            "Clique sur **Je participe** pour entrer dans le giveaway.",
+            "",
+            "Fin : <t:{end_ts}:R>",
+            "Participants : **{count}**"
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Giveaway"
+    },
+    "giveaway_ended_embed": {
+        "title": "🎉 Giveaway terminé — {name}",
+        "description": [
+            "Le giveaway est terminé.",
+            "",
+            "Gagnant : {winner}",
+            "Participants : **{count}**"
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Giveaway terminé"
+    }
+})
+
 def load_embed_texts():
     if EMBED_CONFIG_URL:
         try:
@@ -690,6 +766,115 @@ def parse_duration(duration_str: str):
     if unit == "d": return amount * 86400
     if unit == "s": return amount
     return None
+
+
+def parse_datetime_value(value):
+    if not value:
+        return None
+    if isinstance(value, datetime.datetime):
+        return value if value.tzinfo else value.replace(tzinfo=datetime.timezone.utc)
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.datetime.fromisoformat(text)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        try:
+            return datetime.datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            return None
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def parse_giveaway_duration(value):
+    match = re.fullmatch(r"\s*(\d+)\s*(s|m|h|d|j)?\s*", str(value or "").lower())
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2) or "m"
+    if unit == "s":
+        return amount
+    if unit == "m":
+        return amount * 60
+    if unit == "h":
+        return amount * 3600
+    if unit in ("d", "j"):
+        return amount * 86400
+    return None
+
+
+def load_orders_for_stats(limit=5000):
+    try:
+        if USE_SUPABASE:
+            return supabase_request("GET", f"orders?select=*&order=id.desc&limit={limit}") or []
+        with db_connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+    except Exception as error:
+        print(f"Erreur chargement classement : {error}")
+        return []
+
+
+def build_client_totals(orders, month_only=False):
+    now = utc_now()
+    month_start = datetime.datetime(now.year, now.month, 1, tzinfo=datetime.timezone.utc)
+    totals = {}
+    for order in orders:
+        status = str(order.get("status") or "").lower()
+        if status not in ("done", "livre", "livré", "delivered"):
+            continue
+        if month_only:
+            created_at = parse_datetime_value(order.get("created_at"))
+            if not created_at or created_at.astimezone(datetime.timezone.utc) < month_start:
+                continue
+        try:
+            user_id = int(order.get("user_id") or 0)
+        except (TypeError, ValueError):
+            user_id = 0
+        if not user_id:
+            continue
+        item = totals.setdefault(user_id, {"user_id": user_id, "user_name": order.get("user_name") or str(user_id), "total": 0.0})
+        if order.get("user_name"):
+            item["user_name"] = order.get("user_name")
+        try:
+            item["total"] += float(order.get("paid") or 0)
+        except (TypeError, ValueError):
+            pass
+    return sorted(totals.values(), key=lambda item: item["total"], reverse=True)
+
+
+def leaderboard_lines(items):
+    if not items:
+        return "Aucun client classé pour le moment."
+    lines = []
+    for index, item in enumerate(items[:10], start=1):
+        user_id = item.get("user_id")
+        mention = f"<@{user_id}>" if user_id else f"@{item.get('user_name', 'client')}"
+        lines.append(f"**{index}.** {mention} **- {item.get('total', 0):.2f}Euros**")
+    return "\n".join(lines)
+
+
+def build_leaderboard_embed():
+    data = load_embed_texts().get("leaderboard_embed", DEFAULT_EMBED_DATA["leaderboard_embed"])
+    rgb = data.get("color_rgb", [255, 192, 203])
+    description_raw = data.get("description", [])
+    description = "\n".join(description_raw) if isinstance(description_raw, list) else str(description_raw or "")
+    embed = discord.Embed(title=data.get("title", "🏆 Classement PinkGift"), description=description, color=discord.Color.from_rgb(*rgb))
+    orders = load_orders_for_stats()
+    embed.add_field(name="Top all time", value=leaderboard_lines(build_client_totals(orders, month_only=False)), inline=False)
+    embed.add_field(name="Top du mois", value=leaderboard_lines(build_client_totals(orders, month_only=True)), inline=False)
+    footer = data.get("footer")
+    if footer:
+        embed.set_footer(text=footer)
+    image_url = data.get("image_url") or get_image_url(data.get("image_key", ""), "")
+    if image_url:
+        embed.set_image(url=image_url)
+    return embed
 
 async def create_product_ticket(interaction, product_key, amount):
     guild = interaction.guild
@@ -1248,6 +1433,169 @@ class ValoTicketButton(discord.ui.View):
         await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await interaction.response.send_message(f"✅ Ton ticket Valorant a ete cree ici : {ticket_channel.mention}", ephemeral=True)
 
+
+def giveaway_storage_key(message_id):
+    return f"giveaway:{message_id}"
+
+
+def load_giveaway(message_id):
+    data = get_panel_setting(giveaway_storage_key(message_id), {}) or {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_giveaway(message_id, data):
+    set_panel_setting(giveaway_storage_key(message_id), data)
+
+
+def format_embed_description(raw, variables):
+    if isinstance(raw, list):
+        return "\n".join(format_embed_text(line, variables) for line in raw)
+    return format_embed_text(raw or "", variables)
+
+
+def build_giveaway_embed(name, end_ts, participants_count=0, image_url="", ended=False, winner="Aucun gagnant"):
+    key = "giveaway_ended_embed" if ended else "giveaway_embed"
+    data = load_embed_texts().get(key, DEFAULT_EMBED_DATA[key])
+    variables = {"name": name, "end_ts": end_ts, "count": participants_count, "winner": winner}
+    rgb = data.get("color_rgb", [255, 192, 203])
+    embed = discord.Embed(
+        title=format_embed_text(data.get("title", "🎉 Giveaway"), variables),
+        description=format_embed_description(data.get("description", []), variables),
+        color=discord.Color.from_rgb(*rgb)
+    )
+    footer = data.get("footer")
+    if footer:
+        embed.set_footer(text=format_embed_text(footer, variables))
+    final_image = image_url or data.get("image_url") or get_image_url(data.get("image_key", ""), "")
+    if final_image:
+        embed.set_image(url=final_image)
+    return embed
+
+
+class GiveawayJoinView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Je participe", style=discord.ButtonStyle.success, emoji=GIVEAWAY_JOIN_EMOJI, custom_id="pinkgift_giveaway_join")
+    async def join_giveaway(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message = interaction.message
+        if message is None:
+            await interaction.response.send_message("❌ Giveaway introuvable.", ephemeral=True)
+            return
+        data = load_giveaway(message.id)
+        if not data:
+            await interaction.response.send_message("❌ Ce giveaway n'est plus actif.", ephemeral=True)
+            return
+        if data.get("ended"):
+            await interaction.response.send_message("❌ Ce giveaway est déjà terminé.", ephemeral=True)
+            return
+        participants = [int(item) for item in data.get("participants", [])]
+        if interaction.user.id in participants:
+            await interaction.response.send_message("✅ Tu participes déjà à ce giveaway.", ephemeral=True)
+            return
+        participants.append(interaction.user.id)
+        data["participants"] = participants
+        save_giveaway(message.id, data)
+        try:
+            await message.edit(embed=build_giveaway_embed(data.get("name", "Giveaway"), data.get("end_ts", 0), len(participants), data.get("image_url", "")), view=GiveawayJoinView())
+        except discord.HTTPException as error:
+            print(f"Erreur mise à jour giveaway {message.id}: {error}")
+        await interaction.response.send_message("✅ Participation enregistrée.", ephemeral=True)
+
+
+async def finish_giveaway(message_id):
+    data = load_giveaway(message_id)
+    if not data or data.get("ended"):
+        return
+    participants = [int(item) for item in data.get("participants", [])]
+    winner_text = "Aucun participant"
+    if participants:
+        winner_id = secrets.choice(participants)
+        winner_text = f"<@{winner_id}>"
+        data["winner_id"] = winner_id
+    data["ended"] = True
+    save_giveaway(message_id, data)
+    channel_id = int(data.get("channel_id") or 0)
+    try:
+        channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+        message = await channel.fetch_message(message_id)
+        await message.edit(embed=build_giveaway_embed(data.get("name", "Giveaway"), data.get("end_ts", 0), len(participants), data.get("image_url", ""), ended=True, winner=winner_text), view=None)
+        await channel.send(f"🎉 Giveaway **{data.get('name', 'Giveaway')}** terminé ! Gagnant : {winner_text}")
+    except Exception as error:
+        print(f"Erreur fin giveaway {message_id}: {error}")
+
+
+async def finish_giveaway_later(message_id, delay_seconds):
+    await asyncio.sleep(max(0, int(delay_seconds)))
+    await finish_giveaway(message_id)
+
+
+async def schedule_active_giveaways():
+    now_ts = int(time.time())
+    for item in list_panel_settings("giveaway:"):
+        data = item.get("value") or {}
+        if not isinstance(data, dict) or data.get("ended"):
+            continue
+        message_id = int(str(item.get("key", "")).split(":", 1)[1] or 0)
+        end_ts = int(data.get("end_ts") or 0)
+        asyncio.create_task(finish_giveaway_later(message_id, max(0, end_ts - now_ts)))
+
+
+def authorized_guild_ids():
+    ids = set()
+    for raw in AUTHORIZED_GUILD_IDS_ENV.replace(";", ",").split(","):
+        raw = raw.strip()
+        if raw.isdigit():
+            ids.add(int(raw))
+    stored = get_panel_setting("authorized_guild_ids", []) or []
+    for raw in stored:
+        try:
+            ids.add(int(raw))
+        except (TypeError, ValueError):
+            pass
+    return ids
+
+
+def guild_authorization_enabled():
+    return bool(BOT_AUTH_KEY)
+
+
+def guild_is_authorized(guild_id):
+    return not guild_authorization_enabled() or int(guild_id) in authorized_guild_ids()
+
+
+def add_authorized_guild(guild_id):
+    ids = sorted(authorized_guild_ids() | {int(guild_id)})
+    set_panel_setting("authorized_guild_ids", ids)
+
+
+async def leave_unauthorized_guild_later(guild, delay=GUILD_AUTH_GRACE_SECONDS):
+    await asyncio.sleep(max(5, int(delay)))
+    if guild and not guild_is_authorized(guild.id):
+        try:
+            await guild.leave()
+            print(f"Serveur non autorisé quitté : {guild.name} ({guild.id})")
+        except discord.HTTPException as error:
+            print(f"Impossible de quitter le serveur non autorisé {guild.id}: {error}")
+
+
+async def warn_unauthorized_guild(guild):
+    if guild is None or guild_is_authorized(guild.id):
+        return
+    message = (
+        "🔐 **PinkSoftware est protégé.**\n"
+        f"Ce serveur n'est pas autorisé. Un administrateur doit exécuter /autoriser_serveur clé dans les {max(1, GUILD_AUTH_GRACE_SECONDS // 60)} prochaines minutes, sinon le bot quittera le serveur."
+    )
+    for channel in guild.text_channels:
+        me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+        if me and channel.permissions_for(me).send_messages:
+            try:
+                await channel.send(message)
+                break
+            except discord.HTTPException:
+                pass
+    asyncio.create_task(leave_unauthorized_guild_later(guild))
+
 @bot.event
 async def on_ready():
     global BOT_LOOP
@@ -1259,8 +1607,17 @@ async def on_ready():
     bot.add_view(ValoTicketButton())
     bot.add_view(ValoOrderLauncherView())
     bot.add_view(CloseTicketView())
+    bot.add_view(GiveawayJoinView())
+    await schedule_active_giveaways()
+    for guild in bot.guilds:
+        if not guild_is_authorized(guild.id):
+            await warn_unauthorized_guild(guild)
     await bot.change_presence(activity=discord.Game(name="🎀 PinkGift | Tickets ouverts"))
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
+
+@bot.event
+async def on_guild_join(guild):
+    await warn_unauthorized_guild(guild)
 
 @bot.event
 async def on_member_join(member):
@@ -2036,6 +2393,87 @@ def panel_set_code(order_id):
         flash(f"Erreur Discord : {error}")
     return panel_filter_redirect()
 
+
+
+@bot.hybrid_command(name="giveaway", aliases=["gw"], description="Créer un giveaway avec bouton de participation")
+@discord.app_commands.default_permissions(manage_messages=True)
+@discord.app_commands.describe(duration="Durée, par exemple 30m, 2h ou 1d", nom="Nom du giveaway", image_url="Lien direct d'une image optionnelle")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_giveaway(ctx, duration: str, nom: str, image_url: str = ""):
+    seconds = parse_giveaway_duration(duration)
+    if not seconds or seconds < 10:
+        await ctx.send("❌ Durée invalide. Exemple : /giveaway 2h Nitro image_url.", delete_after=8)
+        return
+    if seconds > 60 * 60 * 24 * 30:
+        await ctx.send("❌ Durée trop longue. Maximum : 30 jours.", delete_after=8)
+        return
+    image_url = (image_url or "").strip()
+    if not image_url and getattr(ctx, "message", None) and ctx.message.attachments:
+        image_url = ctx.message.attachments[0].url
+    end_ts = int(time.time()) + seconds
+    embed = build_giveaway_embed(nom, end_ts, 0, image_url)
+    message = await ctx.send(embed=embed, view=GiveawayJoinView())
+    save_giveaway(message.id, {
+        "guild_id": ctx.guild.id if ctx.guild else 0,
+        "channel_id": message.channel.id,
+        "message_id": message.id,
+        "name": nom,
+        "image_url": image_url,
+        "end_ts": end_ts,
+        "participants": [],
+        "ended": False,
+        "created_at": utc_now().isoformat()
+    })
+    asyncio.create_task(finish_giveaway_later(message.id, seconds))
+
+
+@bot.hybrid_command(name="reglement", description="Publier le règlement PinkGift")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_reglement(ctx):
+    await ctx.send(embed=build_json_embed("rules_embed"))
+
+
+@bot.hybrid_command(name="maj_reglement", description="Mettre à jour le règlement sans repost")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_maj_reglement(ctx):
+    await update_last_embed(ctx, lambda: build_json_embed("rules_embed"), ["Règlement", "REGLEMENT", "PinkGift"], None)
+
+
+@bot.hybrid_command(name="classement", description="Publier le classement clients PinkGift")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_classement(ctx):
+    await ctx.send(embed=build_leaderboard_embed())
+
+
+@bot.hybrid_command(name="maj_classement", description="Mettre à jour le classement clients sans repost")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_maj_classement(ctx):
+    await update_last_embed(ctx, build_leaderboard_embed, ["Classement", "CLASSEMENT"], None)
+
+
+@bot.hybrid_command(name="autoriser_serveur", description="Autoriser ce serveur à utiliser PinkSoftware")
+@discord.app_commands.default_permissions(administrator=True)
+@discord.app_commands.describe(cle="Clé privée configurée dans BOT_AUTH_KEY")
+async def cmd_autoriser_serveur(ctx, cle: str):
+    if not guild_authorization_enabled():
+        await ctx.send("ℹ️ Protection désactivée : ajoute BOT_AUTH_KEY dans Render pour l'activer.", ephemeral=True)
+        return
+    if not ctx.guild:
+        await ctx.send("❌ Cette commande doit être exécutée dans un serveur.", ephemeral=True)
+        return
+    is_admin = getattr(getattr(ctx, "author", None), "guild_permissions", None) and ctx.author.guild_permissions.administrator
+    if not is_admin:
+        await ctx.send("❌ Seul un administrateur peut autoriser ce serveur.", ephemeral=True)
+        return
+    if not secrets.compare_digest(str(cle), BOT_AUTH_KEY):
+        await ctx.send("❌ Clé d'autorisation invalide.", ephemeral=True)
+        return
+    add_authorized_guild(ctx.guild.id)
+    await ctx.send("✅ Serveur autorisé. PinkSoftware restera ici.", ephemeral=True)
 
 async def send_slash_error(interaction, message):
     if interaction.response.is_done():
