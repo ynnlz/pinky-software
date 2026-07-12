@@ -2048,7 +2048,10 @@ async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_directory(ctx):
-    await ctx.send(embed=build_json_embed("commandes_embed"))
+    await ctx.send(
+    embed=build_json_embed("commandes_embed"),
+    view=OrderLauncherView()
+)
 
 def panel_auth_token():
     return hashlib.sha256(("pinkgift-panel:" + PANEL_PASSWORD).encode("utf-8")).hexdigest()
