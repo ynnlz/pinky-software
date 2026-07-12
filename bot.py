@@ -2601,45 +2601,34 @@ def run_discord():
         return
     while True:
         try:
-            DISCORD_STATE = "connexion en cours"
-            request_discord = urllib.request.Request(
-                "https://discord.com/api/v10/users/@me",
-                headers={"Authorization": f"Bot {token_discord}", "User-Agent": "PinkGiftBot/1.0"}
-            )
-            with urllib.request.urlopen(request_discord, timeout=20):
-                pass
-            break
-        except urllib.error.HTTPError as error:
-            if error.code == 401:
-                DISCORD_STATE = "token invalide"
-                DISCORD_LAST_ERROR = "Discord refuse le token (401)."
-                print(DISCORD_LAST_ERROR)
-                return
-            if error.code == 429:
+            DISCORD_LAST_ERROR = ""
+            DISCORD_STATE = "connexion à la passerelle Discord"
+            bot.run(token_discord, reconnect=True)
+            DISCORD_STATE = "déconnecté"
+            return
+        except discord.LoginFailure:
+            DISCORD_STATE = "token invalide"
+            DISCORD_LAST_ERROR = "Discord refuse le token."
+            print(DISCORD_LAST_ERROR)
+            return
+        except discord.HTTPException as error:
+            status = getattr(error, "status", None)
+            if status == 429:
                 wait_seconds = 900
-                try:
-                    payload = json.loads(error.read().decode("utf-8"))
-                    wait_seconds = max(60, min(int(float(payload.get("retry_after", 900))) + 5, 1800))
-                except Exception:
-                    pass
                 DISCORD_STATE = f"bloqué par Discord, nouvel essai dans {wait_seconds // 60} min"
                 DISCORD_LAST_ERROR = "Discord 429 Too Many Requests"
                 print(f"{DISCORD_LAST_ERROR}. Nouvel essai dans {wait_seconds} secondes.")
                 time.sleep(wait_seconds)
                 continue
-            DISCORD_LAST_ERROR = f"Discord HTTP {error.code}"
+            DISCORD_STATE = "nouvel essai dans 1 min"
+            DISCORD_LAST_ERROR = f"Discord HTTP {status or 'inconnu'}"
+            print(f"Connexion Discord impossible : {DISCORD_LAST_ERROR}")
+            time.sleep(60)
         except Exception as error:
+            DISCORD_STATE = "nouvel essai dans 1 min"
             DISCORD_LAST_ERROR = str(error)[:200]
-        DISCORD_STATE = "nouvel essai dans 1 min"
-        print(f"Connexion Discord impossible : {DISCORD_LAST_ERROR}")
-        time.sleep(60)
-    try:
-        DISCORD_STATE = "connexion à la passerelle Discord"
-        bot.run(token_discord)
-    except Exception as error:
-        DISCORD_STATE = "temporairement hors ligne"
-        DISCORD_LAST_ERROR = str(error)[:200]
-        print(f"Le bot Discord est temporairement hors ligne : {error}")
+            print(f"Connexion Discord impossible : {DISCORD_LAST_ERROR}")
+            time.sleep(60)
 
 def start_discord_background():
     global DISCORD_THREAD_STARTED
