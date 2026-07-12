@@ -36,11 +36,7 @@ intents.message_content = True
 intents.members = True
 class PinkGiftBot(commands.Bot):
     async def setup_hook(self):
-        try:
-            synced = await self.tree.sync()
-            print(f"{len(synced)} commande(s) slash globale(s) synchronisée(s).")
-        except discord.HTTPException as error:
-            print(f"Synchronisation des commandes slash impossible : {error}")
+        print("Préparation des commandes slash. Synchronisation serveur au démarrage.")
 
 
 bot = PinkGiftBot(command_prefix="!", intents=intents)
@@ -1667,19 +1663,23 @@ async def warn_unauthorized_guild(guild):
 
 
 async def sync_commands_to_guilds():
-    try:
-        synced = await bot.tree.sync()
-        print(f"{len(synced)} commande(s) slash globale(s) synchronisée(s).")
-    except discord.HTTPException as error:
-        print(f"Synchronisation globale des commandes slash impossible : {error}")
+    guild_synced = 0
     for guild in bot.guilds:
         try:
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
-            print(f"{len(synced)} commande(s) slash synchronisée(s) pour {guild.name} ({guild.id}).")
+            guild_synced += len(synced)
+            print(f"{len(synced)} commande(s) slash serveur synchronisée(s) pour {guild.name} ({guild.id}).")
             await asyncio.sleep(1)
         except discord.HTTPException as error:
-            print(f"Synchronisation slash impossible pour {guild.id}: {error}")
+            print(f"Synchronisation slash serveur impossible pour {guild.id}: {error}")
+    try:
+        bot.tree.clear_commands(guild=None)
+        removed = await bot.tree.sync()
+        print(f"Commandes slash globales nettoyées ({len(removed)} restante(s)).")
+    except discord.HTTPException as error:
+        print(f"Nettoyage des commandes slash globales impossible : {error}")
+    return guild_synced
 
 
 @bot.event
