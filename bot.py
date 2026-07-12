@@ -2641,7 +2641,9 @@ def start_discord_background():
         print("Connexion Discord désactivée par DISCORD_ENABLED=false")
 
 
-start_discord_background()
+@app.before_request
+def ensure_discord_background_started():
+    start_discord_background()
 
 if __name__ == "__main__":
     run_web()
