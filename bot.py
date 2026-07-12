@@ -38,7 +38,7 @@ class PinkGiftBot(commands.Bot):
     async def setup_hook(self):
         try:
             synced = await self.tree.sync()
-            print(f"{len(synced)} commande(s) slash synchronisée(s).")
+            print(f"{len(synced)} commande(s) slash globale(s) synchronisée(s).")
         except discord.HTTPException as error:
             print(f"Synchronisation des commandes slash impossible : {error}")
 
@@ -49,6 +49,7 @@ DISCORD_STATE = "démarrage"
 DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
 DISCORD_THREAD_STARTED = False
+COMMAND_SYNC_DONE = False
 MUTED_ROLE_ID = 1525614378580312165
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 151752584211123408}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "❤️", "🔥")
@@ -547,7 +548,7 @@ DEFAULT_EMBED_DATA.update({
         "fields": [
             {
                 "name": "🎫 Tickets",
-                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!maj_tarifs, !maj_valo, !maj_solde : mettent à jour sans ping.\n!maj_categories : met à jour tous les embeds publics sans ping.\n!close_button : ajoute un bouton Close persistant.",
+                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!maj_embed : met à jour tous les embeds publics du serveur sans ping.\n!close_button : ajoute un bouton Close persistant.",
                 "inline": False
             },
             {
@@ -1596,10 +1597,30 @@ async def warn_unauthorized_guild(guild):
                 pass
     asyncio.create_task(leave_unauthorized_guild_later(guild))
 
+
+async def sync_commands_to_guilds():
+    try:
+        synced = await bot.tree.sync()
+        print(f"{len(synced)} commande(s) slash globale(s) synchronisée(s).")
+    except discord.HTTPException as error:
+        print(f"Synchronisation globale des commandes slash impossible : {error}")
+    for guild in bot.guilds:
+        try:
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            print(f"{len(synced)} commande(s) slash synchronisée(s) pour {guild.name} ({guild.id}).")
+            await asyncio.sleep(1)
+        except discord.HTTPException as error:
+            print(f"Synchronisation slash impossible pour {guild.id}: {error}")
+
+
 @bot.event
 async def on_ready():
-    global BOT_LOOP
+    global BOT_LOOP, COMMAND_SYNC_DONE
     BOT_LOOP = asyncio.get_running_loop()
+    if not COMMAND_SYNC_DONE:
+        await sync_commands_to_guilds()
+        COMMAND_SYNC_DONE = True
     bot.add_view(OpenTicketView())
     bot.add_view(ProductSelectView())
     bot.add_view(OrderLauncherView())
@@ -1702,45 +1723,67 @@ async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
         return
     await ctx.send("❌ Aucun embed correspondant trouvé dans ce salon.", delete_after=6)
 
-async def update_public_embeds_without_ping(ctx):
-    builders = [
+
+def public_embed_builders():
+    return [
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["Solde PinkGift", "Solde & paiements", "Solde"], lambda: build_json_embed("balance_embed"), BalanceView()),
+        (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
+        (["Classement", "CLASSEMENT"], build_leaderboard_embed, None),
     ]
+
+
+async def update_public_embeds_without_ping(ctx):
+    builders = public_embed_builders()
     updated_count = 0
-    async for msg in ctx.channel.history(limit=150):
-        if msg.author == bot.user and msg.embeds:
-            title = msg.embeds[0].title or ""
-            for keywords, builder, view in builders:
-                if any(keyword.lower() in title.lower() for keyword in keywords):
-                    if view is None:
-                        await msg.edit(embed=builder())
-                    else:
-                        await msg.edit(embed=builder(), view=view)
-                    updated_count += 1
-                    break
-    return updated_count
+    scanned_channels = 0
+    for channel in ctx.guild.text_channels:
+        permissions = channel.permissions_for(ctx.guild.me or ctx.guild.default_role)
+        if not permissions.read_message_history or not permissions.view_channel:
+            continue
+        scanned_channels += 1
+        try:
+            async for msg in channel.history(limit=150):
+                if msg.author == bot.user and msg.embeds:
+                    title = msg.embeds[0].title or ""
+                    for keywords, builder, view in builders:
+                        if any(keyword.lower() in title.lower() for keyword in keywords):
+                            if view is None:
+                                await msg.edit(embed=builder())
+                            else:
+                                await msg.edit(embed=builder(), view=view)
+                            updated_count += 1
+                            break
+        except discord.Forbidden:
+            continue
+        except discord.HTTPException as error:
+            print(f"Erreur mise à jour embeds dans {channel}: {error}")
+    return updated_count, scanned_channels
 
 
-@bot.hybrid_command(name="maj_categories", description="Mettre à jour tous les embeds publics sans ping")
+@bot.hybrid_command(name="maj_embed", description="Mettre à jour tous les embeds publics du serveur")
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
-async def update_categories(ctx):
-    updated_count = await update_public_embeds_without_ping(ctx)
+async def update_all_embeds(ctx):
+    if ctx.guild is None:
+        await ctx.send("❌ Cette commande doit être utilisée dans un serveur.", delete_after=6)
+        return
+    status = await ctx.send("🔄 Mise à jour des embeds du serveur en cours...")
+    updated_count, scanned_channels = await update_public_embeds_without_ping(ctx)
     if updated_count:
-        confirmation = await ctx.send(f"✅ {updated_count} embed(s) public(s) mis à jour sans ping.")
-        await asyncio.sleep(8)
-        try:
-            await confirmation.delete()
-        except:
-            pass
-        try:
-            await ctx.message.delete()
-        except:
-            pass
+        await status.edit(content=f"✅ {updated_count} embed(s) mis à jour dans {scanned_channels} salon(s), sans ping.")
     else:
-        await ctx.send("❌ Aucun embed public trouvé dans ce salon.", delete_after=6)
+        await status.edit(content=f"❌ Aucun embed public trouvé dans les {scanned_channels} salon(s) vérifiés.")
+    await asyncio.sleep(10)
+    try:
+        await status.delete()
+    except:
+        pass
+    try:
+        await ctx.message.delete()
+    except:
+        pass
 
 
 @bot.hybrid_command(name="debug_embed", description="Afficher les données JSON chargées pour un embed")
@@ -1773,24 +1816,12 @@ async def send_tarifs(ctx):
     embed = build_tarifs_embed()
     await ctx.send(content="||@everyone||", embed=embed, view=OrderLauncherView())
 
-@bot.hybrid_command(name="maj_tarifs", description="Mettre à jour le panneau des tarifs sans ping")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def update_tarifs(ctx):
-    await update_last_embed(ctx, build_tarifs_embed, ["COMMANDES PINKGIFT", "CARTE CADEAUX"], OrderLauncherView())
-
 @bot.hybrid_command(name="valo", description="Publier le panneau des Valorant Points")
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_valo(ctx):
     embed = build_valo_embed()
     await ctx.send(content="||@everyone||", embed=embed, view=ValoOrderLauncherView())
-
-@bot.hybrid_command(name="maj_valo", description="Mettre à jour le panneau Valorant sans ping")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def update_valo(ctx):
-    await update_last_embed(ctx, build_valo_embed, ["VALORANT", "VALORANT POINTS"], ValoOrderLauncherView())
 
 @bot.hybrid_command(name="purge_all", description="Supprimer tous les messages du salon")
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -1912,13 +1943,6 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_solde(ctx):
     await ctx.send(embed=build_json_embed("balance_embed"), view=BalanceView())
-
-
-@bot.hybrid_command(name="maj_solde", description="Mettre à jour le panneau solde sans ping")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def update_solde(ctx):
-    await update_last_embed(ctx, lambda: build_json_embed("balance_embed"), ["Solde PinkGift", "Solde & paiements", "Solde"], BalanceView())
 
 
 @bot.hybrid_command(name="ajouter_solde", description="Ajouter un montant au solde d'un client")
@@ -2296,7 +2320,7 @@ def panel_embeds():
                 overrides = {}
             overrides[embed_key] = embed_data
             set_panel_setting("embed_overrides", overrides)
-            flash(f"Embed {embed_key} enregistré. Utilise /maj_tarifs, /maj_valo, /maj_solde ou /maj_categories pour mettre à jour les messages déjà postés.")
+            flash(f"Embed {embed_key} enregistré. Utilise /maj_embed pour mettre à jour les messages déjà postés.")
         except Exception as error:
             print(f"Erreur sauvegarde embed {embed_key}: {error}")
             flash(f"Sauvegarde impossible : {error}")
@@ -2434,25 +2458,11 @@ async def cmd_reglement(ctx):
     await ctx.send(embed=build_json_embed("rules_embed"))
 
 
-@bot.hybrid_command(name="maj_reglement", description="Mettre à jour le règlement sans repost")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_maj_reglement(ctx):
-    await update_last_embed(ctx, lambda: build_json_embed("rules_embed"), ["Règlement", "REGLEMENT", "PinkGift"], None)
-
-
 @bot.hybrid_command(name="classement", description="Publier le classement clients PinkGift")
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_classement(ctx):
     await ctx.send(embed=build_leaderboard_embed())
-
-
-@bot.hybrid_command(name="maj_classement", description="Mettre à jour le classement clients sans repost")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_maj_classement(ctx):
-    await update_last_embed(ctx, build_leaderboard_embed, ["Classement", "CLASSEMENT"], None)
 
 
 @bot.hybrid_command(name="autoriser_serveur", description="Autoriser ce serveur à utiliser PinkSoftware")
