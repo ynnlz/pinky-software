@@ -548,7 +548,7 @@ DEFAULT_EMBED_DATA.update({
         "fields": [
             {
                 "name": "🎫 Tickets",
-                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!maj_embed : met à jour tous les embeds publics du serveur sans ping.\n!close_button : ajoute un bouton Close persistant.",
+                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!maj_embed : met à jour tous les embeds publics du serveur sans ping.\n!close_button : ajoute un bouton Close persistant.\n!faq : publie la FAQ PinkGift.",
                 "inline": False
             },
             {
@@ -580,6 +580,74 @@ DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde & paiements Pink
 DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée selon la grille fixe."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
 
 DEFAULT_EMBED_DATA.update({
+    "faq_embed": {
+        "title": "🎀 FAQ PinkGift",
+        "description": [
+            "**<:questionmark:1525869342506614784> Qu’est-ce que PinkGift ?**",
+            "PinkGift est une boutique proposant des cartes cadeaux et produits numériques à prix réduit.",
+            "",
+            "**<:questionmark:1525869342506614784> Où voir les produits disponibles ?**",
+            "Les produits sont affichés dans les salons de la boutique : cartes cadeaux, Valorant, privilèges et autres. Le catalogue peut changer selon les stocks.",
+            "",
+            "**<:questionmark:1525869342506614784> Comment passer commande ?**",
+            "Choisis un produit, suis les instructions du bot, vérifie ta commande puis paie avec ton solde PinkGift.",
+            "",
+            "**<:questionmark:1525869342506614784> Quand vais-je recevoir ma commande ?**",
+            "Le délai dépend du produit et du stock. Certaines commandes sont rapides, d’autres peuvent nécessiter une vérification manuelle.",
+            "",
+            "**<:questionmark:1525869342506614784> Où vais-je recevoir ma commande ?**",
+            "Dans le fil de ta commande, via le bot PinkGift.",
+            "",
+            "**<:questionmark:1525869342506614784> Comment recharger mon solde ?**",
+            "Va dans le salon 💳・solde et suis les instructions du bot. Une fois le paiement vérifié, ton solde est crédité.",
+            "",
+            "**<:questionmark:1525869342506614784> Quels paiements sont acceptés ?**",
+            "Les moyens disponibles sont indiqués dans 💳・solde : Revolut, PayPal, virement bancaire et cryptomonnaies, méthode prioritaire.",
+            "",
+            "**<:questionmark:1525869342506614784> Puis-je retirer ou transférer mon solde ?**",
+            "Non. Le solde PinkGift sert uniquement aux achats sur la boutique, sauf exception validée par le support.",
+            "",
+            "**<:questionmark:1525869342506614784> Les cartes cadeaux fonctionnent-elles partout ?**",
+            "Non. Certaines sont limitées à une région ou un pays. Vérifie toujours les informations du produit avant de commander.",
+            "",
+            "**<:questionmark:1525869342506614784> Que faire si mon code ne fonctionne pas ?**",
+            "N’envoie jamais ton code publiquement. Ouvre un ticket avec ton numéro de commande, le produit, une capture de l’erreur, la date et l’heure de l’essai.",
+            "",
+            "**<:questionmark:1525869342506614784> Puis-je modifier ou annuler une commande ?**",
+            "Une commande validée ne peut normalement plus être modifiée ou annulée. Contacte vite le support en cas d’erreur, mais aucune modification n’est garantie.",
+            "",
+            "**<:questionmark:1525869342506614784> Les commandes sont-elles remboursables ?**",
+            "Non. Les commandes PinkGift ne sont pas remboursables en cas de changement d’avis, erreur de sélection, mauvaise région ou produit déjà livré/révélé/utilisé.",
+            "",
+            "**<:questionmark:1525869342506614784> Et si le problème vient de PinkGift ?**",
+            "Un souci causé par PinkGift, comme un code invalide ou une erreur de livraison, sera étudié en ticket pour trouver une solution adaptée.",
+            "",
+            "**<:questionmark:1525869342506614784> Que faire si ma commande tarde ?**",
+            "Vérifie le fil et le statut de commande. Si l’attente est anormale, ping une seule fois @› Pink Teams. Évite les pings répétés.",
+            "",
+            "**<:questionmark:1525869342506614784> Comment contacter le support ?**",
+            "Ouvre un ticket et explique clairement ta demande avec le numéro de commande, le produit, la date d’achat et une capture si besoin.",
+            "",
+            "**<:questionmark:1525869342506614784> Comment participer aux giveaways ?**",
+            "Lis les conditions du giveaway, clique sur le bouton de participation et attends le tirage.",
+            "",
+            "**<:questionmark:1525869342506614784> Dois-je payer pour récupérer un lot ?**",
+            "Non. PinkGift ne demandera jamais de payer pour recevoir un lot gagné, sauf condition annoncée dès le départ.",
+            "",
+            "**<:questionmark:1525869342506614784> Comment éviter les arnaques ?**",
+            "Vérifie les rôles officiels, ne partage jamais tes mots de passe, codes cadeaux, infos bancaires ou données sensibles.",
+            "",
+            "**<:questionmark:1525869342506614784> Comment signaler un faux compte ?**",
+            "Ouvre un ticket avec le profil, l’identifiant Discord si possible et une capture de la conversation.",
+            "",
+            "**<:questionmark:1525869342506614784> J’ai une autre question, que faire ?**",
+            "Ouvre un ticket dans le salon prévu. L’équipe PinkGift t’aidera dès que possible.",
+            "",
+            "Merci d’utiliser PinkGift ! 🎀"
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — FAQ"
+    },
     "rules_embed": {
         "title": "📜 Règlement PinkGift",
         "description": [
@@ -1730,6 +1798,7 @@ def public_embed_builders():
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["Solde PinkGift", "Solde & paiements", "Solde"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
+        (["FAQ PinkGift", "FAQ"], lambda: build_json_embed("faq_embed"), None),
         (["Classement", "CLASSEMENT"], build_leaderboard_embed, None),
     ]
 
@@ -2456,6 +2525,13 @@ async def cmd_giveaway(ctx, duration: str, nom: str, image_url: str = ""):
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_reglement(ctx):
     await ctx.send(embed=build_json_embed("rules_embed"))
+
+
+@bot.hybrid_command(name="faq", description="Publier la FAQ PinkGift")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_faq(ctx):
+    await ctx.send(embed=build_json_embed("faq_embed"))
 
 
 @bot.hybrid_command(name="classement", description="Publier le classement clients PinkGift")
