@@ -14,6 +14,7 @@ import urllib.parse
 import sqlite3
 import secrets
 import hashlib
+import io
 from functools import wraps
 
 app = Flask('')
@@ -48,6 +49,11 @@ DISCORD_STATE = "démarrage"
 DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
 DISCORD_THREAD_STARTED = False
+MUTED_ROLE_ID = 1525614378580312165
+AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 151752584211123408}
+AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "❤️", "🔥")
+STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
+STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinkgift.db"))
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
@@ -88,6 +94,7 @@ def init_database():
         db.execute("CREATE TABLE IF NOT EXISTS balance_history (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, user_id INTEGER, delta_cents INTEGER, staff_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, channel_id INTEGER, message_id INTEGER, user_id INTEGER, service TEXT, amount REAL, paid REAL, status TEXT DEFAULT 'pending', code TEXT DEFAULT '', user_name TEXT DEFAULT '', received_label TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         db.execute("CREATE TABLE IF NOT EXISTS panel_access_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', method TEXT NOT NULL DEFAULT '', device TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        db.execute("CREATE TABLE IF NOT EXISTS panel_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '{}', updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         try:
             db.execute("ALTER TABLE orders ADD COLUMN user_name TEXT DEFAULT ''")
         except sqlite3.OperationalError:
@@ -121,6 +128,53 @@ def change_balance(guild_id, user_id, delta, staff_id):
         db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
         return updated / 100
 
+
+def decode_setting_value(value, default=None):
+    if value in (None, ""):
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return default
+
+
+def get_panel_setting(key, default=None):
+    try:
+        if USE_SUPABASE:
+            safe_key = urllib.parse.quote(str(key), safe="")
+            rows = supabase_request("GET", f"panel_settings?key=eq.{safe_key}&select=value&limit=1") or []
+            return decode_setting_value(rows[0].get("value") if rows else None, default)
+        with db_connect() as db:
+            row = db.execute("SELECT value FROM panel_settings WHERE key=?", (key,)).fetchone()
+            return decode_setting_value(row["value"] if row else None, default)
+    except Exception as error:
+        print(f"Erreur lecture setting panel {key}: {error}")
+        return default
+
+
+def set_panel_setting(key, value):
+    if USE_SUPABASE:
+        supabase_request("POST", "panel_settings?on_conflict=key", {"key": key, "value": value}, "resolution=merge-duplicates")
+        return
+    with db_connect() as db:
+        db.execute(
+            "INSERT INTO panel_settings(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP",
+            (key, json.dumps(value, ensure_ascii=False))
+        )
+
+
+def apply_embed_overrides(data):
+    merged = dict(data)
+    overrides = get_panel_setting("embed_overrides", {}) or {}
+    if isinstance(overrides, dict):
+        for key, value in overrides.items():
+            if isinstance(value, dict):
+                base = dict(merged.get(key, {})) if isinstance(merged.get(key), dict) else {}
+                base.update(value)
+                merged[key] = base
+    return merged
 
 
 def is_balance_ticket(channel) -> bool:
@@ -511,7 +565,7 @@ def load_embed_texts():
             for key, default_value in DEFAULT_EMBED_DATA.items():
                 if key not in data or not isinstance(data[key], dict):
                     data[key] = default_value
-            return data
+            return apply_embed_overrides(data)
         except Exception as e:
             print(f"Erreur chargement JSON distant : {e}")
 
@@ -527,10 +581,10 @@ def load_embed_texts():
                 for key, default_value in DEFAULT_EMBED_DATA.items():
                     if key not in data or not isinstance(data[key], dict):
                         data[key] = default_value
-                return data
+                return apply_embed_overrides(data)
             except Exception as e:
                 print(f"Erreur chargement config_embeds.json local : {e}")
-    return DEFAULT_EMBED_DATA
+    return apply_embed_overrides(DEFAULT_EMBED_DATA)
 
 
 def get_image_url(image_key: str, fallback_url: str = "") -> str:
@@ -644,6 +698,9 @@ async def create_product_ticket(interaction, product_key, amount):
     if guild is None or cfg is None:
         await interaction.followup.send("❌ Impossible de créer cette commande.", ephemeral=True)
         return
+    if not product_is_available(product_key):
+        await interaction.followup.send(f"{STOCK_KO_EMOJI} **{cfg['display']}** est actuellement en rupture.", ephemeral=True)
+        return
     if product_key == "DISCORD_NITRO":
         amount = NITRO_PRICE
     uber_drop = UBEREATS_PACKS.get(amount) if product_key == "UBEREATS" else None
@@ -734,6 +791,56 @@ VALO_REGIONS = {
 }
 
 
+def default_stock_config():
+    return {
+        "products": {key: True for key in PRODUCT_CONFIG if key != "VALORANT"},
+        "valorant": {region_key: {str(price): True for price in region["packs"]} for region_key, region in VALO_REGIONS.items()}
+    }
+
+
+def get_stock_config():
+    defaults = default_stock_config()
+    saved = get_panel_setting("stock_status", {}) or {}
+    if not isinstance(saved, dict):
+        return defaults
+    products = saved.get("products", {}) if isinstance(saved.get("products"), dict) else {}
+    valorant = saved.get("valorant", {}) if isinstance(saved.get("valorant"), dict) else {}
+    for key in defaults["products"]:
+        defaults["products"][key] = bool(products.get(key, defaults["products"][key]))
+    for region_key, packs in defaults["valorant"].items():
+        saved_packs = valorant.get(region_key, {}) if isinstance(valorant.get(region_key), dict) else {}
+        for price in list(packs):
+            packs[price] = bool(saved_packs.get(price, saved_packs.get(str(price), packs[price])))
+    return defaults
+
+
+def set_stock_available(kind, key, available, region_key=None):
+    stock = get_stock_config()
+    if kind == "product" and key in stock["products"]:
+        stock["products"][key] = bool(available)
+    elif kind == "valorant" and region_key in stock["valorant"] and str(key) in stock["valorant"][region_key]:
+        stock["valorant"][region_key][str(key)] = bool(available)
+    else:
+        raise ValueError("Stock introuvable")
+    set_panel_setting("stock_status", stock)
+
+
+def product_is_available(product_key):
+    return get_stock_config()["products"].get(product_key, True)
+
+
+def valo_pack_is_available(region_key, price):
+    return get_stock_config()["valorant"].get(region_key, {}).get(str(price), True)
+
+
+def stock_partial_emoji(available):
+    return discord.PartialEmoji.from_str(STOCK_OK_EMOJI if available else STOCK_KO_EMOJI)
+
+
+def stock_label(available):
+    return "Disponible" if available else "Rupture"
+
+
 async def create_valo_order(interaction, region_key, price):
     guild = interaction.guild
     user = interaction.user
@@ -741,6 +848,9 @@ async def create_valo_order(interaction, region_key, price):
     pack = region["packs"].get(price) if region else None
     if guild is None or pack is None:
         await interaction.followup.send("❌ Région ou pack Valorant invalide.", ephemeral=True)
+        return
+    if not valo_pack_is_available(region_key, price):
+        await interaction.followup.send(f"{STOCK_KO_EMOJI} Ce pack Valorant est actuellement en rupture.", ephemeral=True)
         return
     region_label = region["label"]
     region_emoji = region["emoji"]
@@ -809,12 +919,19 @@ async def create_valo_order(interaction, region_key, price):
 
 class ValoRegionSelect(discord.ui.Select):
     def __init__(self):
-        options = [discord.SelectOption(label=data["label"], value=key, emoji=data["emoji"]) for key, data in VALO_REGIONS.items()]
+        stock = get_stock_config()
+        options = []
+        for key, data in VALO_REGIONS.items():
+            available = any(stock["valorant"].get(key, {}).values())
+            options.append(discord.SelectOption(label=data["label"], value=key, emoji=stock_partial_emoji(available), description=stock_label(available)))
         super().__init__(placeholder="Choisis ta région Valorant", options=options)
 
     async def callback(self, interaction: discord.Interaction):
         region_key = self.values[0]
         region = VALO_REGIONS[region_key]
+        if not any(get_stock_config()["valorant"].get(region_key, {}).values()):
+            await interaction.response.send_message(f"{STOCK_KO_EMOJI} Aucun pack disponible pour cette région actuellement.", ephemeral=True)
+            return
         await interaction.response.edit_message(content=f"{region['emoji']} **{region['label']}** — choisis ton pack :", view=ValoPackView(region_key))
 
 
@@ -828,7 +945,10 @@ class ValoPackSelect(discord.ui.Select):
     def __init__(self, region_key):
         self.region_key = region_key
         packs = VALO_REGIONS[region_key]["packs"]
-        options = [discord.SelectOption(label=f"{pack} — {price} €", value=str(price), emoji=discord.PartialEmoji.from_str("<:vp:1519915966476320901>")) for price, pack in packs.items()]
+        options = []
+        for price, pack in packs.items():
+            available = valo_pack_is_available(region_key, price)
+            options.append(discord.SelectOption(label=f"{pack} — {price} €", value=str(price), emoji=stock_partial_emoji(available), description=stock_label(available)))
         super().__init__(placeholder="Choisis ton pack Valorant Points", options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -853,8 +973,9 @@ class ValoOrderLauncherView(discord.ui.View):
 
 class UberEatsAmountSelect(discord.ui.Select):
     def __init__(self):
+        available = product_is_available("UBEREATS")
         options = [
-            discord.SelectOption(label=f"{price} € → {drop} € estimés", value=str(price), emoji="🍔")
+            discord.SelectOption(label=f"{price} € → {drop} € estimés", value=str(price), emoji=stock_partial_emoji(available), description=stock_label(available))
             for price, drop in UBEREATS_PACKS.items()
         ]
         super().__init__(placeholder="Choisis ton pack Uber Eats", options=options)
@@ -887,8 +1008,9 @@ class NitroOrderView(discord.ui.View):
 class ProductAmountSelect(discord.ui.Select):
     def __init__(self, product_key):
         self.product_key = product_key
+        available = product_is_available(product_key)
         options = [
-            discord.SelectOption(label=f"Carte cadeau {amount} € → {amount * 0.70:g} € débités", value=str(amount), emoji="💳")
+            discord.SelectOption(label=f"Carte cadeau {amount} € → {amount * 0.70:g} € débités", value=str(amount), emoji=stock_partial_emoji(available), description=stock_label(available))
             for amount in (100, 200, 400, 800)
         ]
         super().__init__(placeholder="Choisis le montant de la carte", options=options)
@@ -910,8 +1032,8 @@ class ProductServiceSelect(discord.ui.Select):
         for key, cfg in PRODUCT_CONFIG.items():
             if key == "VALORANT":
                 continue
-            emoji = discord.PartialEmoji.from_str(cfg["emoji"])
-            options.append(discord.SelectOption(label=cfg["display"], value=key, emoji=emoji))
+            available = product_is_available(key)
+            options.append(discord.SelectOption(label=cfg["display"], value=key, emoji=stock_partial_emoji(available), description=stock_label(available)))
         super().__init__(
             placeholder="Choisis une marque",
             custom_id="pinkgift_product_service",
@@ -923,6 +1045,9 @@ class ProductServiceSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         product_key = self.values[0]
         cfg = PRODUCT_CONFIG[product_key]
+        if not product_is_available(product_key):
+            await interaction.response.send_message(f"{STOCK_KO_EMOJI} **{cfg['display']}** est actuellement en rupture.", ephemeral=True)
+            return
         if product_key == "UBEREATS":
             amount_view = UberEatsAmountView()
             prompt = "choisis maintenant ton pack :"
@@ -1146,6 +1271,28 @@ async def on_member_join(member):
         except Exception as e:
             print(f"Erreur attribution role : {e}")
 
+@bot.event
+async def on_member_update(before, after):
+    before_active = timeout_is_active(before)
+    after_active = timeout_is_active(after)
+    if after_active and not before_active:
+        await add_muted_role(after, reason="Mute détecté automatiquement")
+    elif before_active and not after_active:
+        await remove_muted_role(after, reason="Fin du mute détectée automatiquement")
+
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    if getattr(message.channel, "id", None) in AUTO_REACTION_CHANNEL_IDS:
+        for emoji in AUTO_REACTION_EMOJIS:
+            try:
+                await message.add_reaction(emoji)
+            except discord.HTTPException as error:
+                print(f"Erreur réaction auto dans {message.channel}: {error}")
+    await bot.process_commands(message)
+
 
 def build_tarifs_embed():
     texts = load_embed_texts()["tarifs_embed"]
@@ -1327,6 +1474,43 @@ async def cmd_clear_messages(ctx, amount: int):
     except:
         pass
 
+
+def member_timeout_until(member):
+    return getattr(member, "timed_out_until", None) or getattr(member, "communication_disabled_until", None)
+
+
+def timeout_is_active(member):
+    until = member_timeout_until(member)
+    return bool(until and until > datetime.datetime.now(datetime.timezone.utc))
+
+
+async def add_muted_role(member, reason="Mute PinkGift"):
+    role = member.guild.get_role(MUTED_ROLE_ID)
+    if role and role not in member.roles:
+        try:
+            await member.add_roles(role, reason=reason)
+        except discord.HTTPException as error:
+            print(f"Erreur ajout rôle mute à {member}: {error}")
+
+
+async def remove_muted_role(member, reason="Fin du mute PinkGift"):
+    role = member.guild.get_role(MUTED_ROLE_ID)
+    if role and role in member.roles:
+        try:
+            await member.remove_roles(role, reason=reason)
+        except discord.HTTPException as error:
+            print(f"Erreur retrait rôle mute à {member}: {error}")
+
+
+async def remove_muted_role_later(member, seconds):
+    await asyncio.sleep(seconds)
+    try:
+        fresh = member.guild.get_member(member.id) or await member.guild.fetch_member(member.id)
+        if not timeout_is_active(fresh):
+            await remove_muted_role(fresh)
+    except Exception as error:
+        print(f"Erreur vérification fin mute {member}: {error}")
+
 @bot.hybrid_command(name="ban", description="Bannir définitivement un membre du serveur")
 @discord.app_commands.default_permissions(manage_messages=True)
 @discord.app_commands.describe(member="Membre à bannir", reason="Raison du bannissement")
@@ -1362,7 +1546,9 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
         await ctx.send("❌ Format invalide. Exemple : 10m, 2h.")
         return
     await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
-    await ctx.send(f"🔇 {member.name} mute pendant {duration}.")
+    await add_muted_role(member, reason=f"Mute {duration}: {reason}")
+    asyncio.create_task(remove_muted_role_later(member, seconds))
+    await ctx.send(f"🔇 {member.name} mute pendant {duration}. Rôle mute appliqué automatiquement.")
 
 @bot.hybrid_command(name="solde", description="Publier le panneau de consultation et recharge du solde")
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -1496,12 +1682,16 @@ PANEL_TEMPLATE = """
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Panel</title>
 <style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}nav{display:flex;gap:8px;margin-bottom:18px}.tab{color:#e8dce3;text-decoration:none;padding:10px 14px;border:1px solid #4c3543}.tab.active{background:#e8509a;color:white;border-color:#e8509a}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}input,select{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:160px}select{cursor:pointer}.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 16px 0}.filters label{color:#ff9dce;font-weight:bold}button{background:#e8509a;color:white;border:0;padding:10px 13px;cursor:pointer}.delete{background:#9d294b;margin-left:5px}.done{color:#74d99f}.pending{color:#ffd27b}.muted{color:#aa98a4;font-size:12px}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
-<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a></nav>
+<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
 {% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
 {% else %}{% if tab == 'orders' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="orders"><label for="service-filter">Service</label><select id="service-filter" name="service" onchange="this.form.submit()"><option value="">Tous les services</option>{% for service in service_options %}<option value="{{ service }}" {% if service == service_filter %}selected{% endif %}>{{ service }}</option>{% endfor %}</select><label for="amount-filter">Montant</label><select id="amount-filter" name="amount" onchange="this.form.submit()"><option value="">Tous les montants</option>{% for amount in amount_options %}<option value="{{ amount }}" {% if amount == amount_filter %}selected{% endif %}>{{ amount }}</option>{% endfor %}</select></form>{% elif tab == 'valorant' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="valorant"><label for="region-filter">Région</label><select id="region-filter" name="region" onchange="this.form.submit()"><option value="">Toutes les régions</option>{% for region in region_options %}<option value="{{ region }}" {% if region == region_filter %}selected{% endif %}>{{ region }}</option>{% endfor %}</select><label for="pack-filter">Pack VP</label><select id="pack-filter" name="pack" onchange="this.form.submit()"><option value="">Tous les packs</option>{% for pack in pack_options %}<option value="{{ pack }}" {% if pack == pack_filter %}selected{% endif %}>{{ pack }}</option>{% endfor %}</select></form>{% endif %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
+
+PANEL_STOCK_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Stock</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}table{width:100%;border-collapse:collapse;background:#171419;margin-bottom:28px}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}select,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Stock</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<h2>Cartes cadeaux / produits</h2><table><thead><tr><th>Service</th><th>État</th><th>Action</th></tr></thead><tbody>{% for item in products %}<tr><td>{{ item.display }}</td><td>{{ ok_emoji if item.available else ko_emoji }} {{ 'Disponible' if item.available else 'Rupture' }}</td><td><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="kind" value="product"><input type="hidden" name="key" value="{{ item.key }}"><select name="available"><option value="1" {% if item.available %}selected{% endif %}>Disponible</option><option value="0" {% if not item.available %}selected{% endif %}>Rupture</option></select><button>Enregistrer</button></form></td></tr>{% endfor %}</tbody></table><h2>Valorant Points</h2><table><thead><tr><th>Région</th><th>Pack</th><th>État</th><th>Action</th></tr></thead><tbody>{% for item in valorant %}<tr><td>{{ item.region }}</td><td>{{ item.pack }} — {{ item.price }} €</td><td>{{ ok_emoji if item.available else ko_emoji }} {{ 'Disponible' if item.available else 'Rupture' }}</td><td><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="kind" value="valorant"><input type="hidden" name="region" value="{{ item.region_key }}"><input type="hidden" name="key" value="{{ item.price }}"><select name="available"><option value="1" {% if item.available %}selected{% endif %}>Disponible</option><option value="0" {% if not item.available %}selected{% endif %}>Rupture</option></select><button>Enregistrer</button></form></td></tr>{% endfor %}</tbody></table></main></body></html>"""
+
+PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Modifie le JSON d'un embed puis clique sur Enregistrer. Pour uploader une image, choisis un fichier : le bot l'envoie dans le salon configuré par EMBED_UPLOAD_CHANNEL_ID et remplit automatiquement image_url.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
 
 LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift</title><style>body{background:#0e0d11;color:#fff;font-family:Arial;display:grid;place-items:center;height:100vh;margin:0}form{background:#19151b;padding:28px;border:1px solid #4a3040;width:min(340px,80vw)}h1{color:#ff8fc8}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:10px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d}button{background:#e8509a;color:#fff;border:0}</style></head><body><form method="post"><h1>PinkGift Staff</h1><input type="password" name="password" placeholder="Mot de passe" required><button>Connexion</button></form></body></html>"""
 
@@ -1681,6 +1871,84 @@ def panel_orders():
         client["total_spent"] += float(order.get("paid") or 0)
     clients = sorted(clients_by_id.values(), key=lambda item: item["total_spent"], reverse=True)
     return render_template_string(PANEL_TEMPLATE, orders=orders, clients=clients, tab=tab, service_options=service_options, service_filter=service_filter, amount_options=amount_options, amount_filter=amount_filter, region_options=region_options, region_filter=region_filter, pack_options=pack_options, pack_filter=pack_filter)
+
+
+async def upload_panel_image_to_discord(filename, content):
+    channel_id = int(os.environ.get("EMBED_UPLOAD_CHANNEL_ID", "0") or 0)
+    if not channel_id:
+        raise RuntimeError("EMBED_UPLOAD_CHANNEL_ID manquant")
+    channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", filename or "embed.png")[:80] or "embed.png"
+    message = await channel.send(file=discord.File(io.BytesIO(content), filename=safe_name))
+    if not message.attachments:
+        raise RuntimeError("Upload Discord sans pièce jointe")
+    return message.attachments[0].url
+
+
+@app.route("/panel/stock", methods=["GET", "POST"])
+@panel_required
+def panel_stock():
+    if request.method == "POST":
+        if not valid_panel_csrf():
+            flash("Session invalide. Recharge la page.")
+            return redirect(url_for("panel_stock"))
+        try:
+            set_stock_available(
+                request.form.get("kind", ""),
+                request.form.get("key", ""),
+                request.form.get("available") == "1",
+                request.form.get("region") or None
+            )
+            flash("Stock mis à jour. Les prochains menus afficheront le nouvel état.")
+        except Exception as error:
+            print(f"Erreur mise à jour stock : {error}")
+            flash("Impossible de mettre à jour ce stock.")
+        return redirect(url_for("panel_stock"))
+    stock = get_stock_config()
+    products = [{"key": key, "display": cfg["display"], "available": stock["products"].get(key, True)} for key, cfg in PRODUCT_CONFIG.items() if key != "VALORANT"]
+    valorant = []
+    for region_key, region in VALO_REGIONS.items():
+        for price, pack in region["packs"].items():
+            valorant.append({"region_key": region_key, "region": region["label"], "price": str(price), "pack": pack, "available": stock["valorant"].get(region_key, {}).get(str(price), True)})
+    return render_template_string(PANEL_STOCK_TEMPLATE, products=products, valorant=valorant, ok_emoji=STOCK_OK_EMOJI, ko_emoji=STOCK_KO_EMOJI)
+
+
+@app.route("/panel/embeds", methods=["GET", "POST"])
+@panel_required
+def panel_embeds():
+    if request.method == "POST":
+        if not valid_panel_csrf():
+            flash("Session invalide. Recharge la page.")
+            return redirect(url_for("panel_embeds"))
+        embed_key = request.form.get("embed_key", "").strip()
+        try:
+            embed_data = json.loads(request.form.get("embed_json", "{}"))
+            if not isinstance(embed_data, dict):
+                raise ValueError("Le contenu doit être un objet JSON")
+            image_file = request.files.get("image_file")
+            if image_file and image_file.filename:
+                if BOT_LOOP is None:
+                    raise RuntimeError("Bot Discord pas encore prêt pour l'upload")
+                image_url = asyncio.run_coroutine_threadsafe(
+                    upload_panel_image_to_discord(image_file.filename, image_file.read()),
+                    BOT_LOOP
+                ).result(timeout=30)
+                embed_data["image_url"] = image_url
+            overrides = get_panel_setting("embed_overrides", {}) or {}
+            if not isinstance(overrides, dict):
+                overrides = {}
+            overrides[embed_key] = embed_data
+            set_panel_setting("embed_overrides", overrides)
+            flash(f"Embed {embed_key} enregistré. Utilise /maj_tarifs, /maj_valo, /maj_solde ou /maj_categories pour mettre à jour les messages déjà postés.")
+        except Exception as error:
+            print(f"Erreur sauvegarde embed {embed_key}: {error}")
+            flash(f"Sauvegarde impossible : {error}")
+        return redirect(url_for("panel_embeds"))
+    data = load_embed_texts()
+    embeds = []
+    for key in sorted(k for k, value in data.items() if isinstance(value, dict)):
+        embeds.append({"key": key, "json": json.dumps(data[key], ensure_ascii=False, indent=2)})
+    return render_template_string(PANEL_EMBEDS_TEMPLATE, embeds=embeds)
 
 
 async def deliver_order_from_panel(order, code):
