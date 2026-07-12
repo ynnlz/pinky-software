@@ -15,6 +15,7 @@ import sqlite3
 import secrets
 import hashlib
 import io
+import traceback
 from functools import wraps
 
 app = Flask('')
@@ -36,13 +37,22 @@ intents.message_content = True
 intents.members = True
 class PinkGiftBot(commands.Bot):
     async def setup_hook(self):
-        self.add_view(OrderLauncherView())
-        self.add_view(ProductSelectView())
-        self.add_view(ValoOrderLauncherView())
-        self.add_view(BalanceView())
-        self.add_view(OpenTicketView())
+        # Toutes les vues persistantes doivent être enregistrées ici, avant
+        # la connexion complète du bot. Cela permet aux boutons déjà publiés
+        # de continuer à fonctionner après un redémarrage.
+        persistent_views = (
+            OrderLauncherView(),
+            ValoOrderLauncherView(),
+            BalanceView(),
+            OpenTicketView(),
+            ValoTicketButton(),
+            CloseTicketView(),
+            GiveawayJoinView(),
+        )
+        for view in persistent_views:
+            self.add_view(view)
 
-        print("✅ Boutons et menus persistants enregistrés.")
+        print(f"✅ {len(persistent_views)} vues persistantes enregistrées.")
 
 
 bot = PinkGiftBot(command_prefix="!", intents=intents)
@@ -52,6 +62,7 @@ DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
 DISCORD_THREAD_STARTED = False
 COMMAND_SYNC_DONE = False
+PUBLIC_VIEWS_REPAIRED = False
 MUTED_ROLE_ID = 1525614378580312165
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 151752584211123408}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "❤️", "🔥")
@@ -1183,12 +1194,19 @@ class ValoRegionSelect(discord.ui.Select):
         super().__init__(placeholder="Choisis ta région Valorant", options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         region_key = self.values[0]
         region = VALO_REGIONS[region_key]
         if not any(get_stock_config()["valorant"].get(region_key, {}).values()):
-            await interaction.response.send_message(f"{STOCK_KO_EMOJI} Aucun pack disponible pour cette région actuellement.", ephemeral=True)
+            await interaction.edit_original_response(
+                content=f"{STOCK_KO_EMOJI} Aucun pack disponible pour cette région actuellement.",
+                view=None
+            )
             return
-        await interaction.response.edit_message(content=f"{region['emoji']} **{region['label']}** — choisis ton pack :", view=ValoPackView(region_key))
+        await interaction.edit_original_response(
+            content=f"{region['emoji']} **{region['label']}** — choisis ton pack :",
+            view=ValoPackView(region_key)
+        )
 
 
 class ValoRegionView(discord.ui.View):
@@ -1201,9 +1219,10 @@ class ValoPackSelect(discord.ui.Select):
     def __init__(self, region_key):
         self.region_key = region_key
         packs = VALO_REGIONS[region_key]["packs"]
+        region_stock = get_stock_config().get("valorant", {}).get(region_key, {})
         options = []
         for price, pack in packs.items():
-            available = valo_pack_is_available(region_key, price)
+            available = region_stock.get(str(price), True)
             options.append(discord.SelectOption(label=f"{pack} — {price} €", value=str(price), emoji=stock_partial_emoji(available), description=stock_label(available)))
         super().__init__(placeholder="Choisis ton pack Valorant Points", options=options)
 
@@ -1224,7 +1243,12 @@ class ValoOrderLauncherView(discord.ui.View):
 
     @discord.ui.button(label="Commander des VP", emoji="<:vp:1519915966476320901>", style=discord.ButtonStyle.success, custom_id="pinkgift_start_valo_order")
     async def start_valo_order(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Choisis d'abord ta région Valorant :", view=ValoRegionView(), ephemeral=True)
+        # Répond immédiatement à Discord avant toute lecture de stock.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.edit_original_response(
+            content="Choisis d'abord ta région Valorant :",
+            view=ValoRegionView()
+        )
 
 
 class UberEatsAmountSelect(discord.ui.Select):
@@ -1284,12 +1308,18 @@ class ProductAmountView(discord.ui.View):
 
 class ProductServiceSelect(discord.ui.Select):
     def __init__(self):
-        options = []
-        for key, cfg in PRODUCT_CONFIG.items():
-            if key == "VALORANT":
-                continue
-            available = product_is_available(key)
-            options.append(discord.SelectOption(label=cfg["display"], value=key, emoji=stock_partial_emoji(available), description=stock_label(available)))
+        # Ce menu doit pouvoir être construit instantanément au clic.
+        # Aucune requête SQLite/Supabase et aucun emoji personnalisé ici :
+        # Discord reçoit donc toujours la réponse avant son délai de 3 secondes.
+        options = [
+            discord.SelectOption(
+                label=cfg["display"][:100],
+                value=key,
+                description="Sélectionner ce produit"
+            )
+            for key, cfg in PRODUCT_CONFIG.items()
+            if key != "VALORANT"
+        ]
         super().__init__(
             placeholder="Choisis une marque",
             custom_id="pinkgift_product_service",
@@ -1299,31 +1329,67 @@ class ProductServiceSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        product_key = self.values[0]
-        cfg = PRODUCT_CONFIG[product_key]
-        if not product_is_available(product_key):
-            await interaction.response.send_message(f"{STOCK_KO_EMOJI} **{cfg['display']}** est actuellement en rupture.", ephemeral=True)
-            return
-        if product_key == "UBEREATS":
-            amount_view = UberEatsAmountView()
-            prompt = "choisis maintenant ton pack :"
-        elif product_key == "DISCORD_NITRO":
-            amount_view = NitroOrderView()
-            prompt = "confirme l'achat du produit à **8 €** :"
-        else:
-            amount_view = ProductAmountView(product_key)
-            prompt = "choisis maintenant le montant :"
-        await interaction.response.send_message(
-            f"{cfg['emoji']} **{cfg['display']}** — {prompt}",
-            view=amount_view,
-            ephemeral=True
-        )
+        # On accuse immédiatement réception avant toute lecture du stock.
+        await interaction.response.defer()
+        try:
+            product_key = self.values[0]
+            cfg = PRODUCT_CONFIG.get(product_key)
+            if cfg is None:
+                await interaction.edit_original_response(
+                    content="❌ Produit introuvable. Relance le bouton **Commander**.",
+                    view=None
+                )
+                return
+
+            if not product_is_available(product_key):
+                await interaction.edit_original_response(
+                    content=f"{STOCK_KO_EMOJI} **{cfg['display']}** est actuellement en rupture.",
+                    view=None
+                )
+                return
+
+            if product_key == "UBEREATS":
+                amount_view = UberEatsAmountView()
+                prompt = "choisis maintenant ton pack :"
+            elif product_key == "DISCORD_NITRO":
+                amount_view = NitroOrderView()
+                prompt = "confirme l'achat du produit à **8 €** :"
+            else:
+                amount_view = ProductAmountView(product_key)
+                prompt = "choisis maintenant le montant :"
+
+            await interaction.edit_original_response(
+                content=f"{cfg['emoji']} **{cfg['display']}** — {prompt}",
+                view=amount_view
+            )
+        except Exception as error:
+            print(f"Erreur menu produit pour {interaction.user}: {error}")
+            traceback.print_exc()
+            try:
+                await interaction.edit_original_response(
+                    content="❌ Une erreur est survenue pendant l'ouverture du produit. Réessaie avec **Commander**.",
+                    view=None
+                )
+            except Exception:
+                pass
 
 
 class ProductSelectView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        # Les réponses éphémères ne sont pas destinées à survivre à un redémarrage.
+        super().__init__(timeout=900)
         self.add_item(ProductServiceSelect())
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item):
+        print(f"Erreur ProductSelectView sur {getattr(item, 'custom_id', 'inconnu')}: {error}")
+        traceback.print_exc()
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send("❌ Le menu de commande a rencontré une erreur. Relance **Commander**.", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Le menu de commande a rencontré une erreur. Relance **Commander**.", ephemeral=True)
+        except Exception:
+            pass
 
 
 class OrderLauncherView(discord.ui.View):
@@ -1337,11 +1403,40 @@ class OrderLauncherView(discord.ui.View):
         custom_id="pinkgift_start_order"
     )
     async def start_order(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "Choisis d'abord la marque que tu souhaites commander :",
-            view=ProductSelectView(),
-            ephemeral=True
-        )
+        try:
+            # Le menu est désormais entièrement local et peut être envoyé directement.
+            await interaction.response.send_message(
+                "Choisis d'abord la marque que tu souhaites commander :",
+                view=ProductSelectView(),
+                ephemeral=True
+            )
+        except Exception as error:
+            print(f"Erreur bouton Commander pour {interaction.user}: {error}")
+            traceback.print_exc()
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "❌ Impossible d'ouvrir le menu de commande. Réessaie dans quelques secondes.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "❌ Impossible d'ouvrir le menu de commande. Réessaie dans quelques secondes.",
+                        ephemeral=True
+                    )
+            except Exception:
+                pass
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item):
+        print(f"Erreur OrderLauncherView sur {getattr(item, 'custom_id', 'inconnu')}: {error}")
+        traceback.print_exc()
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send("❌ Le bouton Commander a rencontré une erreur.", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Le bouton Commander a rencontré une erreur.", ephemeral=True)
+        except Exception:
+            pass
 
 
 class BalanceView(discord.ui.View):
@@ -1690,19 +1785,22 @@ async def sync_commands_to_guilds():
 
 @bot.event
 async def on_ready():
-    global BOT_LOOP, COMMAND_SYNC_DONE
+    global BOT_LOOP, COMMAND_SYNC_DONE, PUBLIC_VIEWS_REPAIRED
     BOT_LOOP = asyncio.get_running_loop()
     if not COMMAND_SYNC_DONE:
         await sync_commands_to_guilds()
         COMMAND_SYNC_DONE = True
-    bot.add_view(OpenTicketView())
-    bot.add_view(ProductSelectView())
-    bot.add_view(OrderLauncherView())
-    bot.add_view(BalanceView())
-    bot.add_view(ValoTicketButton())
-    bot.add_view(ValoOrderLauncherView())
-    bot.add_view(CloseTicketView())
-    bot.add_view(GiveawayJoinView())
+
+    # Les vues sont déjà enregistrées dans setup_hook. Les réenregistrer à
+    # chaque on_ready peut créer des doublons après une reconnexion.
+    if not PUBLIC_VIEWS_REPAIRED:
+        try:
+            repaired = await repair_public_launcher_views()
+            print(f"✅ {repaired} panneau(x) Tarifs/Valorant réparé(s).")
+        except Exception as error:
+            print(f"Erreur réparation automatique des boutons publics : {error}")
+        PUBLIC_VIEWS_REPAIRED = True
+
     await schedule_active_giveaways()
     for guild in bot.guilds:
         if not guild_is_authorized(guild.id):
@@ -1807,6 +1905,39 @@ def public_embed_builders():
         (["FAQ PinkGift", "FAQ"], lambda: build_json_embed("faq_embed"), None),
         (["Classement", "CLASSEMENT"], build_leaderboard_embed, None),
     ]
+
+
+async def repair_public_launcher_views():
+    """Réattache les boutons actuels aux anciens panneaux publics du bot."""
+    repaired = 0
+    launcher_rules = (
+        (("commandes pinkgift", "carte cadeaux"), OrderLauncherView),
+        (("valorant", "valorant points"), ValoOrderLauncherView),
+    )
+
+    for guild in bot.guilds:
+        me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+        if me is None:
+            continue
+        for channel in guild.text_channels:
+            permissions = channel.permissions_for(me)
+            if not permissions.view_channel or not permissions.read_message_history:
+                continue
+            try:
+                async for message in channel.history(limit=500):
+                    if message.author.id != bot.user.id or not message.embeds:
+                        continue
+                    title = (message.embeds[0].title or "").lower()
+                    for keywords, view_factory in launcher_rules:
+                        if any(keyword in title for keyword in keywords):
+                            await message.edit(view=view_factory())
+                            repaired += 1
+                            break
+            except (discord.Forbidden, discord.NotFound):
+                continue
+            except discord.HTTPException as error:
+                print(f"Erreur réparation boutons dans {channel}: {error}")
+    return repaired
 
 
 async def update_public_embeds_without_ping(ctx):
@@ -2655,4 +2786,8 @@ def ensure_discord_background_started():
     start_discord_background()
 
 if __name__ == "__main__":
+    # Démarre Discord immédiatement. Auparavant, le bot ne se lançait qu'après
+    # la première requête HTTP reçue par Flask, ce qui pouvait laisser les
+    # boutons inactifs après un redémarrage du service.
+    start_discord_background()
     run_web()
