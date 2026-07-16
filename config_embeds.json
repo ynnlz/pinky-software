@@ -402,5 +402,28 @@
       203
     ],
     "image_key": "ticket_cree"
+  },
+  "invites_embed": {
+    "title": "📨 Invitations de {member}",
+    "description": [
+      "**Invitations totales :** {total}",
+      "**Membres encore présents :** {active}",
+      "**Membres partis :** {left}"
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "footer": "PinkGift — Invitations"
+  },
+  "invites_leaderboard_embed": {
+    "title": "🏆 Classement des invitations",
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "footer": "PinkGift — Invitations"
   }
 }
