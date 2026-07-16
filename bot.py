@@ -66,6 +66,12 @@ RECENTLY_DELETED_INVITES = {}
 DISCORD_THREAD_STARTED = False
 COMMAND_SYNC_DONE = False
 PUBLIC_VIEWS_REPAIRED = False
+SERVER_COUNTER_REFRESH_TASK = None
+SERVER_COUNTER_UPDATE_TASKS = {}
+SERVER_COUNTER_UPDATE_FLAGS = {}
+SERVER_COUNTER_LOCKS = {}
+SERVER_COUNTER_REFRESH_SECONDS = 300
+SERVER_COUNTER_CATEGORY_NAME = "📊・STATISTIQUES"
 MUTED_ROLE_ID = 1525614378580312165
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:1517582297736413284>")
@@ -804,6 +810,16 @@ DEFAULT_EMBED_DATA.update({
             {
                 "name": "✅ Finalisation",
                 "value": "!finish <code> : ajoute le code et marque la commande comme livrée.",
+                "inline": False
+            },
+            {
+                "name": "🎉 Giveaways",
+                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] : crée un giveaway avec conditions.\n!reroll <ID ou lien> : tire un nouveau gagnant éligible.",
+                "inline": False
+            },
+            {
+                "name": "📊 Compteurs serveur",
+                "value": "!config_compteurs #salon-avis : configure le salon contenant les avis vérifiés.",
                 "inline": False
             },
             {
@@ -1863,13 +1879,108 @@ def save_giveaway(message_id, data):
     set_panel_setting(giveaway_storage_key(message_id), data)
 
 
+def parse_giveaway_message_id(value):
+    matches = re.findall(r"\d{15,25}", str(value or ""))
+    return int(matches[-1]) if matches else None
+
+
+def normalize_giveaway_participants(participants):
+    normalized = []
+    seen = set()
+    for item in participants or []:
+        try:
+            user_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if user_id > 0 and user_id not in seen:
+            normalized.append(user_id)
+            seen.add(user_id)
+    return normalized
+
+
+def select_giveaway_winner(participants, winner_history=None):
+    participants = normalize_giveaway_participants(participants)
+    if not participants:
+        return None
+
+    history = normalize_giveaway_participants(winner_history)
+    already_selected = set(history)
+    candidates = [user_id for user_id in participants if user_id not in already_selected]
+    if not candidates:
+        # Quand tout le monde a déjà gagné, on recommence un cycle en évitant
+        # uniquement de reprendre immédiatement le dernier gagnant.
+        last_winner = history[-1] if history else None
+        candidates = [user_id for user_id in participants if user_id != last_winner]
+    return secrets.choice(candidates or participants)
+
+
+def member_has_server_tag(member, guild_id):
+    primary_guild = getattr(member, "primary_guild", None)
+    if primary_guild is None or getattr(primary_guild, "identity_enabled", False) is not True:
+        return False
+    try:
+        return int(getattr(primary_guild, "id", 0) or 0) == int(guild_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def giveaway_requirement_failures(guild, member, data):
+    failures = []
+    min_invites = max(0, int(data.get("min_invites", 0) or 0))
+    if min_invites:
+        stats = invite_user_stats(guild.id, member.id)
+        active_invites = max(0, int(stats.get("active", 0) or 0))
+        if active_invites < min_invites:
+            failures.append(f"**{min_invites} invitation(s) active(s)** requise(s), tu en as **{active_invites}**")
+    if data.get("require_server_tag") and not member_has_server_tag(member, guild.id):
+        failures.append("le **tag de ce serveur** doit être affiché sur ton profil Discord")
+    return failures
+
+
+async def eligible_giveaway_participants(guild, data):
+    eligible = []
+    rejected = []
+    for user_id in normalize_giveaway_participants(data.get("participants", [])):
+        member = guild.get_member(user_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                rejected.append(user_id)
+                continue
+        if giveaway_requirement_failures(guild, member, data):
+            rejected.append(user_id)
+        else:
+            eligible.append(user_id)
+    return eligible, rejected
+
+
+def giveaway_conditions_text(min_invites=0, require_server_tag=False):
+    conditions = []
+    min_invites = max(0, int(min_invites or 0))
+    if min_invites:
+        conditions.append(f"• Avoir au moins **{min_invites} invitation(s) active(s)**")
+    if require_server_tag:
+        conditions.append("• Afficher le **tag de ce serveur** sur son profil Discord")
+    return "\n".join(conditions)
+
+
 def format_embed_description(raw, variables):
     if isinstance(raw, list):
         return "\n".join(format_embed_text(line, variables) for line in raw)
     return format_embed_text(raw or "", variables)
 
 
-def build_giveaway_embed(name, end_ts, participants_count=0, image_url="", ended=False, winner="Aucun gagnant"):
+def build_giveaway_embed(
+    name,
+    end_ts,
+    participants_count=0,
+    image_url="",
+    ended=False,
+    winner="Aucun gagnant",
+    min_invites=0,
+    require_server_tag=False,
+):
     key = "giveaway_ended_embed" if ended else "giveaway_embed"
     data = load_embed_texts().get(key, DEFAULT_EMBED_DATA[key])
     variables = {"name": name, "end_ts": end_ts, "count": participants_count, "winner": winner}
@@ -1882,10 +1993,26 @@ def build_giveaway_embed(name, end_ts, participants_count=0, image_url="", ended
     footer = data.get("footer")
     if footer:
         embed.set_footer(text=format_embed_text(footer, variables))
+    conditions = giveaway_conditions_text(min_invites, require_server_tag)
+    if conditions:
+        embed.add_field(name="✅ Conditions de participation", value=conditions, inline=False)
     final_image = image_url or data.get("image_url") or get_image_url(data.get("image_key", ""), "")
     if final_image:
         embed.set_image(url=final_image)
     return embed
+
+
+def build_saved_giveaway_embed(data, participants_count, ended=False, winner="Aucun gagnant"):
+    return build_giveaway_embed(
+        data.get("name", "Giveaway"),
+        data.get("end_ts", 0),
+        participants_count,
+        data.get("image_url", ""),
+        ended=ended,
+        winner=winner,
+        min_invites=data.get("min_invites", 0),
+        require_server_tag=bool(data.get("require_server_tag")),
+    )
 
 
 class GiveawayJoinView(discord.ui.View):
@@ -1905,7 +2032,19 @@ class GiveawayJoinView(discord.ui.View):
         if data.get("ended"):
             await interaction.response.send_message("❌ Ce giveaway est déjà terminé.", ephemeral=True)
             return
-        participants = [int(item) for item in data.get("participants", [])]
+        guild = interaction.guild
+        if guild is None or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("❌ Cette participation doit être faite sur le serveur.", ephemeral=True)
+            return
+        failures = giveaway_requirement_failures(guild, interaction.user, data)
+        if failures:
+            details = "\n".join(f"• {failure}" for failure in failures)
+            await interaction.response.send_message(
+                f"❌ Tu ne remplis pas encore les conditions :\n{details}",
+                ephemeral=True,
+            )
+            return
+        participants = normalize_giveaway_participants(data.get("participants", []))
         if interaction.user.id in participants:
             await interaction.response.send_message("✅ Tu participes déjà à ce giveaway.", ephemeral=True)
             return
@@ -1913,7 +2052,10 @@ class GiveawayJoinView(discord.ui.View):
         data["participants"] = participants
         save_giveaway(message.id, data)
         try:
-            await message.edit(embed=build_giveaway_embed(data.get("name", "Giveaway"), data.get("end_ts", 0), len(participants), data.get("image_url", "")), view=GiveawayJoinView())
+            await message.edit(
+                embed=build_saved_giveaway_embed(data, len(participants)),
+                view=GiveawayJoinView(),
+            )
         except discord.HTTPException as error:
             print(f"Erreur mise à jour giveaway {message.id}: {error}")
         await interaction.response.send_message("✅ Participation enregistrée.", ephemeral=True)
@@ -1923,20 +2065,33 @@ async def finish_giveaway(message_id):
     data = load_giveaway(message_id)
     if not data or data.get("ended"):
         return
-    participants = [int(item) for item in data.get("participants", [])]
-    winner_text = "Aucun participant"
-    if participants:
-        winner_id = secrets.choice(participants)
-        winner_text = f"<@{winner_id}>"
-        data["winner_id"] = winner_id
-    data["ended"] = True
-    save_giveaway(message_id, data)
+    participants = normalize_giveaway_participants(data.get("participants", []))
     channel_id = int(data.get("channel_id") or 0)
     try:
         channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+        guild = getattr(channel, "guild", None) or bot.get_guild(int(data.get("guild_id") or 0))
+        if guild is None:
+            raise RuntimeError("Serveur du giveaway introuvable")
+        eligible_participants, rejected = await eligible_giveaway_participants(guild, data)
+        winner_text = "Aucun participant éligible" if participants else "Aucun participant"
+        winner_id = select_giveaway_winner(eligible_participants)
+        if winner_id is not None:
+            winner_text = f"<@{winner_id}>"
+            data["winner_id"] = winner_id
+            data["winner_history"] = [winner_id]
+        data["ended"] = True
+        data["ineligible_participant_ids"] = rejected
+        save_giveaway(message_id, data)
         message = await channel.fetch_message(message_id)
-        await message.edit(embed=build_giveaway_embed(data.get("name", "Giveaway"), data.get("end_ts", 0), len(participants), data.get("image_url", ""), ended=True, winner=winner_text), view=None)
-        await channel.send(f"🎉 Giveaway **{data.get('name', 'Giveaway')}** terminé ! Gagnant : {winner_text}")
+        await message.edit(
+            embed=build_saved_giveaway_embed(data, len(participants), ended=True, winner=winner_text),
+            view=None,
+        )
+        excluded_text = f" · **{len(rejected)}** participation(s) non éligible(s) écartée(s)" if rejected else ""
+        await channel.send(
+            f"🎉 Giveaway **{data.get('name', 'Giveaway')}** terminé ! "
+            f"Gagnant : {winner_text}{excluded_text}"
+        )
     except Exception as error:
         print(f"Erreur fin giveaway {message_id}: {error}")
 
@@ -1955,6 +2110,177 @@ async def schedule_active_giveaways():
         message_id = int(str(item.get("key", "")).split(":", 1)[1] or 0)
         end_ts = int(data.get("end_ts") or 0)
         asyncio.create_task(finish_giveaway_later(message_id, max(0, end_ts - now_ts)))
+
+
+def server_counter_setting_key(guild_id):
+    return f"server_counters:{int(guild_id)}"
+
+
+def get_server_counter_data(guild_id):
+    data = get_panel_setting(server_counter_setting_key(guild_id), {}) or {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_server_counter_data(guild_id, data):
+    set_panel_setting(server_counter_setting_key(guild_id), data)
+
+
+def verified_reviews_channel_id(guild_id):
+    data = get_server_counter_data(guild_id)
+    try:
+        return int(data.get("reviews_channel_id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def count_verified_reviews(guild, data):
+    try:
+        channel_id = int(data.get("reviews_channel_id") or 0)
+    except (TypeError, ValueError):
+        channel_id = 0
+    channel = guild.get_channel(channel_id) if channel_id else None
+    if not isinstance(channel, discord.TextChannel):
+        return 0
+
+    count = 0
+    async for message in channel.history(limit=None, oldest_first=False):
+        if not message.author.bot:
+            count += 1
+    return count
+
+
+async def ensure_server_counter_channels(guild):
+    data = get_server_counter_data(guild.id)
+    category = guild.get_channel(int(data.get("category_id") or 0))
+    if not isinstance(category, discord.CategoryChannel):
+        category = discord.utils.get(guild.categories, name=SERVER_COUNTER_CATEGORY_NAME)
+
+    me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=True, connect=False),
+    }
+    if me is not None:
+        overwrites[me] = discord.PermissionOverwrite(
+            view_channel=True,
+            connect=True,
+            manage_channels=True,
+            read_message_history=True,
+        )
+
+    if category is None:
+        category = await guild.create_category(
+            SERVER_COUNTER_CATEGORY_NAME,
+            overwrites=overwrites,
+            position=0,
+            reason="Création automatique des compteurs PinkGift",
+        )
+    elif category.position != 0:
+        await category.edit(position=0, reason="Placement des compteurs PinkGift en haut du serveur")
+
+    counter_specs = (
+        ("members_channel_id", "👥・Membres"),
+        ("tags_channel_id", "🏷️・Tags serveur"),
+        ("reviews_counter_channel_id", "⭐・Avis vérifiés"),
+    )
+    channels = {}
+    for key, prefix in counter_specs:
+        channel = guild.get_channel(int(data.get(key) or 0))
+        if not isinstance(channel, discord.VoiceChannel):
+            channel = next(
+                (item for item in category.voice_channels if item.name.startswith(prefix)),
+                None,
+            )
+        if channel is None:
+            channel = await guild.create_voice_channel(
+                f"{prefix} : 0",
+                category=category,
+                overwrites=overwrites,
+                reason="Création automatique d'un compteur PinkGift",
+            )
+        elif channel.category_id != category.id:
+            await channel.edit(
+                category=category,
+                reason="Regroupement des compteurs PinkGift",
+            )
+        channels[key] = channel
+        data[key] = channel.id
+
+    data["category_id"] = category.id
+    save_server_counter_data(guild.id, data)
+    return data, channels
+
+
+async def refresh_server_counters(guild, refresh_reviews=False):
+    if guild is None or not guild_is_authorized(guild.id):
+        return
+    lock = SERVER_COUNTER_LOCKS.setdefault(guild.id, asyncio.Lock())
+    async with lock:
+        if not guild.chunked:
+            try:
+                await guild.chunk(cache=True)
+            except discord.HTTPException as error:
+                print(f"Chargement membres incomplet pour les compteurs de {guild.id}: {error}")
+
+        data, channels = await ensure_server_counter_channels(guild)
+        members_count = sum(1 for member in guild.members if not member.bot)
+        tags_count = sum(
+            1
+            for member in guild.members
+            if not member.bot and member_has_server_tag(member, guild.id)
+        )
+
+        if refresh_reviews or "verified_reviews_count" not in data:
+            data["verified_reviews_count"] = await count_verified_reviews(guild, data)
+            save_server_counter_data(guild.id, data)
+        reviews_count = max(0, int(data.get("verified_reviews_count", 0) or 0))
+
+        names = {
+            "members_channel_id": f"👥・Membres : {members_count}",
+            "tags_channel_id": f"🏷️・Tags serveur : {tags_count}",
+            "reviews_counter_channel_id": f"⭐・Avis vérifiés : {reviews_count}",
+        }
+        for key, channel in channels.items():
+            if channel.name != names[key]:
+                await channel.edit(name=names[key], reason="Actualisation automatique des compteurs PinkGift")
+
+
+async def delayed_server_counter_refresh(guild):
+    await asyncio.sleep(5)
+    refresh_reviews = bool(SERVER_COUNTER_UPDATE_FLAGS.pop(guild.id, False))
+    try:
+        await refresh_server_counters(guild, refresh_reviews=refresh_reviews)
+    except (discord.Forbidden, discord.HTTPException) as error:
+        print(f"Actualisation compteurs impossible sur {guild.id}: {error}")
+    except Exception as error:
+        print(f"Erreur compteurs serveur {guild.id}: {error}")
+    finally:
+        SERVER_COUNTER_UPDATE_TASKS.pop(guild.id, None)
+
+
+def schedule_server_counter_refresh(guild, refresh_reviews=False):
+    if guild is None:
+        return
+    SERVER_COUNTER_UPDATE_FLAGS[guild.id] = bool(
+        SERVER_COUNTER_UPDATE_FLAGS.get(guild.id) or refresh_reviews
+    )
+    task = SERVER_COUNTER_UPDATE_TASKS.get(guild.id)
+    if task is None or task.done():
+        SERVER_COUNTER_UPDATE_TASKS[guild.id] = asyncio.create_task(
+            delayed_server_counter_refresh(guild)
+        )
+
+
+async def server_counter_refresh_loop():
+    while not bot.is_closed():
+        for guild in bot.guilds:
+            if guild_is_authorized(guild.id):
+                try:
+                    await refresh_server_counters(guild, refresh_reviews=True)
+                except (discord.Forbidden, discord.HTTPException) as error:
+                    print(f"Actualisation périodique compteurs impossible sur {guild.id}: {error}")
+                except Exception as error:
+                    print(f"Erreur périodique compteurs serveur {guild.id}: {error}")
+        await asyncio.sleep(SERVER_COUNTER_REFRESH_SECONDS)
 
 
 def authorized_guild_ids():
@@ -2035,7 +2361,7 @@ async def sync_commands_to_guilds():
 
 @bot.event
 async def on_ready():
-    global BOT_LOOP, COMMAND_SYNC_DONE, PUBLIC_VIEWS_REPAIRED
+    global BOT_LOOP, COMMAND_SYNC_DONE, PUBLIC_VIEWS_REPAIRED, SERVER_COUNTER_REFRESH_TASK
     BOT_LOOP = asyncio.get_running_loop()
     if not COMMAND_SYNC_DONE:
         await sync_commands_to_guilds()
@@ -2056,6 +2382,8 @@ async def on_ready():
     for guild in bot.guilds:
         if not guild_is_authorized(guild.id):
             await warn_unauthorized_guild(guild)
+    if SERVER_COUNTER_REFRESH_TASK is None or SERVER_COUNTER_REFRESH_TASK.done():
+        SERVER_COUNTER_REFRESH_TASK = asyncio.create_task(server_counter_refresh_loop())
     await bot.change_presence(activity=discord.Game(name="🎀 PinkGift | Tickets ouverts"))
     print("Le bot PinkSoftware est en ligne et fonctionnel !")
 
@@ -2063,6 +2391,7 @@ async def on_ready():
 async def on_guild_join(guild):
     await warn_unauthorized_guild(guild)
     await refresh_invite_cache(guild)
+    schedule_server_counter_refresh(guild, refresh_reviews=True)
 
 
 @bot.event
@@ -2091,6 +2420,7 @@ async def on_invite_delete(invite):
 @bot.event
 async def on_member_join(member):
     await register_invited_member(member)
+    schedule_server_counter_refresh(member.guild)
     role = member.guild.get_role(NEW_MEMBER_ROLE_ID)
     if role:
         try:
@@ -2102,6 +2432,7 @@ async def on_member_join(member):
 @bot.event
 async def on_member_remove(member):
     await register_departed_member(member)
+    schedule_server_counter_refresh(member.guild)
 
 
 @bot.event
@@ -2112,6 +2443,17 @@ async def on_member_update(before, after):
         await add_muted_role(after, reason="Mute détecté automatiquement")
     elif before_active and not after_active:
         await remove_muted_role(after, reason="Fin du mute détectée automatiquement")
+    if getattr(before, "primary_guild", None) != getattr(after, "primary_guild", None):
+        schedule_server_counter_refresh(after.guild)
+
+
+@bot.event
+async def on_user_update(before, after):
+    if getattr(before, "primary_guild", None) == getattr(after, "primary_guild", None):
+        return
+    guilds = {guild.id: guild for guild in (*before.mutual_guilds, *after.mutual_guilds)}
+    for guild in guilds.values():
+        schedule_server_counter_refresh(guild)
 
 
 @bot.event
@@ -2124,7 +2466,37 @@ async def on_message(message):
                 await message.add_reaction(emoji)
             except discord.HTTPException as error:
                 print(f"Erreur réaction auto dans {message.channel}: {error}")
+    guild = getattr(message, "guild", None)
+    if guild is not None and message.channel.id == verified_reviews_channel_id(guild.id):
+        schedule_server_counter_refresh(guild, refresh_reviews=True)
     await bot.process_commands(message)
+
+
+@bot.event
+async def on_raw_message_delete(payload):
+    guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    if guild is not None and payload.channel_id == verified_reviews_channel_id(guild.id):
+        schedule_server_counter_refresh(guild, refresh_reviews=True)
+
+
+@bot.event
+async def on_raw_bulk_message_delete(payload):
+    guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    if guild is not None and payload.channel_id == verified_reviews_channel_id(guild.id):
+        schedule_server_counter_refresh(guild, refresh_reviews=True)
+
+
+@bot.event
+async def on_guild_channel_delete(channel):
+    data = get_server_counter_data(channel.guild.id)
+    managed_ids = {
+        int(data.get("category_id") or 0),
+        int(data.get("members_channel_id") or 0),
+        int(data.get("tags_channel_id") or 0),
+        int(data.get("reviews_counter_channel_id") or 0),
+    }
+    if channel.id in managed_ids:
+        schedule_server_counter_refresh(channel.guild, refresh_reviews=True)
 
 
 def build_tarifs_embed():
@@ -2936,23 +3308,68 @@ def panel_set_code(order_id):
 
 
 
+@bot.hybrid_command(name="config_compteurs", description="Configurer le salon des avis vérifiés")
+@discord.app_commands.default_permissions(administrator=True)
+@discord.app_commands.describe(avis_channel="Salon réservé aux avis vérifiés")
+@commands.guild_only()
+@commands.has_permissions(administrator=True)
+async def cmd_config_compteurs(ctx, avis_channel: discord.TextChannel):
+    data = get_server_counter_data(ctx.guild.id)
+    data["reviews_channel_id"] = avis_channel.id
+    data.pop("verified_reviews_count", None)
+    save_server_counter_data(ctx.guild.id, data)
+    schedule_server_counter_refresh(ctx.guild, refresh_reviews=True)
+    await ctx.send(
+        f"✅ Le compteur des avis vérifiés utilise maintenant {avis_channel.mention}. "
+        "Les salons statistiques seront actualisés dans quelques secondes.",
+        ephemeral=True,
+    )
+
+
 @bot.hybrid_command(name="giveaway", aliases=["gw"], description="Créer un giveaway avec bouton de participation")
 @discord.app_commands.default_permissions(manage_messages=True)
-@discord.app_commands.describe(duration="Durée, par exemple 30m, 2h ou 1d", nom="Nom du giveaway", image_url="Lien direct d'une image optionnelle")
+@discord.app_commands.describe(
+    duration="Durée, par exemple 30m, 2h ou 1d",
+    nom="Nom du giveaway",
+    invitations="Nombre minimum d'invitations actives requis",
+    tag_serveur="Exiger que le membre affiche le tag de ce serveur",
+    image_url="Lien direct d'une image optionnelle",
+)
+@commands.guild_only()
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_giveaway(ctx, duration: str, nom: str, image_url: str = ""):
+async def cmd_giveaway(
+    ctx,
+    duration: str,
+    nom: str,
+    invitations: int = 0,
+    tag_serveur: bool = False,
+    image_url: str = "",
+):
     seconds = parse_giveaway_duration(duration)
     if not seconds or seconds < 10:
-        await ctx.send("❌ Durée invalide. Exemple : /giveaway 2h Nitro image_url.", delete_after=8)
+        await ctx.send("❌ Durée invalide. Exemple : `/giveaway duration:2h nom:Nitro invitations:2 tag_serveur:Oui`.", delete_after=8)
         return
     if seconds > 60 * 60 * 24 * 30:
         await ctx.send("❌ Durée trop longue. Maximum : 30 jours.", delete_after=8)
+        return
+    if invitations < 0 or invitations > 1000:
+        await ctx.send("❌ Le nombre d'invitations requis doit être compris entre 0 et 1000.", ephemeral=True)
+        return
+    if tag_serveur and not hasattr(discord.Member, "primary_guild"):
+        await ctx.send("❌ La vérification du tag serveur nécessite discord.py 2.6 ou plus récent.", ephemeral=True)
         return
     image_url = (image_url or "").strip()
     if not image_url and getattr(ctx, "message", None) and ctx.message.attachments:
         image_url = ctx.message.attachments[0].url
     end_ts = int(time.time()) + seconds
-    embed = build_giveaway_embed(nom, end_ts, 0, image_url)
+    embed = build_giveaway_embed(
+        nom,
+        end_ts,
+        0,
+        image_url,
+        min_invites=invitations,
+        require_server_tag=tag_serveur,
+    )
     message = await ctx.send(embed=embed, view=GiveawayJoinView())
     save_giveaway(message.id, {
         "guild_id": ctx.guild.id if ctx.guild else 0,
@@ -2961,11 +3378,91 @@ async def cmd_giveaway(ctx, duration: str, nom: str, image_url: str = ""):
         "name": nom,
         "image_url": image_url,
         "end_ts": end_ts,
+        "min_invites": invitations,
+        "require_server_tag": tag_serveur,
         "participants": [],
         "ended": False,
         "created_at": utc_now().isoformat()
     })
     asyncio.create_task(finish_giveaway_later(message.id, seconds))
+
+
+@bot.hybrid_command(name="reroll", description="Tirer un nouveau gagnant pour un giveaway terminé")
+@discord.app_commands.default_permissions(manage_messages=True)
+@discord.app_commands.describe(message_id="ID ou lien du message du giveaway (facultatif si tu réponds au message)")
+@commands.guild_only()
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_reroll(ctx, message_id: str = ""):
+    giveaway_message_id = parse_giveaway_message_id(message_id)
+    if giveaway_message_id is None and getattr(ctx, "message", None):
+        reference = getattr(ctx.message, "reference", None)
+        giveaway_message_id = getattr(reference, "message_id", None)
+    if giveaway_message_id is None:
+        await ctx.send(
+            "❌ Indique l'ID ou le lien du message du giveaway, ou réponds au message avec `!reroll`.",
+            ephemeral=True,
+        )
+        return
+
+    data = load_giveaway(giveaway_message_id)
+    if not data:
+        await ctx.send("❌ Giveaway introuvable.", ephemeral=True)
+        return
+    if not data.get("ended"):
+        await ctx.send("❌ Ce giveaway n'est pas encore terminé.", ephemeral=True)
+        return
+
+    stored_guild_id = int(data.get("guild_id") or 0)
+    if ctx.guild is None or (stored_guild_id and stored_guild_id != ctx.guild.id):
+        await ctx.send("❌ Ce giveaway n'appartient pas à ce serveur.", ephemeral=True)
+        return
+
+    participants = normalize_giveaway_participants(data.get("participants", []))
+    if not participants:
+        await ctx.send("❌ Impossible de reroll : aucun participant enregistré.", ephemeral=True)
+        return
+    eligible_participants, rejected = await eligible_giveaway_participants(ctx.guild, data)
+    if not eligible_participants:
+        await ctx.send(
+            "❌ Impossible de reroll : aucun participant ne remplit encore toutes les conditions.",
+            ephemeral=True,
+        )
+        return
+
+    winner_history = normalize_giveaway_participants(data.get("winner_history", []))
+    current_winner_id = data.get("winner_id")
+    if current_winner_id is not None:
+        try:
+            current_winner_id = int(current_winner_id)
+        except (TypeError, ValueError):
+            current_winner_id = None
+    if current_winner_id and current_winner_id not in winner_history:
+        winner_history.append(current_winner_id)
+
+    winner_id = select_giveaway_winner(eligible_participants, winner_history)
+    winner_text = f"<@{winner_id}>"
+    data["winner_id"] = winner_id
+    data["winner_history"] = [*winner_history, winner_id]
+    data["rerolled_at"] = utc_now().isoformat()
+    data["rerolled_by"] = ctx.author.id
+
+    channel_id = int(data.get("channel_id") or 0)
+    try:
+        channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+        message = await channel.fetch_message(giveaway_message_id)
+        save_giveaway(giveaway_message_id, data)
+        await message.edit(
+            embed=build_saved_giveaway_embed(data, len(participants), ended=True, winner=winner_text),
+            view=None,
+        )
+        excluded_text = f" · **{len(rejected)}** participation(s) non éligible(s) écartée(s)" if rejected else ""
+        await channel.send(
+            f"🔄 Nouveau tirage pour le giveaway **{data.get('name', 'Giveaway')}** ! "
+            f"Nouveau gagnant : {winner_text}{excluded_text}"
+        )
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as error:
+        print(f"Erreur reroll giveaway {giveaway_message_id}: {error}")
+        await ctx.send("❌ Impossible de retrouver ou modifier le message du giveaway.", ephemeral=True)
 
 
 @bot.hybrid_command(name="reglement", description="Publier le règlement PinkGift")
@@ -3007,6 +3504,7 @@ async def cmd_autoriser_serveur(ctx, cle: str):
         await ctx.send("❌ Clé d'autorisation invalide.", ephemeral=True)
         return
     add_authorized_guild(ctx.guild.id)
+    schedule_server_counter_refresh(ctx.guild, refresh_reviews=True)
     await ctx.send("✅ Serveur autorisé. PinkSoftware restera ici.", ephemeral=True)
 
 async def send_slash_error(interaction, message):
