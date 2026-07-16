@@ -60,6 +60,9 @@ BOT_LOOP = None
 DISCORD_STATE = "démarrage"
 DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
+INVITE_USAGE_CACHE = {}
+INVITE_TRACKING_LOCKS = {}
+RECENTLY_DELETED_INVITES = {}
 DISCORD_THREAD_STARTED = False
 COMMAND_SYNC_DONE = False
 PUBLIC_VIEWS_REPAIRED = False
@@ -203,6 +206,235 @@ def list_panel_settings(prefix=""):
     except Exception as error:
         print(f"Erreur liste settings panel {prefix}: {error}")
         return []
+
+
+
+
+def invite_setting_key(guild_id: int) -> str:
+    return f"invite_tracking:{int(guild_id)}"
+
+
+def get_invite_tracking_data(guild_id: int) -> dict:
+    data = get_panel_setting(invite_setting_key(guild_id), {}) or {}
+    if not isinstance(data, dict):
+        data = {}
+    inviters = data.get("inviters")
+    members = data.get("members")
+    if not isinstance(inviters, dict):
+        inviters = {}
+    if not isinstance(members, dict):
+        members = {}
+    return {"inviters": inviters, "members": members}
+
+
+def save_invite_tracking_data(guild_id: int, data: dict) -> None:
+    set_panel_setting(invite_setting_key(guild_id), data)
+
+
+def invite_user_stats(guild_id: int, user_id: int) -> dict:
+    data = get_invite_tracking_data(guild_id)
+    raw = data["inviters"].get(str(user_id), {})
+    if not isinstance(raw, dict):
+        raw = {}
+    return {
+        "total": max(0, int(raw.get("total", 0) or 0)),
+        "active": max(0, int(raw.get("active", 0) or 0)),
+        "left": max(0, int(raw.get("left", 0) or 0)),
+    }
+
+
+async def fetch_invite_snapshot(guild: discord.Guild):
+    try:
+        invites = await guild.invites()
+    except discord.Forbidden:
+        print(
+            f"Tracking invitations impossible sur {guild.name} ({guild.id}) : "
+            "le bot doit avoir la permission Gérer le serveur."
+        )
+        return None
+    except discord.HTTPException as error:
+        print(f"Erreur récupération invitations sur {guild.id}: {error}")
+        return None
+
+    snapshot = {}
+    for invite in invites:
+        snapshot[invite.code] = {
+            "uses": int(invite.uses or 0),
+            "inviter_id": invite.inviter.id if invite.inviter else None,
+            "max_uses": int(invite.max_uses or 0),
+        }
+    return snapshot
+
+
+async def refresh_invite_cache(guild: discord.Guild) -> bool:
+    snapshot = await fetch_invite_snapshot(guild)
+    if snapshot is None:
+        return False
+    INVITE_USAGE_CACHE[guild.id] = snapshot
+    return True
+
+
+async def initialize_invite_tracking() -> None:
+    initialized = 0
+    for guild in bot.guilds:
+        if await refresh_invite_cache(guild):
+            initialized += 1
+    print(f"✅ Cache des invitations initialisé pour {initialized} serveur(s).")
+
+
+async def detect_used_invite(guild: discord.Guild):
+    lock = INVITE_TRACKING_LOCKS.setdefault(guild.id, asyncio.Lock())
+    async with lock:
+        current = await fetch_invite_snapshot(guild)
+        if current is None:
+            return None
+
+        previous = INVITE_USAGE_CACHE.get(guild.id)
+        INVITE_USAGE_CACHE[guild.id] = current
+        if previous is None:
+            # Première observation : on crée seulement une référence, sans
+            # attribuer à tort d'anciennes utilisations au nouveau membre.
+            return None
+
+        candidates = []
+        for code, current_data in current.items():
+            previous_data = previous.get(code)
+            if not previous_data:
+                continue
+            delta = int(current_data.get("uses", 0)) - int(previous_data.get("uses", 0))
+            if delta > 0:
+                candidates.append((delta, code, current_data))
+
+        if candidates:
+            _, code, data = max(candidates, key=lambda item: item[0])
+            return {"code": code, **data}
+
+        # Certaines invitations à usage unique disparaissent juste après leur
+        # utilisation. on_invite_delete les conserve brièvement ici.
+        recent = RECENTLY_DELETED_INVITES.get(guild.id, {})
+        now = time.monotonic()
+        expired_codes = []
+        deleted_candidates = []
+        for code, data in recent.items():
+            if now - float(data.get("deleted_at", 0)) > 15:
+                expired_codes.append(code)
+                continue
+            max_uses = int(data.get("max_uses", 0) or 0)
+            uses = int(data.get("uses", 0) or 0)
+            if max_uses > 0 and uses + 1 >= max_uses:
+                deleted_candidates.append((code, data))
+        for code in expired_codes:
+            recent.pop(code, None)
+
+        if deleted_candidates:
+            code, data = max(deleted_candidates, key=lambda item: float(item[1].get("deleted_at", 0)))
+            recent.pop(code, None)
+            return {"code": code, **data}
+        return None
+
+
+async def register_invited_member(member: discord.Member) -> None:
+    if member.bot:
+        return
+    used_invite = await detect_used_invite(member.guild)
+    if not used_invite:
+        return
+    inviter_id = used_invite.get("inviter_id")
+    if not inviter_id or int(inviter_id) == member.id:
+        return
+
+    lock = INVITE_TRACKING_LOCKS.setdefault(member.guild.id, asyncio.Lock())
+    async with lock:
+        data = get_invite_tracking_data(member.guild.id)
+        member_key = str(member.id)
+        previous_member_data = data["members"].get(member_key)
+
+        # Évite un double comptage si Discord renvoie deux événements proches.
+        if isinstance(previous_member_data, dict) and previous_member_data.get("active"):
+            return
+
+        inviter_key = str(inviter_id)
+        inviter_stats = data["inviters"].get(inviter_key, {})
+        if not isinstance(inviter_stats, dict):
+            inviter_stats = {}
+        inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0)) + 1
+        inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0)) + 1
+        inviter_stats["left"] = max(0, int(inviter_stats.get("left", 0) or 0))
+        data["inviters"][inviter_key] = inviter_stats
+        data["members"][member_key] = {
+            "inviter_id": int(inviter_id),
+            "invite_code": str(used_invite.get("code", "")),
+            "active": True,
+            "joined_at": utc_now().isoformat(),
+        }
+        save_invite_tracking_data(member.guild.id, data)
+
+
+async def register_departed_member(member: discord.Member) -> None:
+    if member.bot:
+        return
+    lock = INVITE_TRACKING_LOCKS.setdefault(member.guild.id, asyncio.Lock())
+    async with lock:
+        data = get_invite_tracking_data(member.guild.id)
+        member_key = str(member.id)
+        member_data = data["members"].get(member_key)
+        if not isinstance(member_data, dict) or not member_data.get("active"):
+            return
+        inviter_id = member_data.get("inviter_id")
+        if not inviter_id:
+            return
+
+        inviter_key = str(inviter_id)
+        inviter_stats = data["inviters"].get(inviter_key, {})
+        if not isinstance(inviter_stats, dict):
+            inviter_stats = {}
+        inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0))
+        inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0) - 1)
+        inviter_stats["left"] = max(0, int(inviter_stats.get("left", 0) or 0)) + 1
+        data["inviters"][inviter_key] = inviter_stats
+        member_data["active"] = False
+        member_data["left_at"] = utc_now().isoformat()
+        data["members"][member_key] = member_data
+        save_invite_tracking_data(member.guild.id, data)
+
+
+def build_invite_leaderboard_embed(guild: discord.Guild) -> discord.Embed:
+    config = load_embed_texts().get("invites_leaderboard_embed", {})
+    rgb = config.get("color_rgb", [255, 192, 203])
+    data = get_invite_tracking_data(guild.id)
+    ranking = []
+    for user_id, stats in data["inviters"].items():
+        if not isinstance(stats, dict):
+            continue
+        try:
+            parsed_user_id = int(user_id)
+            total = max(0, int(stats.get("total", 0) or 0))
+            active = max(0, int(stats.get("active", 0) or 0))
+        except (TypeError, ValueError):
+            continue
+        if total > 0:
+            ranking.append((total, active, parsed_user_id))
+    ranking.sort(reverse=True)
+
+    if ranking:
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        lines = []
+        for position, (total, active, user_id) in enumerate(ranking[:10], start=1):
+            prefix = medals.get(position, f"**{position}.**")
+            lines.append(f"{prefix} <@{user_id}> — **{total}** invitation(s) · **{active}** présente(s)")
+        description = "\n".join(lines)
+    else:
+        description = "Aucune invitation enregistrée pour le moment."
+
+    embed = discord.Embed(
+        title=config.get("title", "🏆 Classement des invitations"),
+        description=description,
+        color=discord.Color.from_rgb(*rgb),
+    )
+    footer = config.get("footer", "PinkGift — Invitations")
+    if footer:
+        embed.set_footer(text=footer)
+    return embed
 
 
 def apply_embed_overrides(data):
@@ -707,6 +939,24 @@ DEFAULT_EMBED_DATA.update({
         ],
         "color_rgb": [255, 192, 203],
         "footer": "PinkGift — Giveaway terminé"
+    }
+})
+
+DEFAULT_EMBED_DATA.update({
+    "invites_embed": {
+        "title": "📨 Invitations de {member}",
+        "description": [
+            "**Invitations totales :** {total}",
+            "**Membres encore présents :** {active}",
+            "**Membres partis :** {left}"
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Invitations"
+    },
+    "invites_leaderboard_embed": {
+        "title": "🏆 Classement des invitations",
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Invitations"
     }
 })
 
@@ -1802,6 +2052,7 @@ async def on_ready():
         PUBLIC_VIEWS_REPAIRED = True
 
     await schedule_active_giveaways()
+    await initialize_invite_tracking()
     for guild in bot.guilds:
         if not guild_is_authorized(guild.id):
             await warn_unauthorized_guild(guild)
@@ -1811,15 +2062,47 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild):
     await warn_unauthorized_guild(guild)
+    await refresh_invite_cache(guild)
+
+
+@bot.event
+async def on_invite_create(invite):
+    guild = invite.guild
+    if guild is not None:
+        await refresh_invite_cache(guild)
+
+
+@bot.event
+async def on_invite_delete(invite):
+    guild = invite.guild
+    if guild is None:
+        return
+    cached = INVITE_USAGE_CACHE.get(guild.id, {}).pop(invite.code, None)
+    data = cached or {
+        "uses": int(invite.uses or 0),
+        "inviter_id": invite.inviter.id if invite.inviter else None,
+        "max_uses": int(invite.max_uses or 0),
+    }
+    data = dict(data)
+    data["deleted_at"] = time.monotonic()
+    RECENTLY_DELETED_INVITES.setdefault(guild.id, {})[invite.code] = data
+
 
 @bot.event
 async def on_member_join(member):
+    await register_invited_member(member)
     role = member.guild.get_role(NEW_MEMBER_ROLE_ID)
     if role:
         try:
             await member.add_roles(role, reason="Attribution automatique nouveau membre")
         except Exception as e:
             print(f"Erreur attribution role : {e}")
+
+
+@bot.event
+async def on_member_remove(member):
+    await register_departed_member(member)
+
 
 @bot.event
 async def on_member_update(before, after):
@@ -2143,6 +2426,31 @@ async def cmd_tempmute(ctx, member: discord.Member, duration: str, *, reason: st
     await add_muted_role(member, reason=f"Mute {duration}: {reason}")
     asyncio.create_task(remove_muted_role_later(member, seconds))
     await ctx.send(f"🔇 {member.name} mute pendant {duration}. Rôle mute appliqué automatiquement.")
+
+@bot.hybrid_command(name="invites", description="Afficher le nombre de membres invités")
+@discord.app_commands.describe(member="Membre dont tu veux consulter les invitations")
+@commands.guild_only()
+async def cmd_invites(ctx, member: discord.Member = None):
+    target = member or ctx.author
+    stats = invite_user_stats(ctx.guild.id, target.id)
+    embed = build_json_embed(
+        "invites_embed",
+        {
+            "member": target.display_name,
+            "total": stats["total"],
+            "active": stats["active"],
+            "left": stats["left"],
+        },
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    await ctx.send(embed=embed)
+
+
+@bot.hybrid_command(name="classement_invites", aliases=["top_invites"], description="Afficher le classement des invitations")
+@commands.guild_only()
+async def cmd_classement_invites(ctx):
+    await ctx.send(embed=build_invite_leaderboard_embed(ctx.guild))
+
 
 @bot.hybrid_command(name="solde", description="Publier le panneau de consultation et recharge du solde")
 @discord.app_commands.default_permissions(manage_messages=True)
