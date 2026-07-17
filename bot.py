@@ -566,8 +566,147 @@ PRODUCT_CONFIG = {
     "VALORANT": {"display": "VALORANT", "emoji": "🎮", "emoji_ch": "🎮"},
 }
 
-UBEREATS_PACKS = {20: "28–42", 65: "85–115", 125: "165–225", 350: "501–680"}
+GIFT_CARD_AMOUNTS = (100, 200, 400, 800)
+UBEREATS_PACKS = {
+    "pack_20": {"default_price": 20, "drop": "28–42"},
+    "pack_65": {"default_price": 65, "drop": "85–115"},
+    "pack_125": {"default_price": 125, "drop": "165–225"},
+    "pack_350": {"default_price": 350, "drop": "501–680"},
+}
 NITRO_PRICE = 8
+VALO_REGIONS = {
+    "EUROPE": {
+        "label": "Europe", "emoji": "🇪🇺",
+        "packs": {
+            "3650": {"label": "3650 VP", "default_price": 30},
+            "5350": {"label": "5350 VP", "default_price": 40},
+            "8700": {"label": "8700 VP", "default_price": 60},
+            "11000": {"label": "11000 VP", "default_price": 80},
+        }
+    },
+    "TURQUIE": {
+        "label": "Turquie", "emoji": "🇹🇷",
+        "packs": {
+            "2925": {"label": "2925 VP", "default_price": 15},
+            "4325": {"label": "4325 VP", "default_price": 20},
+            "8900": {"label": "8900 VP", "default_price": 45},
+            "11000": {"label": "11000 VP", "default_price": 55},
+        }
+    }
+}
+
+
+def valid_price(value, fallback):
+    try:
+        price = round(float(value), 2)
+        if 0 < price <= 100000:
+            return price
+    except (TypeError, ValueError):
+        pass
+    return round(float(fallback), 2)
+
+
+def default_pricing_config():
+    return {
+        "gift_cards": {str(amount): round(amount * 0.70, 2) for amount in GIFT_CARD_AMOUNTS},
+        "uber_eats": {pack_key: float(pack["default_price"]) for pack_key, pack in UBEREATS_PACKS.items()},
+        "discord_nitro": float(NITRO_PRICE),
+        "valorant": {
+            region_key: {pack_key: float(pack["default_price"]) for pack_key, pack in region["packs"].items()}
+            for region_key, region in VALO_REGIONS.items()
+        },
+    }
+
+
+def get_pricing_config():
+    """Retourne une grille complète et validée, relue en base à chaque utilisation."""
+    prices = default_pricing_config()
+    saved = get_panel_setting("pricing", {}) or {}
+    if not isinstance(saved, dict):
+        return prices
+
+    saved_gifts = saved.get("gift_cards", {}) if isinstance(saved.get("gift_cards"), dict) else {}
+    for amount, fallback in list(prices["gift_cards"].items()):
+        prices["gift_cards"][amount] = valid_price(saved_gifts.get(amount), fallback)
+
+    saved_uber = saved.get("uber_eats", {}) if isinstance(saved.get("uber_eats"), dict) else {}
+    for pack_key, fallback in list(prices["uber_eats"].items()):
+        # Compatibilité avec une éventuelle ancienne clé basée sur le prix d'origine.
+        legacy_key = str(int(UBEREATS_PACKS[pack_key]["default_price"]))
+        prices["uber_eats"][pack_key] = valid_price(saved_uber.get(pack_key, saved_uber.get(legacy_key)), fallback)
+
+    prices["discord_nitro"] = valid_price(saved.get("discord_nitro"), prices["discord_nitro"])
+
+    saved_valorant = saved.get("valorant", {}) if isinstance(saved.get("valorant"), dict) else {}
+    for region_key, packs in prices["valorant"].items():
+        saved_packs = saved_valorant.get(region_key, {}) if isinstance(saved_valorant.get(region_key), dict) else {}
+        for pack_key, fallback in list(packs.items()):
+            legacy_key = str(int(VALO_REGIONS[region_key]["packs"][pack_key]["default_price"]))
+            packs[pack_key] = valid_price(saved_packs.get(pack_key, saved_packs.get(legacy_key)), fallback)
+    return prices
+
+
+def format_price(value):
+    return f"{float(value):g}"
+
+
+def valid_purchase_cost(value, fallback=0):
+    try:
+        cost = round(float(value), 2)
+        if 0 <= cost <= 100000:
+            return cost
+    except (TypeError, ValueError):
+        pass
+    return round(float(fallback), 2)
+
+
+def regular_gift_product_keys():
+    return tuple(key for key in PRODUCT_CONFIG if key not in {"VALORANT", "UBEREATS", "DISCORD_NITRO"})
+
+
+def default_purchase_cost_config():
+    return {
+        "gift_cards": {
+            product_key: {str(amount): 0.0 for amount in GIFT_CARD_AMOUNTS}
+            for product_key in regular_gift_product_keys()
+        },
+        "uber_eats": {pack_key: 0.0 for pack_key in UBEREATS_PACKS},
+        "discord_nitro": 0.0,
+        "valorant": {
+            region_key: {pack_key: 0.0 for pack_key in region["packs"]}
+            for region_key, region in VALO_REGIONS.items()
+        },
+    }
+
+
+def get_purchase_cost_config():
+    costs = default_purchase_cost_config()
+    saved = get_panel_setting("purchase_costs", {}) or {}
+    if not isinstance(saved, dict):
+        return costs
+
+    saved_gifts = saved.get("gift_cards", {}) if isinstance(saved.get("gift_cards"), dict) else {}
+    for product_key, amounts in costs["gift_cards"].items():
+        saved_amounts = saved_gifts.get(product_key, {}) if isinstance(saved_gifts.get(product_key), dict) else {}
+        for amount in amounts:
+            amounts[amount] = valid_purchase_cost(saved_amounts.get(amount), amounts[amount])
+
+    saved_uber = saved.get("uber_eats", {}) if isinstance(saved.get("uber_eats"), dict) else {}
+    for pack_key in costs["uber_eats"]:
+        costs["uber_eats"][pack_key] = valid_purchase_cost(saved_uber.get(pack_key), 0)
+
+    costs["discord_nitro"] = valid_purchase_cost(saved.get("discord_nitro"), 0)
+
+    saved_valorant = saved.get("valorant", {}) if isinstance(saved.get("valorant"), dict) else {}
+    for region_key, packs in costs["valorant"].items():
+        saved_packs = saved_valorant.get(region_key, {}) if isinstance(saved_valorant.get(region_key), dict) else {}
+        for pack_key in packs:
+            packs[pack_key] = valid_purchase_cost(saved_packs.get(pack_key), 0)
+    return costs
+
+
+def save_order_purchase_cost(message_id, cost):
+    set_panel_setting(f"order_cost:{int(message_id)}", {"cost": valid_purchase_cost(cost), "saved_at": utc_now().isoformat()})
 
 DEFAULT_EMBED_DATA = {
     "images": {
@@ -647,7 +786,9 @@ DEFAULT_EMBED_DATA.update({
         "description": [
             "Bonjour {user} !",
             "",
-            "Ta commande a bien été enregistrée. Le staff va te prendre en charge rapidement."
+            "Ta commande a bien été enregistrée et ton solde a été débité.",
+            "La livraison est automatique : ton code sera envoyé ici dès qu'il sera disponible.",
+            "Le staff intervient uniquement pour les recharges de solde."
         ],
         "fields": [
             {
@@ -661,7 +802,7 @@ DEFAULT_EMBED_DATA.update({
                 "inline": True
             },
             {
-                "name": "Montant à payer (-30 %)",
+                "name": "Montant débité",
                 "value": "**{paid} €**",
                 "inline": True
             }
@@ -675,7 +816,12 @@ DEFAULT_EMBED_DATA.update({
     },
     "nitro_ticket_embed": {
         "title": "<:nitroboost:1524439577656561846> Commande — DISCORD NITRO",
-        "description": ["Bonjour {user} !", "", "Ta commande Discord Nitro a bien été enregistrée. Le staff va te prendre en charge rapidement."],
+        "description": [
+            "Bonjour {user} !", "",
+            "Ta commande Discord Nitro a bien été enregistrée et ton solde a été débité.",
+            "La livraison est automatique : ton Nitro sera envoyé ici dès qu'il sera disponible.",
+            "Le staff intervient uniquement pour les recharges de solde."
+        ],
         "fields": [
             {"name": "Produit", "value": "{emoji} **{service}**", "inline": False},
             {"name": "Prix", "value": "**{paid} €**", "inline": True},
@@ -692,7 +838,8 @@ DEFAULT_EMBED_DATA.update({
             "Merci de l'intérêt que tu portes à PinkGift.",
             "Indique le pack Valorant Points souhaité dans ce ticket.",
             "",
-            "Le staff a été prévenu et va te prendre en charge rapidement."
+            "La livraison est automatique : ton code Valorant sera envoyé dans ce ticket dès qu'il sera disponible.",
+            "Le staff intervient uniquement pour les recharges de solde."
         ],
         "color_rgb": [
             255,
@@ -713,9 +860,10 @@ DEFAULT_EMBED_DATA.update({
         ]
     },
     "commande_embed": {
-        "title": "{emoji} Commande prise en charge",
+        "title": "{emoji} Livraison automatique en cours",
         "description": [
-            "Merci pour votre confiance {user} !"
+            "Merci pour ta confiance {user} !",
+            "Ta commande est traitée automatiquement. Ton code apparaîtra ci-dessous dès qu'il sera prêt."
         ],
         "fields": [
             {
@@ -748,9 +896,10 @@ DEFAULT_EMBED_DATA.update({
         "footer": "PinkGift — Ticket commande"
     },
     "commande_vp_embed": {
-        "title": "{emoji} Commande Valorant prise en charge",
+        "title": "{emoji} Livraison Valorant automatique en cours",
         "description": [
-            "Merci pour votre confiance {user} !"
+            "Merci pour ta confiance {user} !",
+            "Ta commande est traitée automatiquement. Ton code Valorant apparaîtra ci-dessous dès qu'il sera prêt."
         ],
         "fields": [
             {
@@ -783,14 +932,19 @@ DEFAULT_EMBED_DATA.update({
         "footer": "PinkGift — Ticket Valorant"
     },
     "commande_finalisee": {
+        "title": "✅ Commande livrée automatiquement",
+        "description": [
+            "Ta commande a été livrée automatiquement.",
+            "Ton code est disponible ci-dessous."
+        ],
         "color_rgb": [
             46,
             204,
             113
         ],
         "image_key": "commande_livree",
-        "footer": "PinkGift — Commande finalisée",
-        "code_field_name": "Code"
+        "footer": "PinkGift — Livraison automatique terminée",
+        "code_field_name": "Code livré automatiquement"
     },
     "commandes_embed": {
         "title": "📜 COMMANDES STAFF — PinkGift",
@@ -839,7 +993,7 @@ DEFAULT_EMBED_DATA.update({
 
 DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde & paiements PinkGift","description":["Consulte ton solde ou ouvre un ticket de recharge avec les boutons ci-dessous.","","💳 **Moyens de paiement acceptés**","<:paypal:1517582845315649751> **PayPal**","🏦 **Virement bancaire**","₿ **Cryptomonnaies**","","Une fois le paiement confirmé par le staff, ton solde sera ajouté et utilisable pour commander."],"color_rgb":[255,192,203],"image_key":"paiement_securise","footer":"PinkGift — Solde & paiements"},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
 
-DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée selon la grille fixe."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
+DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.", "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.", "Le staff intervient uniquement pour les recharges de solde."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
 
 DEFAULT_EMBED_DATA.update({
     "faq_embed": {
@@ -1197,6 +1351,170 @@ def build_client_totals(orders, month_only=False):
     return sorted(totals.values(), key=lambda item: item["total"], reverse=True)
 
 
+DELIVERED_ORDER_STATUSES = {"done", "livre", "livré", "delivered"}
+FRENCH_MONTH_NAMES = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
+def normalize_finance_month(value, now=None):
+    text = str(value or "").strip()
+    if re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", text):
+        return text
+    current = now or utc_now()
+    return f"{current.year:04d}-{current.month:02d}"
+
+
+def finance_month_bounds(month_key):
+    year, month = (int(part) for part in month_key.split("-", 1))
+    start = datetime.datetime(year, month, 1, tzinfo=datetime.timezone.utc)
+    if month == 12:
+        end = datetime.datetime(year + 1, 1, 1, tzinfo=datetime.timezone.utc)
+    else:
+        end = datetime.datetime(year, month + 1, 1, tzinfo=datetime.timezone.utc)
+    return start, end
+
+
+def load_order_purchase_costs():
+    snapshots = {}
+    if USE_SUPABASE:
+        items = []
+        offset = 0
+        while True:
+            prefix = urllib.parse.quote("order_cost:", safe="")
+            page = supabase_request(
+                "GET",
+                f"panel_settings?key=like.{prefix}*&select=key,value&order=key&limit=1000&offset={offset}",
+            ) or []
+            items.extend(page)
+            if len(page) < 1000:
+                break
+            offset += len(page)
+    else:
+        items = list_panel_settings("order_cost:")
+    for item in items:
+        try:
+            message_id = int(str(item.get("key", "")).split(":", 1)[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        value = item.get("value", {})
+        raw_cost = value.get("cost", 0) if isinstance(value, dict) else value
+        snapshots[message_id] = valid_purchase_cost(raw_cost)
+    return snapshots
+
+
+def infer_order_purchase_cost(order, costs=None):
+    """Reconstitue le coût des anciennes commandes qui n'ont pas encore de snapshot."""
+    costs = costs or get_purchase_cost_config()
+    service = str(order.get("service") or "")
+    service_upper = service.upper()
+
+    if service_upper.startswith("VALORANT"):
+        for region_key, region in VALO_REGIONS.items():
+            if region["label"].upper() not in service_upper:
+                continue
+            for pack_key, pack in region["packs"].items():
+                if pack["label"].upper() in service_upper:
+                    return costs["valorant"][region_key][pack_key]
+        return 0.0
+
+    product_key = next(
+        (key for key, config in PRODUCT_CONFIG.items() if config["display"].upper() == service_upper),
+        None,
+    )
+    if product_key == "DISCORD_NITRO":
+        return costs["discord_nitro"]
+    if product_key == "UBEREATS":
+        received = str(order.get("received_label") or "")
+        for pack_key, pack in UBEREATS_PACKS.items():
+            if pack["drop"] in received:
+                return costs["uber_eats"][pack_key]
+        return 0.0
+    if product_key in costs["gift_cards"]:
+        try:
+            amount_key = str(int(float(order.get("amount") or 0)))
+        except (TypeError, ValueError):
+            return 0.0
+        return costs["gift_cards"][product_key].get(amount_key, 0.0)
+    return 0.0
+
+
+def calculate_month_finances(orders, month_key, purchase_cost_snapshots=None, purchase_costs=None):
+    """Calcule le CA sur les commandes livrées pendant le mois demandé."""
+    month_key = normalize_finance_month(month_key)
+    start, end = finance_month_bounds(month_key)
+    revenue = 0.0
+    total_costs = 0.0
+    order_count = 0
+    services = {}
+    nitro = {"orders": 0, "revenue": 0.0, "costs": 0.0, "profit": 0.0}
+    purchase_cost_snapshots = purchase_cost_snapshots or {}
+    purchase_costs = purchase_costs or get_purchase_cost_config()
+    for order in orders:
+        if str(order.get("status") or "").lower() not in DELIVERED_ORDER_STATUSES:
+            continue
+        delivered_at = parse_datetime_value(order.get("updated_at") or order.get("created_at"))
+        if delivered_at is None:
+            continue
+        delivered_at = delivered_at.astimezone(datetime.timezone.utc)
+        if not start <= delivered_at < end:
+            continue
+        try:
+            paid = round(float(order.get("paid") or 0), 2)
+        except (TypeError, ValueError):
+            paid = 0.0
+        if paid < 0:
+            continue
+        try:
+            message_id = int(order.get("message_id") or 0)
+        except (TypeError, ValueError):
+            message_id = 0
+        purchase_cost = purchase_cost_snapshots.get(message_id)
+        if purchase_cost is None:
+            purchase_cost = infer_order_purchase_cost(order, purchase_costs)
+        purchase_cost = valid_purchase_cost(purchase_cost)
+        revenue += paid
+        total_costs += purchase_cost
+        order_count += 1
+        service = str(order.get("service") or "Service inconnu")
+        item = services.setdefault(service, {"service": service, "orders": 0, "revenue": 0.0, "costs": 0.0, "profit": 0.0})
+        item["orders"] += 1
+        item["revenue"] += paid
+        item["costs"] += purchase_cost
+        item["profit"] += paid - purchase_cost
+        if service.upper() == PRODUCT_CONFIG["DISCORD_NITRO"]["display"].upper():
+            nitro["orders"] += 1
+            nitro["revenue"] += paid
+            nitro["costs"] += purchase_cost
+            nitro["profit"] += paid - purchase_cost
+
+    revenue = round(revenue, 2)
+    total_costs = round(total_costs, 2)
+    breakdown = sorted(services.values(), key=lambda item: item["revenue"], reverse=True)
+    for item in breakdown:
+        item["revenue"] = round(item["revenue"], 2)
+        item["costs"] = round(item["costs"], 2)
+        item["profit"] = round(item["profit"], 2)
+    for key in ("revenue", "costs", "profit"):
+        nitro[key] = round(nitro[key], 2)
+    return {
+        "month": month_key,
+        "revenue": revenue,
+        "costs": total_costs,
+        "profit": round(revenue - total_costs, 2),
+        "orders": order_count,
+        "average_order": round(revenue / order_count, 2) if order_count else 0.0,
+        "breakdown": breakdown,
+        "nitro": nitro,
+    }
+
+
+def finance_month_label(month_key):
+    year, month = (int(part) for part in month_key.split("-", 1))
+    return f"{FRENCH_MONTH_NAMES[month - 1].capitalize()} {year}"
+
+
 def leaderboard_lines(items):
     if not items:
         return "Aucun client classé pour le moment."
@@ -1235,17 +1553,47 @@ async def create_product_ticket(interaction, product_key, amount):
     if not product_is_available(product_key):
         await interaction.followup.send(f"{STOCK_KO_EMOJI} **{cfg['display']}** est actuellement en rupture.", ephemeral=True)
         return
-    if product_key == "DISCORD_NITRO":
-        amount = NITRO_PRICE
-    uber_drop = UBEREATS_PACKS.get(amount) if product_key == "UBEREATS" else None
-    if product_key == "UBEREATS" and uber_drop is None:
-        await interaction.followup.send("❌ Pack Uber Eats invalide.", ephemeral=True)
-        return
-    fixed_price = product_key in {"UBEREATS", "DISCORD_NITRO"}
-    paid_amount = float(amount) if fixed_price else round(amount * 0.70, 2)
-    received_display = "Discord Nitro" if product_key == "DISCORD_NITRO" else (f"{uber_drop} € estimés" if uber_drop else f"{amount} €")
+    uber_pack_key = None
+    if product_key == "UBEREATS":
+        candidate = str(amount)
+        if candidate in UBEREATS_PACKS:
+            uber_pack_key = candidate
+        else:
+            # Les menus éphémères ouverts avant cette mise à jour envoyaient l'ancien prix.
+            uber_pack_key = next(
+                (key for key, pack in UBEREATS_PACKS.items() if str(int(pack["default_price"])) == candidate),
+                None
+            )
+        if uber_pack_key is None:
+            await interaction.followup.send("❌ Pack Uber Eats invalide.", ephemeral=True)
+            return
+    elif product_key != "DISCORD_NITRO":
+        try:
+            amount = int(amount)
+        except (TypeError, ValueError):
+            amount = 0
+        if amount not in GIFT_CARD_AMOUNTS:
+            await interaction.followup.send("❌ Montant de carte cadeau invalide.", ephemeral=True)
+            return
+
     lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
     async with lock:
+        pricing = get_pricing_config()
+        purchase_costs = get_purchase_cost_config()
+        if product_key == "DISCORD_NITRO":
+            paid_amount = pricing["discord_nitro"]
+            purchase_cost = purchase_costs["discord_nitro"]
+            amount = paid_amount
+            received_display = "Discord Nitro"
+        elif product_key == "UBEREATS":
+            paid_amount = pricing["uber_eats"][uber_pack_key]
+            purchase_cost = purchase_costs["uber_eats"][uber_pack_key]
+            amount = paid_amount
+            received_display = f"{UBEREATS_PACKS[uber_pack_key]['drop']} € estimés"
+        else:
+            paid_amount = pricing["gift_cards"][str(amount)]
+            purchase_cost = purchase_costs["gift_cards"][product_key][str(amount)]
+            received_display = f"{amount} €"
         current_balance = get_balance(guild.id, user.id)
         if current_balance < paid_amount:
             await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{paid_amount:g} €**, ton solde est de **{current_balance:.2f} €**. Utilise le panneau !solde pour le recharger.", ephemeral=True)
@@ -1308,27 +1656,14 @@ async def create_product_ticket(interaction, product_key, amount):
             return
         try:
             save_order(guild.id, ticket_channel.id, order_message.id, user.id, cfg["display"], amount, paid_amount, user.name, received_display if product_key in {"UBEREATS", "DISCORD_NITRO"} else "")
+            save_order_purchase_cost(order_message.id, purchase_cost)
         except Exception as error:
             print(f"Erreur sauvegarde commande panneau: {error}")
         await interaction.followup.send(f"✅ Commande ajoutée dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
-
-
-VALO_REGIONS = {
-    "EUROPE": {
-        "label": "Europe", "emoji": "🇪🇺",
-        "packs": {30: "3650 VP", 40: "5350 VP", 60: "8700 VP", 80: "11000 VP"}
-    },
-    "TURQUIE": {
-        "label": "Turquie", "emoji": "🇹🇷",
-        "packs": {15: "2925 VP", 20: "4325 VP", 45: "8900 VP", 55: "11000 VP"}
-    }
-}
-
-
 def default_stock_config():
     return {
         "products": {key: True for key in PRODUCT_CONFIG if key != "VALORANT"},
-        "valorant": {region_key: {str(price): True for price in region["packs"]} for region_key, region in VALO_REGIONS.items()}
+        "valorant": {region_key: {pack_key: True for pack_key in region["packs"]} for region_key, region in VALO_REGIONS.items()}
     }
 
 
@@ -1343,8 +1678,9 @@ def get_stock_config():
         defaults["products"][key] = bool(products.get(key, defaults["products"][key]))
     for region_key, packs in defaults["valorant"].items():
         saved_packs = valorant.get(region_key, {}) if isinstance(valorant.get(region_key), dict) else {}
-        for price in list(packs):
-            packs[price] = bool(saved_packs.get(price, saved_packs.get(str(price), packs[price])))
+        for pack_key in list(packs):
+            legacy_price = str(int(VALO_REGIONS[region_key]["packs"][pack_key]["default_price"]))
+            packs[pack_key] = bool(saved_packs.get(pack_key, saved_packs.get(legacy_price, packs[pack_key])))
     return defaults
 
 
@@ -1363,8 +1699,8 @@ def product_is_available(product_key):
     return get_stock_config()["products"].get(product_key, True)
 
 
-def valo_pack_is_available(region_key, price):
-    return get_stock_config()["valorant"].get(region_key, {}).get(str(price), True)
+def valo_pack_is_available(region_key, pack_key):
+    return get_stock_config()["valorant"].get(region_key, {}).get(str(pack_key), True)
 
 
 def stock_partial_emoji(available):
@@ -1375,24 +1711,41 @@ def stock_label(available):
     return "Disponible" if available else "Rupture"
 
 
-async def create_valo_order(interaction, region_key, price):
+def resolve_valo_pack_key(region_key, value):
+    region = VALO_REGIONS.get(region_key)
+    candidate = str(value)
+    if region is None:
+        return None
+    if candidate in region["packs"]:
+        return candidate
+    return next(
+        (key for key, pack in region["packs"].items() if str(int(pack["default_price"])) == candidate),
+        None
+    )
+
+
+async def create_valo_order(interaction, region_key, pack_key):
     guild = interaction.guild
     user = interaction.user
     region = VALO_REGIONS.get(region_key)
-    pack = region["packs"].get(price) if region else None
-    if guild is None or pack is None:
+    pack_key = resolve_valo_pack_key(region_key, pack_key)
+    pack_data = region["packs"].get(pack_key) if region and pack_key else None
+    if guild is None or pack_data is None:
         await interaction.followup.send("❌ Région ou pack Valorant invalide.", ephemeral=True)
         return
-    if not valo_pack_is_available(region_key, price):
+    if not valo_pack_is_available(region_key, pack_key):
         await interaction.followup.send(f"{STOCK_KO_EMOJI} Ce pack Valorant est actuellement en rupture.", ephemeral=True)
         return
+    pack = pack_data["label"]
     region_label = region["label"]
     region_emoji = region["emoji"]
     lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
     async with lock:
+        price = get_pricing_config()["valorant"][region_key][pack_key]
+        purchase_cost = get_purchase_cost_config()["valorant"][region_key][pack_key]
         current_balance = get_balance(guild.id, user.id)
         if current_balance < price:
-            await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{price} €**, ton solde est de **{current_balance:.2f} €**.", ephemeral=True)
+            await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{format_price(price)} €**, ton solde est de **{current_balance:.2f} €**.", ephemeral=True)
             return
         category = guild.get_channel(VALO_TICKET_CATEGORY_ID)
         if category is None:
@@ -1446,6 +1799,7 @@ async def create_valo_order(interaction, region_key, price):
             return
         try:
             save_order(guild.id, ticket_channel.id, order_message.id, user.id, f"Valorant {region_label} {pack}", price, price, user.name, pack)
+            save_order_purchase_cost(order_message.id, purchase_cost)
         except Exception as error:
             print(f"Erreur sauvegarde commande Valorant: {error}")
         await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
@@ -1487,15 +1841,16 @@ class ValoPackSelect(discord.ui.Select):
         self.region_key = region_key
         packs = VALO_REGIONS[region_key]["packs"]
         region_stock = get_stock_config().get("valorant", {}).get(region_key, {})
+        prices = get_pricing_config()["valorant"][region_key]
         options = []
-        for price, pack in packs.items():
-            available = region_stock.get(str(price), True)
-            options.append(discord.SelectOption(label=f"{pack} — {price} €", value=str(price), emoji=stock_partial_emoji(available), description=stock_label(available)))
+        for pack_key, pack in packs.items():
+            available = region_stock.get(pack_key, True)
+            options.append(discord.SelectOption(label=f"{pack['label']} — {format_price(prices[pack_key])} €", value=pack_key, emoji=stock_partial_emoji(available), description=stock_label(available)))
         super().__init__(placeholder="Choisis ton pack Valorant Points", options=options)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await create_valo_order(interaction, self.region_key, int(self.values[0]))
+        await create_valo_order(interaction, self.region_key, self.values[0])
 
 
 class ValoPackView(discord.ui.View):
@@ -1521,15 +1876,16 @@ class ValoOrderLauncherView(discord.ui.View):
 class UberEatsAmountSelect(discord.ui.Select):
     def __init__(self):
         available = product_is_available("UBEREATS")
+        prices = get_pricing_config()["uber_eats"]
         options = [
-            discord.SelectOption(label=f"{price} € → {drop} € estimés", value=str(price), emoji=stock_partial_emoji(available), description=stock_label(available))
-            for price, drop in UBEREATS_PACKS.items()
+            discord.SelectOption(label=f"{format_price(prices[pack_key])} € → {pack['drop']} € estimés", value=pack_key, emoji=stock_partial_emoji(available), description=stock_label(available))
+            for pack_key, pack in UBEREATS_PACKS.items()
         ]
         super().__init__(placeholder="Choisis ton pack Uber Eats", options=options)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await create_product_ticket(interaction, "UBEREATS", int(self.values[0]))
+        await create_product_ticket(interaction, "UBEREATS", self.values[0])
 
 
 class UberEatsAmountView(discord.ui.View):
@@ -1541,6 +1897,7 @@ class UberEatsAmountView(discord.ui.View):
 class NitroOrderView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
+        self.children[0].label = f"Commander Discord Nitro — {format_price(get_pricing_config()['discord_nitro'])} €"
 
     @discord.ui.button(
         label="Commander Discord Nitro — 8 €",
@@ -1549,16 +1906,17 @@ class NitroOrderView(discord.ui.View):
     )
     async def confirm_nitro(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await create_product_ticket(interaction, "DISCORD_NITRO", NITRO_PRICE)
+        await create_product_ticket(interaction, "DISCORD_NITRO", "nitro")
 
 
 class ProductAmountSelect(discord.ui.Select):
     def __init__(self, product_key):
         self.product_key = product_key
         available = product_is_available(product_key)
+        prices = get_pricing_config()["gift_cards"]
         options = [
-            discord.SelectOption(label=f"Carte cadeau {amount} € → {amount * 0.70:g} € débités", value=str(amount), emoji=stock_partial_emoji(available), description=stock_label(available))
-            for amount in (100, 200, 400, 800)
+            discord.SelectOption(label=f"Carte cadeau {amount} € → {format_price(prices[str(amount)])} € débités", value=str(amount), emoji=stock_partial_emoji(available), description=stock_label(available))
+            for amount in GIFT_CARD_AMOUNTS
         ]
         super().__init__(placeholder="Choisis le montant de la carte", options=options)
 
@@ -1620,7 +1978,7 @@ class ProductServiceSelect(discord.ui.Select):
                 prompt = "choisis maintenant ton pack :"
             elif product_key == "DISCORD_NITRO":
                 amount_view = NitroOrderView()
-                prompt = "confirme l'achat du produit à **8 €** :"
+                prompt = f"confirme l'achat du produit à **{format_price(get_pricing_config()['discord_nitro'])} €** :"
             else:
                 amount_view = ProductAmountView(product_key)
                 prompt = "choisis maintenant le montant :"
@@ -2512,8 +2870,21 @@ def build_tarifs_embed():
     rgb = texts.get("color_rgb", [255, 192, 203])
     desc_raw = texts.get("description", [])
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
+    description = re.sub(
+        r"Cartes cadeaux à \*\*-30\s*%\*\*, sauf Uber Eats avec sa grille fixe et Discord Nitro à \*\*\d+(?:[.,]\d+)?\s*€\*\*\.?",
+        "Les prix à jour sont affichés ci-dessous.",
+        description,
+        flags=re.IGNORECASE,
+    )
+    description = re.sub(r"(\*\*Discord Nitro)(?:\s+—\s+[^*]+)(\*\*)", r"\1\2", description, flags=re.IGNORECASE)
     description = apply_custom_brand_emojis(description)
     embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+    prices = get_pricing_config()
+    gift_lines = [f"**{amount} € reçus** → {format_price(prices['gift_cards'][str(amount)])} € débités" for amount in GIFT_CARD_AMOUNTS]
+    uber_lines = [f"**{pack['drop']} € estimés** → {format_price(prices['uber_eats'][pack_key])} € débités" for pack_key, pack in UBEREATS_PACKS.items()]
+    embed.add_field(name="💳 Cartes cadeaux — toutes les marques", value="\n".join(gift_lines), inline=False)
+    embed.add_field(name="🍔 Uber Eats", value="\n".join(uber_lines), inline=False)
+    embed.add_field(name="💎 Discord Nitro", value=f"**{format_price(prices['discord_nitro'])} €** débités", inline=False)
     image_url = texts.get("image_url", TARIFS_IMAGE_URL)
     if image_url:
         embed.set_image(url=image_url)
@@ -2524,7 +2895,24 @@ def build_valo_embed():
     rgb = texts.get("color_rgb", [255, 192, 203])
     desc_raw = texts.get("description", [])
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
+    kept_lines = []
+    region_labels = tuple(region["label"].lower() for region in VALO_REGIONS.values())
+    for line in description.splitlines():
+        lowered = line.lower()
+        if any(label in lowered for label in region_labels) and "**" in line:
+            continue
+        if "vp" in lowered and re.search(r"\d+(?:[.,]\d+)?\s*€", line):
+            continue
+        kept_lines.append(line)
+    description = "\n".join(kept_lines).strip()
     embed = discord.Embed(title=texts.get("title", "💘 VALORANT POINTS 💘"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+    prices = get_pricing_config()["valorant"]
+    for region_key, region in VALO_REGIONS.items():
+        lines = [
+            f"<:vp:1519915966476320901> **{pack['label']}** — {format_price(prices[region_key][pack_key])} €"
+            for pack_key, pack in region["packs"].items()
+        ]
+        embed.add_field(name=f"{region['emoji']} {region['label']}", value="\n".join(lines), inline=False)
     image_url = texts.get("image_url", "")
     if image_url:
         embed.set_image(url=image_url)
@@ -2563,7 +2951,7 @@ def public_embed_builders():
     return [
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
-        (["Solde PinkGift", "Solde & paiements", "Solde"], lambda: build_json_embed("balance_embed"), BalanceView()),
+        (["Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
         (["FAQ PinkGift", "FAQ"], lambda: build_json_embed("faq_embed"), None),
         (["Classement", "CLASSEMENT"], build_leaderboard_embed, None),
@@ -2608,6 +2996,10 @@ async def update_public_embeds_without_ping(ctx):
     updated_count = 0
     scanned_channels = 0
     for channel in ctx.guild.text_channels:
+        # Un ticket de recharge contient lui aussi le mot « solde » : il ne doit
+        # jamais être traité comme le panneau public publié avec /solde.
+        if is_balance_ticket(channel):
+            continue
         permissions = channel.permissions_for(ctx.guild.me or ctx.guild.default_role)
         if not permissions.read_message_history or not permissions.view_channel:
             continue
@@ -2629,6 +3021,38 @@ async def update_public_embeds_without_ping(ctx):
         except discord.HTTPException as error:
             print(f"Erreur mise à jour embeds dans {channel}: {error}")
     return updated_count, scanned_channels
+
+
+async def refresh_price_embeds_from_panel():
+    """Actualise les panneaux /tarifs et /valo déjà publiés, sans envoyer de message."""
+    rules = (
+        (("commandes pinkgift", "carte cadeaux"), build_tarifs_embed, OrderLauncherView),
+        (("valorant", "valorant points"), build_valo_embed, ValoOrderLauncherView),
+    )
+    updated = 0
+    for guild in bot.guilds:
+        me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+        if me is None:
+            continue
+        for channel in guild.text_channels:
+            permissions = channel.permissions_for(me)
+            if not permissions.view_channel or not permissions.read_message_history:
+                continue
+            try:
+                async for message in channel.history(limit=500):
+                    if message.author.id != bot.user.id or not message.embeds:
+                        continue
+                    title = (message.embeds[0].title or "").lower()
+                    for keywords, builder, view_factory in rules:
+                        if any(keyword in title for keyword in keywords):
+                            await message.edit(embed=builder(), view=view_factory())
+                            updated += 1
+                            break
+            except (discord.Forbidden, discord.NotFound):
+                continue
+            except discord.HTTPException as error:
+                print(f"Erreur actualisation prix dans {channel}: {error}")
+    return updated
 
 
 @bot.hybrid_command(name="maj_embed", description="Mettre à jour tous les embeds publics du serveur")
@@ -2960,14 +3384,29 @@ PANEL_TEMPLATE = """
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Panel</title>
 <style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}nav{display:flex;gap:8px;margin-bottom:18px}.tab{color:#e8dce3;text-decoration:none;padding:10px 14px;border:1px solid #4c3543}.tab.active{background:#e8509a;color:white;border-color:#e8509a}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}input,select{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:160px}select{cursor:pointer}.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 16px 0}.filters label{color:#ff9dce;font-weight:bold}button{background:#e8509a;color:white;border:0;padding:10px 13px;cursor:pointer}.delete{background:#9d294b;margin-left:5px}.done{color:#74d99f}.pending{color:#ffd27b}.muted{color:#aa98a4;font-size:12px}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
-<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
+<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_finances') }}">Statistiques</a><a class="tab" href="{{ url_for('panel_prices') }}">Prix</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
 {% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
 {% else %}{% if tab == 'orders' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="orders"><label for="service-filter">Service</label><select id="service-filter" name="service" onchange="this.form.submit()"><option value="">Tous les services</option>{% for service in service_options %}<option value="{{ service }}" {% if service == service_filter %}selected{% endif %}>{{ service }}</option>{% endfor %}</select><label for="amount-filter">Montant</label><select id="amount-filter" name="amount" onchange="this.form.submit()"><option value="">Tous les montants</option>{% for amount in amount_options %}<option value="{{ amount }}" {% if amount == amount_filter %}selected{% endif %}>{{ amount }}</option>{% endfor %}</select></form>{% elif tab == 'valorant' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="valorant"><label for="region-filter">Région</label><select id="region-filter" name="region" onchange="this.form.submit()"><option value="">Toutes les régions</option>{% for region in region_options %}<option value="{{ region }}" {% if region == region_filter %}selected{% endif %}>{{ region }}</option>{% endfor %}</select><label for="pack-filter">Pack VP</label><select id="pack-filter" name="pack" onchange="this.form.submit()"><option value="">Tous les packs</option>{% for pack in pack_options %}<option value="{{ pack }}" {% if pack == pack_filter %}selected{% endif %}>{{ pack }}</option>{% endfor %}</select></form>{% endif %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
 
-PANEL_STOCK_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Stock</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}table{width:100%;border-collapse:collapse;background:#171419;margin-bottom:28px}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}select,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Stock</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<h2>Cartes cadeaux / produits</h2><table><thead><tr><th>Service</th><th>État</th><th>Action</th></tr></thead><tbody>{% for item in products %}<tr><td>{{ item.display }}</td><td>{{ ok_emoji if item.available else ko_emoji }} {{ 'Disponible' if item.available else 'Rupture' }}</td><td><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="kind" value="product"><input type="hidden" name="key" value="{{ item.key }}"><select name="available"><option value="1" {% if item.available %}selected{% endif %}>Disponible</option><option value="0" {% if not item.available %}selected{% endif %}>Rupture</option></select><button>Enregistrer</button></form></td></tr>{% endfor %}</tbody></table><h2>Valorant Points</h2><table><thead><tr><th>Région</th><th>Pack</th><th>État</th><th>Action</th></tr></thead><tbody>{% for item in valorant %}<tr><td>{{ item.region }}</td><td>{{ item.pack }} — {{ item.price }} €</td><td>{{ ok_emoji if item.available else ko_emoji }} {{ 'Disponible' if item.available else 'Rupture' }}</td><td><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="kind" value="valorant"><input type="hidden" name="region" value="{{ item.region_key }}"><input type="hidden" name="key" value="{{ item.price }}"><select name="available"><option value="1" {% if item.available %}selected{% endif %}>Disponible</option><option value="0" {% if not item.available %}selected{% endif %}>Rupture</option></select><button>Enregistrer</button></form></td></tr>{% endfor %}</tbody></table></main></body></html>"""
+PANEL_STOCK_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Stock</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}table{width:100%;border-collapse:collapse;background:#171419;margin-bottom:28px}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}select,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Stock</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<h2>Cartes cadeaux / produits</h2><table><thead><tr><th>Service</th><th>État</th><th>Action</th></tr></thead><tbody>{% for item in products %}<tr><td>{{ item.display }}</td><td>{{ ok_emoji if item.available else ko_emoji }} {{ 'Disponible' if item.available else 'Rupture' }}</td><td><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="kind" value="product"><input type="hidden" name="key" value="{{ item.key }}"><select name="available"><option value="1" {% if item.available %}selected{% endif %}>Disponible</option><option value="0" {% if not item.available %}selected{% endif %}>Rupture</option></select><button>Enregistrer</button></form></td></tr>{% endfor %}</tbody></table><h2>Valorant Points</h2><table><thead><tr><th>Région</th><th>Pack</th><th>État</th><th>Action</th></tr></thead><tbody>{% for item in valorant %}<tr><td>{{ item.region }}</td><td>{{ item.pack }} — {{ item.price }} €</td><td>{{ ok_emoji if item.available else ko_emoji }} {{ 'Disponible' if item.available else 'Rupture' }}</td><td><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="kind" value="valorant"><input type="hidden" name="region" value="{{ item.region_key }}"><input type="hidden" name="key" value="{{ item.pack_key }}"><select name="available"><option value="1" {% if item.available %}selected{% endif %}>Disponible</option><option value="0" {% if not item.available %}selected{% endif %}>Rupture</option></select><button>Enregistrer</button></form></td></tr>{% endfor %}</tbody></table></main></body></html>"""
+
+PANEL_PRICES_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Prix</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1000px}h1{color:#ff8fc8}.card{background:#171419;border:1px solid #332630;padding:16px;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field span{color:#ff9dce;font-weight:bold}.field small,.muted{color:#aa98a4}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:11px;font-size:16px}button{background:#e8509a;color:#fff;border:0;padding:13px 18px;cursor:pointer;font-weight:bold}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Prix</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Les nouveaux prix sont utilisés immédiatement dans les menus, les embeds et le débit du solde. Aucun redémarrage du bot n'est nécessaire.</p><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><section class="card"><h2>Cartes cadeaux — toutes les marques</h2><div class="grid">{% for item in gift_cards %}<label class="field"><span>{{ item.amount }} € reçus</span><input type="number" name="gift_{{ item.amount }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label>{% endfor %}</div></section><section class="card"><h2>Uber Eats</h2><div class="grid">{% for item in uber_eats %}<label class="field"><span>{{ item.drop }} € estimés</span><input type="number" name="uber_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label>{% endfor %}</div></section><section class="card"><h2>Discord Nitro</h2><div class="grid"><label class="field"><span>Discord Nitro</span><input type="number" name="discord_nitro" value="{{ discord_nitro }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label></div></section><section class="card"><h2>Valorant Points</h2><div class="grid">{% for item in valorant %}<label class="field"><span>{{ item.region }} — {{ item.pack }}</span><input type="number" name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label>{% endfor %}</div></section><button type="submit">Enregistrer tous les prix</button></form></main></body></html>"""
+
+PANEL_FINANCES_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Statistiques</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:20px}.toolbar label,.cost-form label{display:flex;flex-direction:column;gap:6px;color:#ff9dce;font-weight:bold}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}.card{background:#171419;border:1px solid #332630;padding:18px}.card span{display:block;color:#aa98a4;font-size:13px}.card strong{display:block;margin-top:8px;color:#fff;font-size:30px}.card.profit strong.positive{color:#74d99f}.card.profit strong.negative{color:#ff718f}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-size:15px}button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}table{width:100%;border-collapse:collapse;background:#171419;margin-top:18px}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}.cost-form{display:flex;flex-wrap:wrap;gap:10px;align-items:end;background:#171419;border:1px solid #332630;padding:16px}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Statistiques</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<form class="toolbar" method="get"><label>Mois<input type="month" name="month" value="{{ stats.month }}" required></label><button type="submit">Afficher</button></form><h2>{{ month_label }}</h2><div class="cards"><article class="card"><span>Chiffre d'affaires</span><strong>{{ '%.2f'|format(stats.revenue) }} €</strong></article><article class="card"><span>Coûts renseignés</span><strong>{{ '%.2f'|format(stats.costs) }} €</strong></article><article class="card profit"><span>Bénéfice</span><strong class="{{ 'positive' if stats.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.profit) }} €</strong></article><article class="card"><span>Commandes livrées</span><strong>{{ stats.orders }}</strong></article><article class="card"><span>Panier moyen</span><strong>{{ '%.2f'|format(stats.average_order) }} €</strong></article></div><form class="cost-form" method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="month" value="{{ stats.month }}"><label>Coûts d'achat et dépenses du mois<input type="number" name="costs" value="{{ stats.costs }}" min="0" max="100000" step="0.01" required></label><button type="submit">Recalculer le bénéfice</button><span class="muted">Bénéfice = chiffre d'affaires des commandes livrées − coûts renseignés.</span></form><h2>Détail par produit</h2><table><thead><tr><th>Produit</th><th>Commandes livrées</th><th>Chiffre d'affaires</th></tr></thead><tbody>{% for item in stats.breakdown %}<tr><td>{{ item.service }}</td><td>{{ item.orders }}</td><td>{{ '%.2f'|format(item.revenue) }} €</td></tr>{% else %}<tr><td colspan="3">Aucune commande livrée pendant ce mois.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
+
+PANEL_PRICES_COSTS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Prix et coûts</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.card,details{background:#171419;border:1px solid #332630;padding:16px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field span,summary{color:#ff9dce;font-weight:bold}.field small,.muted{color:#aa98a4}summary{cursor:pointer}details .grid{margin-top:15px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-size:15px}button{background:#e8509a;color:#fff;border:0;padding:13px 18px;cursor:pointer;font-weight:bold}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Prix et coûts d'achat</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Le prix de vente détermine le débit client. Le coût d'achat est enregistré avec chaque nouvelle commande pour calculer le bénéfice sans modifier l'historique.</p><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><section class="card"><h2>Prix de vente des cartes cadeaux</h2><div class="grid">{% for item in gift_cards %}<label class="field"><span>{{ item.amount }} € reçus</span><input type="number" name="gift_{{ item.amount }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Débit client</small></label>{% endfor %}</div></section><h2>Coûts d'achat des cartes par marque</h2>{% for product in gift_cost_products %}<details><summary>{{ product.display }}</summary><div class="grid">{% for item in product.amounts %}<label class="field"><span>Carte {{ item.amount }} €</span><input type="number" name="cost_gift_{{ product.key }}_{{ item.amount }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required><small>Coût d'achat</small></label>{% endfor %}</div></details>{% endfor %}<section class="card"><h2>Uber Eats</h2><div class="grid">{% for item in uber_eats %}<label class="field"><span>{{ item.drop }} € estimés — prix de vente</span><input type="number" name="uber_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>{{ item.drop }} € estimés — coût d'achat</span><input type="number" name="cost_uber_{{ item.key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required></label>{% endfor %}</div></section><section class="card"><h2>Discord Nitro</h2><div class="grid"><label class="field"><span>Prix de vente</span><input type="number" name="discord_nitro" value="{{ discord_nitro }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>Coût d'achat</span><input type="number" name="cost_discord_nitro" value="{{ discord_nitro_cost }}" min="0" max="100000" step="0.01" required></label></div></section><section class="card"><h2>Valorant Points</h2><div class="grid">{% for item in valorant %}<label class="field"><span>{{ item.region }} — {{ item.pack }} — prix de vente</span><input type="number" name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>{{ item.region }} — {{ item.pack }} — coût d'achat</span><input type="number" name="cost_valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required></label>{% endfor %}</div></section><button type="submit">Enregistrer les prix et les coûts</button></form></main></body></html>"""
+
+PANEL_FINANCES_PRODUCT_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Statistiques</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.toolbar{display:flex;gap:10px;align-items:end;margin-bottom:20px}.toolbar label{display:flex;flex-direction:column;gap:6px;color:#ff9dce;font-weight:bold}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}.card{background:#171419;border:1px solid #332630;padding:18px}.card span{display:block;color:#aa98a4;font-size:13px}.card strong{display:block;margin-top:8px;font-size:30px}.positive{color:#74d99f}.negative{color:#ff718f}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px}button{background:#e8509a;border:0;cursor:pointer}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Statistiques</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main><form class="toolbar" method="get"><label>Mois<input type="month" name="month" value="{{ stats.month }}" required></label><button>Afficher</button></form><h2>{{ month_label }}</h2><div class="cards"><article class="card"><span>Chiffre d'affaires</span><strong>{{ '%.2f'|format(stats.revenue) }} €</strong></article><article class="card"><span>Coûts d'achat</span><strong>{{ '%.2f'|format(stats.costs) }} €</strong></article><article class="card"><span>Bénéfice</span><strong class="{{ 'positive' if stats.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.profit) }} €</strong></article><article class="card"><span>Commandes livrées</span><strong>{{ stats.orders }}</strong></article><article class="card"><span>Panier moyen</span><strong>{{ '%.2f'|format(stats.average_order) }} €</strong></article></div><p class="muted">Le bénéfice utilise le coût d'achat enregistré au moment de chaque commande. <a href="{{ url_for('panel_prices') }}">Modifier les coûts d'achat</a>.</p><h2>Détail par produit</h2><table><thead><tr><th>Produit</th><th>Ventes</th><th>CA</th><th>Coûts</th><th>Bénéfice</th></tr></thead><tbody>{% for item in stats.breakdown %}<tr><td>{{ item.service }}</td><td>{{ item.orders }}</td><td>{{ '%.2f'|format(item.revenue) }} €</td><td>{{ '%.2f'|format(item.costs) }} €</td><td class="{{ 'positive' if item.profit >= 0 else 'negative' }}">{{ '%.2f'|format(item.profit) }} €</td></tr>{% else %}<tr><td colspan="5">Aucune commande livrée pendant ce mois.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
+
+NITRO_FINANCE_BLOCK = """<h2>Discord Nitro — ventes du tiers</h2><div class="cards"><article class="card"><span>Nitro livrés</span><strong>{{ stats.nitro.orders }}</strong></article><article class="card"><span>Chiffre d'affaires Nitro</span><strong>{{ '%.2f'|format(stats.nitro.revenue) }} €</strong></article><article class="card"><span>Coûts d'achat Nitro</span><strong>{{ '%.2f'|format(stats.nitro.costs) }} €</strong></article><article class="card"><span>Bénéfice Nitro généré</span><strong class="{{ 'positive' if stats.nitro.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.nitro.profit) }} €</strong></article></div>"""
+PANEL_FINANCES_NITRO_TEMPLATE = PANEL_FINANCES_PRODUCT_TEMPLATE.replace(
+    "</div><p class=\"muted\">",
+    f"</div>{NITRO_FINANCE_BLOCK}<p class=\"muted\">",
+    1,
+)
 
 PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Modifie le JSON d'un embed puis clique sur Enregistrer. Pour uploader une image, choisis un fichier : le bot l'envoie dans le salon configuré par EMBED_UPLOAD_CHANNEL_ID et remplit automatiquement image_url.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
 
@@ -3163,6 +3602,150 @@ async def upload_panel_image_to_discord(filename, content):
     return message.attachments[0].url
 
 
+def panel_price_value(field_name):
+    raw = request.form.get(field_name, "").strip().replace(",", ".")
+    try:
+        value = round(float(raw), 2)
+    except ValueError as error:
+        raise ValueError(f"Prix invalide pour {field_name}") from error
+    if not 0 < value <= 100000:
+        raise ValueError(f"Le prix {field_name} doit être compris entre 0,01 et 100 000 €")
+    return value
+
+
+def panel_cost_value(field_name):
+    raw = request.form.get(field_name, "").strip().replace(",", ".")
+    try:
+        value = round(float(raw), 2)
+    except ValueError as error:
+        raise ValueError(f"Coût invalide pour {field_name}") from error
+    if not 0 <= value <= 100000:
+        raise ValueError(f"Le coût {field_name} doit être compris entre 0 et 100 000 €")
+    return value
+
+
+def log_price_embed_refresh(future):
+    try:
+        print(f"Prix enregistrés : {future.result()} panneau(x) Discord actualisé(s).")
+    except Exception as error:
+        print(f"Erreur actualisation automatique des embeds de prix : {error}")
+
+
+@app.route("/panel/statistiques")
+@panel_required
+def panel_finances():
+    month_key = normalize_finance_month(request.args.get("month"))
+    orders = load_orders_for_stats(limit=10000)
+    stats = calculate_month_finances(
+        orders,
+        month_key,
+        purchase_cost_snapshots=load_order_purchase_costs(),
+        purchase_costs=get_purchase_cost_config(),
+    )
+    return render_template_string(
+        PANEL_FINANCES_NITRO_TEMPLATE,
+        stats=stats,
+        month_label=finance_month_label(month_key),
+    )
+
+
+@app.route("/panel/prix", methods=["GET", "POST"])
+@panel_required
+def panel_prices():
+    if request.method == "POST":
+        if not valid_panel_csrf():
+            flash("Session invalide. Recharge la page.")
+            return redirect(url_for("panel_prices"))
+        try:
+            pricing = {
+                "gift_cards": {str(amount): panel_price_value(f"gift_{amount}") for amount in GIFT_CARD_AMOUNTS},
+                "uber_eats": {pack_key: panel_price_value(f"uber_{pack_key}") for pack_key in UBEREATS_PACKS},
+                "discord_nitro": panel_price_value("discord_nitro"),
+                "valorant": {
+                    region_key: {
+                        pack_key: panel_price_value(f"valo_{region_key}_{pack_key}")
+                        for pack_key in region["packs"]
+                    }
+                    for region_key, region in VALO_REGIONS.items()
+                },
+            }
+            purchase_costs = {
+                "gift_cards": {
+                    product_key: {
+                        str(amount): panel_cost_value(f"cost_gift_{product_key}_{amount}")
+                        for amount in GIFT_CARD_AMOUNTS
+                    }
+                    for product_key in regular_gift_product_keys()
+                },
+                "uber_eats": {
+                    pack_key: panel_cost_value(f"cost_uber_{pack_key}")
+                    for pack_key in UBEREATS_PACKS
+                },
+                "discord_nitro": panel_cost_value("cost_discord_nitro"),
+                "valorant": {
+                    region_key: {
+                        pack_key: panel_cost_value(f"cost_valo_{region_key}_{pack_key}")
+                        for pack_key in region["packs"]
+                    }
+                    for region_key, region in VALO_REGIONS.items()
+                },
+            }
+            set_panel_setting("purchase_costs", purchase_costs)
+            set_panel_setting("pricing", pricing)
+            if BOT_LOOP is not None:
+                future = asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
+                future.add_done_callback(log_price_embed_refresh)
+                flash("Prix et coûts d'achat enregistrés. Les débits, les statistiques et les panneaux Discord sont actualisés sans redémarrage.")
+            else:
+                flash("Prix et coûts d'achat enregistrés. Ils seront utilisés dès que le bot Discord sera connecté.")
+        except Exception as error:
+            print(f"Erreur mise à jour prix : {error}")
+            flash(f"Impossible d'enregistrer les prix : {error}")
+        return redirect(url_for("panel_prices"))
+
+    pricing = get_pricing_config()
+    purchase_costs = get_purchase_cost_config()
+    gift_cards = [
+        {"amount": amount, "price": format_price(pricing["gift_cards"][str(amount)])}
+        for amount in GIFT_CARD_AMOUNTS
+    ]
+    uber_eats = [
+        {"key": pack_key, "drop": pack["drop"], "price": format_price(pricing["uber_eats"][pack_key]), "cost": format_price(purchase_costs["uber_eats"][pack_key])}
+        for pack_key, pack in UBEREATS_PACKS.items()
+    ]
+    gift_cost_products = [
+        {
+            "key": product_key,
+            "display": PRODUCT_CONFIG[product_key]["display"],
+            "amounts": [
+                {"amount": amount, "cost": format_price(purchase_costs["gift_cards"][product_key][str(amount)])}
+                for amount in GIFT_CARD_AMOUNTS
+            ],
+        }
+        for product_key in regular_gift_product_keys()
+    ]
+    valorant = []
+    for region_key, region in VALO_REGIONS.items():
+        for pack_key, pack in region["packs"].items():
+            valorant.append({
+                "region_key": region_key,
+                "region": region["label"],
+                "pack_key": pack_key,
+                "pack": pack["label"],
+                "price": format_price(pricing["valorant"][region_key][pack_key]),
+                "cost": format_price(purchase_costs["valorant"][region_key][pack_key]),
+            })
+    return render_template_string(
+        PANEL_PRICES_COSTS_TEMPLATE,
+        gift_cards=gift_cards,
+        gift_cost_products=gift_cost_products,
+        uber_eats=uber_eats,
+        discord_nitro=format_price(pricing["discord_nitro"]),
+        discord_nitro_cost=format_price(purchase_costs["discord_nitro"]),
+        valorant=valorant,
+    )
+
+
 @app.route("/panel/stock", methods=["GET", "POST"])
 @panel_required
 def panel_stock():
@@ -3183,11 +3766,12 @@ def panel_stock():
             flash("Impossible de mettre à jour ce stock.")
         return redirect(url_for("panel_stock"))
     stock = get_stock_config()
+    pricing = get_pricing_config()
     products = [{"key": key, "display": cfg["display"], "available": stock["products"].get(key, True)} for key, cfg in PRODUCT_CONFIG.items() if key != "VALORANT"]
     valorant = []
     for region_key, region in VALO_REGIONS.items():
-        for price, pack in region["packs"].items():
-            valorant.append({"region_key": region_key, "region": region["label"], "price": str(price), "pack": pack, "available": stock["valorant"].get(region_key, {}).get(str(price), True)})
+        for pack_key, pack in region["packs"].items():
+            valorant.append({"region_key": region_key, "region": region["label"], "pack_key": pack_key, "price": format_price(pricing["valorant"][region_key][pack_key]), "pack": pack["label"], "available": stock["valorant"].get(region_key, {}).get(pack_key, True)})
     return render_template_string(PANEL_STOCK_TEMPLATE, products=products, valorant=valorant, ok_emoji=STOCK_OK_EMOJI, ko_emoji=STOCK_KO_EMOJI)
 
 
@@ -3239,7 +3823,13 @@ async def deliver_order_from_panel(order, code):
     old = message.embeds[0]
     finish_data = load_embed_texts().get("commande_finalisee", DEFAULT_EMBED_DATA["commande_finalisee"])
     rgb = finish_data.get("color_rgb", [46, 204, 113])
-    updated = discord.Embed(title=old.title, description=old.description, color=discord.Color.from_rgb(*rgb))
+    finish_description_raw = finish_data.get("description", [])
+    finish_description = "\n".join(finish_description_raw) if isinstance(finish_description_raw, list) else str(finish_description_raw or "")
+    updated = discord.Embed(
+        title=finish_data.get("title", old.title),
+        description=finish_description or old.description,
+        color=discord.Color.from_rgb(*rgb),
+    )
     code_found = False
     for field in old.fields:
         if "code" in field.name.lower():
