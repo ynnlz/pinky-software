@@ -195,6 +195,20 @@ def set_panel_setting(key, value):
         )
 
 
+def delete_panel_setting(key):
+    if USE_SUPABASE:
+        safe_key = urllib.parse.quote(str(key), safe="")
+        deleted = supabase_request(
+            "DELETE",
+            f"panel_settings?key=eq.{safe_key}",
+            prefer="return=representation",
+        )
+        return bool(deleted)
+    with db_connect() as db:
+        cursor = db.execute("DELETE FROM panel_settings WHERE key=?", (key,))
+        return cursor.rowcount > 0
+
+
 def list_panel_settings(prefix=""):
     try:
         if USE_SUPABASE:
@@ -335,6 +349,74 @@ def load_referral_events(ledgers=None):
                     event[key] = 0.0
             events.append(event)
     return sorted(events, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+
+
+def purge_referral_code_data(value):
+    """Efface définitivement toutes les données internes associées à un code."""
+    code = normalize_referral_code(value)
+    result = {
+        "ledgers": 0,
+        "lots": 0,
+        "events": 0,
+        "commission": 0.0,
+        "tickets": 0,
+        "notifications": 0,
+        "notification_messages": [],
+    }
+    for ledger in load_referral_ledgers():
+        lots = ledger.get("lots", [])
+        events = ledger.get("events", [])
+        removed_lots = [
+            lot for lot in lots
+            if isinstance(lot, dict) and normalize_referral_code(lot.get("code")) == code
+        ]
+        kept_lots = [
+            lot for lot in lots
+            if not isinstance(lot, dict) or normalize_referral_code(lot.get("code")) != code
+        ]
+        removed_events = [
+            event for event in events
+            if isinstance(event, dict) and normalize_referral_code(event.get("code")) == code
+        ]
+        kept_events = [
+            event for event in events
+            if not isinstance(event, dict) or normalize_referral_code(event.get("code")) != code
+        ]
+        removed_lots_count = len(removed_lots)
+        if not removed_lots_count and not removed_events:
+            continue
+        result["ledgers"] += 1
+        result["lots"] += removed_lots_count
+        result["events"] += len(removed_events)
+        for lot in removed_lots:
+            try:
+                channel_id = int(lot.get("notification_channel_id") or 0)
+                message_id = int(lot.get("notification_message_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if channel_id and message_id:
+                result["notification_messages"].append({"channel_id": channel_id, "message_id": message_id})
+                result["notifications"] += 1
+        for event in removed_events:
+            try:
+                result["commission"] += float(event.get("commission") or 0)
+            except (TypeError, ValueError):
+                pass
+        guild_id = ledger["guild_id"]
+        user_id = ledger["user_id"]
+        if kept_lots or kept_events:
+            save_referral_ledger(guild_id, user_id, {"lots": kept_lots, "events": kept_events})
+        else:
+            delete_panel_setting(referral_ledger_setting_key(guild_id, user_id))
+
+    for item in list_panel_settings("balance_referral:"):
+        data = item.get("value")
+        if not isinstance(data, dict) or normalize_referral_code(data.get("code")) != code:
+            continue
+        if delete_panel_setting(item.get("key")):
+            result["tickets"] += 1
+    result["commission"] = round(result["commission"], 2)
+    return result
 
 
 def build_referral_summaries(codes, ledgers):
@@ -742,7 +824,39 @@ async def send_referral_tracking_notification(guild, user, staff, lot, new_balan
     embed.add_field(name="Parrain", value=sponsor_label, inline=True)
     embed.add_field(name="Commission", value=f"**{valid_referral_percentage(lot.get('percentage'), 0):g} %** du bénéfice", inline=True)
     embed.add_field(name="Ajout effectué par", value=f"{staff.mention} (`{staff.id}`)", inline=False)
-    await channel.send(embed=embed)
+    message = await channel.send(embed=embed)
+    ledger = get_referral_ledger(guild.id, user.id)
+    for saved_lot in ledger["lots"]:
+        if isinstance(saved_lot, dict) and str(saved_lot.get("id")) == str(lot.get("id")):
+            saved_lot["notification_channel_id"] = channel.id
+            saved_lot["notification_message_id"] = message.id
+            save_referral_ledger(guild.id, user.id, ledger)
+            break
+    return message
+
+
+async def delete_referral_tracking_notifications(messages):
+    deleted = 0
+    for item in messages:
+        try:
+            channel_id = int(item.get("channel_id") or 0)
+            message_id = int(item.get("message_id") or 0)
+            channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+            message = await channel.fetch_message(message_id)
+            await message.delete()
+            deleted += 1
+        except discord.NotFound:
+            deleted += 1
+        except (discord.Forbidden, discord.HTTPException, AttributeError, TypeError, ValueError) as error:
+            print(f"Erreur suppression notification parrainage : {error}")
+    return deleted
+
+
+def log_referral_notification_deletion(future):
+    try:
+        print(f"{future.result()} notification(s) de parrainage supprimée(s) de Discord.")
+    except Exception as error:
+        print(f"Erreur purge des notifications de parrainage : {error}")
 
 
 def record_referral_purchase(guild_id, user_id, order_message_id, sale_amount, purchase_cost, service):
@@ -3910,7 +4024,7 @@ PANEL_REFERRALS_PROFIT_TEMPLATE = (
     )
     .replace(
         "<br>{{ 'Actif' if item.active else 'Désactivé' }}",
-        "<br>{% if item.configured %}{{ 'Actif' if item.active else 'Désactivé' }}{% else %}Supprimé — historique conservé{% endif %}",
+        "<br>{% if item.configured %}{{ 'Actif' if item.active else 'Désactivé' }}{% else %}Historique à purger{% endif %}",
     )
     .replace(
         "<td><form class=\"inline-form\" method=\"post\"><input type=\"hidden\" name=\"csrf\" value=\"{{ session.csrf }}\"><input type=\"hidden\" name=\"action\" value=\"save\">",
@@ -3918,7 +4032,7 @@ PANEL_REFERRALS_PROFIT_TEMPLATE = (
     )
     .replace(
         "<button>Enregistrer</button></form></td></tr>{% else %}",
-        "<button>Enregistrer</button></form><form class=\"inline-form\" method=\"post\" onsubmit=\"return confirm('Supprimer ce code de parrainage ? Son historique financier sera conservé.')\"><input type=\"hidden\" name=\"csrf\" value=\"{{ session.csrf }}\"><input type=\"hidden\" name=\"action\" value=\"delete\"><input type=\"hidden\" name=\"code\" value=\"{{ item.code }}\"><button class=\"delete\" type=\"submit\">Supprimer</button></form>{% else %}<span class=\"muted\">Aucune modification possible : seul l'historique financier est conservé.</span>{% endif %}</td></tr>{% else %}",
+        "<button>Enregistrer</button></form><form class=\"inline-form\" method=\"post\" onsubmit=\"return confirm('Supprimer définitivement ce code et tout son historique de commissions ? Cette action est irréversible.')\"><input type=\"hidden\" name=\"csrf\" value=\"{{ session.csrf }}\"><input type=\"hidden\" name=\"action\" value=\"delete\"><input type=\"hidden\" name=\"code\" value=\"{{ item.code }}\"><button class=\"delete\" type=\"submit\">Supprimer définitivement</button></form>{% else %}<form class=\"inline-form\" method=\"post\" onsubmit=\"return confirm('Purger définitivement cet historique de commissions ? Cette action est irréversible.')\"><input type=\"hidden\" name=\"csrf\" value=\"{{ session.csrf }}\"><input type=\"hidden\" name=\"action\" value=\"delete\"><input type=\"hidden\" name=\"code\" value=\"{{ item.code }}\"><button class=\"delete\" type=\"submit\">Purger l'historique</button></form>{% endif %}</td></tr>{% else %}",
         1,
     )
     .replace(
@@ -4189,11 +4303,29 @@ def panel_referrals():
                 raise ValueError("Le code doit contenir au moins 3 caractères")
             codes = get_referral_codes()
             if action == "delete":
-                if code not in codes:
-                    raise ValueError("Ce code est déjà supprimé ou introuvable")
-                del codes[code]
-                save_referral_codes(codes)
-                flash(f"Code {code} supprimé. Il n'est plus utilisable ; son historique financier est conservé.")
+                was_configured = code in codes
+                purge = purge_referral_code_data(code)
+                notification_messages = purge.pop("notification_messages", [])
+                if was_configured:
+                    del codes[code]
+                    save_referral_codes(codes)
+                if notification_messages:
+                    if BOT_LOOP is None:
+                        print("Notifications de parrainage non supprimées : le bot Discord n'est pas encore prêt.")
+                    else:
+                        future = asyncio.run_coroutine_threadsafe(
+                            delete_referral_tracking_notifications(notification_messages),
+                            BOT_LOOP,
+                        )
+                        future.add_done_callback(log_referral_notification_deletion)
+                if not was_configured and not any(purge[key] for key in ("ledgers", "lots", "events", "tickets")):
+                    raise ValueError("Ce code est déjà totalement supprimé ou introuvable")
+                flash(
+                    f"Code {code} supprimé définitivement : {purge['events']} commission(s) "
+                    f"pour {purge['commission']:.2f} €, {purge['lots']} recharge(s) suivie(s) "
+                    f"{purge['tickets']} association(s) de ticket et {purge['notifications']} "
+                    f"notification(s) Discord effacées."
+                )
                 return redirect(url_for("panel_referrals"))
             if action != "save":
                 raise ValueError("Action inconnue")
