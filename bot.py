@@ -215,6 +215,184 @@ def list_panel_settings(prefix=""):
         return []
 
 
+def normalize_referral_code(value):
+    return re.sub(r"[^A-Z0-9_-]", "", str(value or "").strip().upper())[:32]
+
+
+def valid_referral_percentage(value, fallback=0):
+    try:
+        percentage = round(float(value), 2)
+        if 0 <= percentage <= 100:
+            return percentage
+    except (TypeError, ValueError):
+        pass
+    return round(float(fallback), 2)
+
+
+def get_referral_codes():
+    saved = get_panel_setting("referral_codes", {}) or {}
+    if not isinstance(saved, dict):
+        return {}
+    codes = {}
+    for raw_code, raw_data in saved.items():
+        code = normalize_referral_code(raw_code)
+        if len(code) < 3 or not isinstance(raw_data, dict):
+            continue
+        sponsor_id = re.sub(r"\D", "", str(raw_data.get("sponsor_id") or ""))[:25]
+        try:
+            paid = max(0.0, round(float(raw_data.get("paid") or 0), 2))
+        except (TypeError, ValueError):
+            paid = 0.0
+        codes[code] = {
+            "code": code,
+            "sponsor_name": str(raw_data.get("sponsor_name") or code).strip()[:80],
+            "sponsor_id": sponsor_id,
+            "percentage": valid_referral_percentage(raw_data.get("percentage"), 0),
+            "paid": paid,
+            "active": bool(raw_data.get("active", True)),
+            "created_at": str(raw_data.get("created_at") or ""),
+        }
+    return codes
+
+
+def save_referral_codes(codes):
+    set_panel_setting("referral_codes", codes)
+
+
+def get_active_referral_code(value):
+    code = normalize_referral_code(value)
+    data = get_referral_codes().get(code)
+    return data if data and data.get("active") else None
+
+
+def referral_ledger_setting_key(guild_id, user_id):
+    return f"referral_ledger:{int(guild_id)}:{int(user_id)}"
+
+
+def get_referral_ledger(guild_id, user_id):
+    data = get_panel_setting(referral_ledger_setting_key(guild_id, user_id), {}) or {}
+    if not isinstance(data, dict):
+        data = {}
+    lots = data.get("lots") if isinstance(data.get("lots"), list) else []
+    events = data.get("events") if isinstance(data.get("events"), list) else []
+    return {"lots": lots, "events": events}
+
+
+def save_referral_ledger(guild_id, user_id, ledger):
+    set_panel_setting(referral_ledger_setting_key(guild_id, user_id), ledger)
+
+
+def load_referral_ledgers():
+    if USE_SUPABASE:
+        items = []
+        offset = 0
+        while True:
+            prefix = urllib.parse.quote("referral_ledger:", safe="")
+            page = supabase_request(
+                "GET",
+                f"panel_settings?key=like.{prefix}*&select=key,value&order=key&limit=1000&offset={offset}",
+            ) or []
+            items.extend(page)
+            if len(page) < 1000:
+                break
+            offset += len(page)
+    else:
+        items = list_panel_settings("referral_ledger:")
+    ledgers = []
+    for item in items:
+        value = item.get("value", {})
+        if not isinstance(value, dict):
+            continue
+        parts = str(item.get("key") or "").split(":")
+        try:
+            guild_id = int(parts[1])
+            user_id = int(parts[2])
+        except (IndexError, TypeError, ValueError):
+            continue
+        ledgers.append({
+            "guild_id": guild_id,
+            "user_id": user_id,
+            "lots": value.get("lots") if isinstance(value.get("lots"), list) else [],
+            "events": value.get("events") if isinstance(value.get("events"), list) else [],
+        })
+    return ledgers
+
+
+def load_referral_events(ledgers=None):
+    events = []
+    for ledger in ledgers or load_referral_ledgers():
+        for raw_event in ledger.get("events", []):
+            if not isinstance(raw_event, dict):
+                continue
+            event = dict(raw_event)
+            event["user_id"] = int(event.get("user_id") or ledger.get("user_id") or 0)
+            event["code"] = normalize_referral_code(event.get("code"))
+            for key in ("referred_used", "sale_amount", "purchase_cost", "attributed_profit", "commission"):
+                try:
+                    event[key] = round(float(event.get(key) or 0), 2)
+                except (TypeError, ValueError):
+                    event[key] = 0.0
+            events.append(event)
+    return sorted(events, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+
+
+def build_referral_summaries(codes, ledgers):
+    summaries = {}
+    for code, data in codes.items():
+        summaries[code] = {
+            **data,
+            "uses": 0,
+            "_orders": set(),
+            "credited": 0.0,
+            "remaining": 0.0,
+            "amount": 0.0,
+            "profit": 0.0,
+            "commission": 0.0,
+        }
+    for ledger in ledgers:
+        for lot in ledger.get("lots", []):
+            if not isinstance(lot, dict):
+                continue
+            code = normalize_referral_code(lot.get("code"))
+            if not code:
+                continue
+            item = summaries.setdefault(code, {
+                "code": code, "sponsor_name": str(lot.get("sponsor_name") or code),
+                "sponsor_id": str(lot.get("sponsor_id") or ""),
+                "percentage": valid_referral_percentage(lot.get("percentage"), 0),
+                "paid": 0.0, "active": False, "created_at": "", "uses": 0, "_orders": set(),
+                "credited": 0.0, "remaining": 0.0, "amount": 0.0,
+                "profit": 0.0, "commission": 0.0,
+            })
+            item["credited"] += float(lot.get("credited") or 0)
+            item["remaining"] += float(lot.get("remaining") or 0)
+    for event in load_referral_events(ledgers):
+        code = normalize_referral_code(event.get("code"))
+        if not code:
+            continue
+        item = summaries.setdefault(code, {
+            "code": code, "sponsor_name": str(event.get("sponsor_name") or code),
+            "sponsor_id": str(event.get("sponsor_id") or ""),
+            "percentage": valid_referral_percentage(event.get("percentage"), 0),
+            "paid": 0.0, "active": False, "created_at": "", "uses": 0, "_orders": set(),
+            "credited": 0.0, "remaining": 0.0, "amount": 0.0,
+            "profit": 0.0, "commission": 0.0,
+        })
+        order_key = str(event.get("order_message_id") or event.get("created_at") or len(item["_orders"]))
+        item["_orders"].add(order_key)
+        item["amount"] += float(event.get("referred_used") or 0)
+        item["profit"] += float(event.get("attributed_profit") or 0)
+        item["commission"] += float(event.get("commission") or 0)
+    result = []
+    for item in summaries.values():
+        item["uses"] = len(item.pop("_orders", set()))
+        for key in ("credited", "remaining", "amount", "profit", "commission"):
+            item[key] = round(item[key], 2)
+        item["due"] = round(max(0.0, item["commission"] - float(item.get("paid") or 0)), 2)
+        result.append(item)
+    return sorted(result, key=lambda item: (-item["due"], item["code"]))
+
+
 
 
 def invite_setting_key(guild_id: int) -> str:
@@ -474,6 +652,166 @@ def get_balance_ticket_user_id(channel):
 
 def balance_ticket_marked_credited(channel) -> bool:
     return is_balance_ticket(channel) and channel.topic.endswith(":credited")
+
+
+def find_balance_ticket(guild, user_id):
+    if guild is None:
+        return None
+    prefix = f"pinkgift-balance:{int(user_id)}"
+    channels = [
+        channel for channel in guild.text_channels
+        if (channel.topic or "").startswith(prefix) and not channel.name.startswith("closed-")
+    ]
+    return max(channels, key=lambda channel: channel.id, default=None)
+
+
+def balance_referral_setting_key(channel_id):
+    return f"balance_referral:{int(channel_id)}"
+
+
+def save_balance_ticket_referral(channel, user_id, referral):
+    if channel is None or not referral:
+        return
+    set_panel_setting(balance_referral_setting_key(channel.id), {
+        "channel_id": channel.id,
+        "user_id": int(user_id),
+        "code": referral["code"],
+        "sponsor_name": referral.get("sponsor_name", referral["code"]),
+        "sponsor_id": referral.get("sponsor_id", ""),
+        "percentage": valid_referral_percentage(referral.get("percentage"), 0),
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    })
+
+
+def get_balance_ticket_referral(channel):
+    if channel is None:
+        return None
+    data = get_panel_setting(balance_referral_setting_key(channel.id), {}) or {}
+    return data if isinstance(data, dict) and normalize_referral_code(data.get("code")) else None
+
+
+def track_referral_balance_credit(guild, user_id, amount, staff_id):
+    channel = find_balance_ticket(guild, user_id)
+    referral = get_balance_ticket_referral(channel)
+    if not referral:
+        return None
+    amount = round(float(amount), 2)
+    if amount <= 0:
+        return None
+    percentage = valid_referral_percentage(referral.get("percentage"), 0)
+    ledger = get_referral_ledger(guild.id, user_id)
+    lot = {
+        "id": f"{int(time.time() * 1000)}-{secrets.token_hex(3)}",
+        "channel_id": channel.id,
+        "user_id": int(user_id),
+        "staff_id": int(staff_id or 0),
+        "code": normalize_referral_code(referral.get("code")),
+        "sponsor_name": str(referral.get("sponsor_name") or referral.get("code") or ""),
+        "sponsor_id": str(referral.get("sponsor_id") or ""),
+        "percentage": percentage,
+        "credited": amount,
+        "remaining": amount,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    ledger["lots"].append(lot)
+    save_referral_ledger(guild.id, user_id, ledger)
+    return lot
+
+
+def record_referral_purchase(guild_id, user_id, order_message_id, sale_amount, purchase_cost, service):
+    sale_amount = round(float(sale_amount), 2)
+    purchase_cost = round(float(purchase_cost), 2)
+    if sale_amount <= 0:
+        return []
+    ledger = get_referral_ledger(guild_id, user_id)
+    existing = [
+        event for event in ledger["events"]
+        if isinstance(event, dict) and str(event.get("order_message_id")) == str(order_message_id)
+    ]
+    if existing:
+        return existing
+
+    amount_left = sale_amount
+    profit = max(0.0, round(sale_amount - purchase_cost, 2))
+    allocations = {}
+    for lot in ledger["lots"]:
+        if amount_left <= 0:
+            break
+        if not isinstance(lot, dict):
+            continue
+        remaining = max(0.0, round(float(lot.get("remaining") or 0), 2))
+        if remaining <= 0:
+            continue
+        used = min(remaining, amount_left)
+        lot["remaining"] = round(remaining - used, 2)
+        amount_left = round(amount_left - used, 2)
+        code = normalize_referral_code(lot.get("code"))
+        percentage = valid_referral_percentage(lot.get("percentage"), 0)
+        allocation_key = (code, percentage, str(lot.get("sponsor_id") or ""))
+        item = allocations.setdefault(allocation_key, {
+            "code": code,
+            "sponsor_name": str(lot.get("sponsor_name") or code),
+            "sponsor_id": str(lot.get("sponsor_id") or ""),
+            "percentage": percentage,
+            "referred_used": 0.0,
+        })
+        item["referred_used"] += used
+
+    created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    new_events = []
+    for item in allocations.values():
+        referred_used = round(item["referred_used"], 2)
+        attributed_profit = round(profit * referred_used / sale_amount, 2)
+        commission = round(attributed_profit * item["percentage"] / 100, 2)
+        event = {
+            **item,
+            "guild_id": int(guild_id),
+            "user_id": int(user_id),
+            "order_message_id": int(order_message_id),
+            "service": str(service),
+            "sale_amount": sale_amount,
+            "purchase_cost": purchase_cost,
+            "attributed_profit": attributed_profit,
+            "commission": commission,
+            "created_at": created_at,
+        }
+        ledger["events"].append(event)
+        new_events.append(event)
+    if new_events:
+        save_referral_ledger(guild_id, user_id, ledger)
+    return new_events
+
+
+def reduce_referral_balance(guild_id, user_id, amount):
+    """Retire une correction de solde des réserves parrainées sans créer de commission."""
+    amount_left = max(0.0, round(float(amount), 2))
+    if amount_left <= 0:
+        return 0.0
+    ledger = get_referral_ledger(guild_id, user_id)
+    removed = 0.0
+    for lot in ledger["lots"]:
+        if amount_left <= 0:
+            break
+        if not isinstance(lot, dict):
+            continue
+        remaining = max(0.0, round(float(lot.get("remaining") or 0), 2))
+        used = min(remaining, amount_left)
+        lot["remaining"] = round(remaining - used, 2)
+        amount_left = round(amount_left - used, 2)
+        removed += used
+    if removed:
+        save_referral_ledger(guild_id, user_id, ledger)
+    return round(removed, 2)
+
+
+def reconcile_referral_balance(guild_id, user_id, current_balance):
+    ledger = get_referral_ledger(guild_id, user_id)
+    tracked = sum(
+        max(0.0, float(lot.get("remaining") or 0))
+        for lot in ledger["lots"] if isinstance(lot, dict)
+    )
+    excess = max(0.0, round(tracked - max(0.0, float(current_balance)), 2))
+    return reduce_referral_balance(guild_id, user_id, excess) if excess else 0.0
 
 
 def balance_was_added_after(guild_id, user_id, created_at) -> bool:
@@ -1659,6 +1997,10 @@ async def create_product_ticket(interaction, product_key, amount):
             save_order_purchase_cost(order_message.id, purchase_cost)
         except Exception as error:
             print(f"Erreur sauvegarde commande panneau: {error}")
+        try:
+            record_referral_purchase(guild.id, user.id, order_message.id, paid_amount, purchase_cost, cfg["display"])
+        except Exception as error:
+            print(f"Erreur calcul parrainage commande de {user}: {error}")
         await interaction.followup.send(f"✅ Commande ajoutée dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
 def default_stock_config():
     return {
@@ -1802,6 +2144,10 @@ async def create_valo_order(interaction, region_key, pack_key):
             save_order_purchase_cost(order_message.id, purchase_cost)
         except Exception as error:
             print(f"Erreur sauvegarde commande Valorant: {error}")
+        try:
+            record_referral_purchase(guild.id, user.id, order_message.id, price, purchase_cost, f"Valorant {region_label} {pack}")
+        except Exception as error:
+            print(f"Erreur calcul parrainage Valorant de {user}: {error}")
         await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
 
 
@@ -1934,13 +2280,14 @@ class ProductAmountView(discord.ui.View):
 class ProductServiceSelect(discord.ui.Select):
     def __init__(self):
         # Ce menu doit pouvoir être construit instantanément au clic.
-        # Aucune requête SQLite/Supabase et aucun emoji personnalisé ici :
-        # Discord reçoit donc toujours la réponse avant son délai de 3 secondes.
+        # Les emojis viennent de la configuration locale et ne déclenchent
+        # aucune requête Discord, SQLite ou Supabase.
         options = [
             discord.SelectOption(
                 label=cfg["display"][:100],
                 value=key,
-                description="Sélectionner ce produit"
+                description="Sélectionner ce produit",
+                emoji=discord.PartialEmoji.from_str(cfg["emoji"]),
             )
             for key, cfg in PRODUCT_CONFIG.items()
             if key != "VALORANT"
@@ -2064,6 +2411,100 @@ class OrderLauncherView(discord.ui.View):
             pass
 
 
+async def create_balance_recharge_ticket(interaction, referral=None):
+    guild = interaction.guild
+    user = interaction.user
+    category = guild.get_channel(BALANCE_CATEGORY_ID) if guild else None
+    if category is None:
+        await interaction.followup.send("❌ Catégorie de recharge introuvable.", ephemeral=True)
+        return
+    existing = find_balance_ticket(guild, user.id)
+    if existing:
+        await interaction.followup.send(f"ℹ️ Ton ticket de recharge existe déjà : {existing.mention}", ephemeral=True)
+        return
+    staff_role = guild.get_role(STAFF_ROLE_ID)
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    }
+    if staff_role:
+        overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    try:
+        channel = await guild.create_text_channel(
+            name=f"solde-{user.name}"[:95],
+            category=category,
+            topic=f"pinkgift-balance:{user.id}:pending",
+            overwrites=overwrites,
+            reason=f"Recharge solde de {user}",
+        )
+        if referral:
+            save_balance_ticket_referral(channel, user.id, referral)
+        embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": f"{get_balance(guild.id, user.id):.2f}"})
+        if referral:
+            sponsor = referral.get("sponsor_name") or referral["code"]
+            embed.add_field(
+                name="🤝 Code de parrainage",
+                value=f"**{referral['code']}** — Parrain : **{sponsor}**",
+                inline=False,
+            )
+        await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+        suffix = f" avec le code **{referral['code']}**" if referral else " sans code de parrainage"
+        await interaction.followup.send(f"✅ Ticket de recharge créé{suffix} : {channel.mention}", ephemeral=True)
+    except Exception as error:
+        print(f"Erreur création ticket solde pour {user}: {error}")
+        await interaction.followup.send("❌ Impossible de créer le ticket de recharge actuellement.", ephemeral=True)
+
+
+class ReferralCodeModal(discord.ui.Modal, title="Code de parrainage"):
+    code_input = discord.ui.TextInput(
+        label="Ton code de parrainage",
+        placeholder="Exemple : PINKY10",
+        min_length=3,
+        max_length=32,
+        required=True,
+    )
+
+    def __init__(self, user_id):
+        super().__init__()
+        self.user_id = int(user_id)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Ce formulaire ne t'appartient pas.", ephemeral=True)
+            return
+        referral = get_active_referral_code(self.code_input.value)
+        if referral is None:
+            await interaction.response.send_message("❌ Ce code de parrainage est invalide ou désactivé.", ephemeral=True)
+            return
+        if referral.get("sponsor_id") and referral["sponsor_id"] == str(interaction.user.id):
+            await interaction.response.send_message("❌ Tu ne peux pas utiliser ton propre code de parrainage.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_balance_recharge_ticket(interaction, referral)
+
+
+class ReferralChoiceView(discord.ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=180)
+        self.user_id = int(user_id)
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        if interaction.user.id == self.user_id:
+            return True
+        await interaction.response.send_message("❌ Ce choix ne t'appartient pas.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="Oui, j'ai un code", emoji="🤝", style=discord.ButtonStyle.success)
+    async def yes_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ReferralCodeModal(self.user_id))
+
+    @discord.ui.button(label="Non, malheureusement", emoji="😔", style=discord.ButtonStyle.secondary)
+    async def no_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_balance_recharge_ticket(interaction)
+
+
 class BalanceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -2075,29 +2516,15 @@ class BalanceView(discord.ui.View):
 
     @discord.ui.button(label="Recharger mon solde", emoji="➕", style=discord.ButtonStyle.success, custom_id="pinkgift_recharge_balance")
     async def recharge_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        guild = interaction.guild
-        user = interaction.user
-        category = guild.get_channel(BALANCE_CATEGORY_ID) if guild else None
-        if category is None:
-            await interaction.followup.send("❌ Catégorie de recharge introuvable.", ephemeral=True)
+        existing = find_balance_ticket(interaction.guild, interaction.user.id)
+        if existing:
+            await interaction.response.send_message(f"ℹ️ Ton ticket de recharge existe déjà : {existing.mention}", ephemeral=True)
             return
-        for channel in category.text_channels:
-            if (channel.topic or "").startswith(f"pinkgift-balance:{user.id}") and not channel.name.startswith("closed-"):
-                await interaction.followup.send(f"ℹ️ Ton ticket de recharge existe déjà : {channel.mention}", ephemeral=True)
-                return
-        staff_role = guild.get_role(STAFF_ROLE_ID)
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        }
-        if staff_role:
-            overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-        channel = await guild.create_text_channel(name=f"solde-{user.name}"[:95], category=category, topic=f"pinkgift-balance:{user.id}:pending", overwrites=overwrites, reason=f"Recharge solde de {user}")
-        embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": f"{get_balance(guild.id, user.id):.2f}"})
-        await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
-        await interaction.followup.send(f"✅ Ticket de recharge créé : {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(
+            "🤝 As-tu un code de parrainage ?",
+            view=ReferralChoiceView(interaction.user.id),
+            ephemeral=True,
+        )
 
 
 class CloseTicketView(discord.ui.View):
@@ -3272,8 +3699,19 @@ async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
         await ctx.send("❌ Le montant doit être positif.", delete_after=5)
         return
     balance = change_balance(ctx.guild.id, member.id, montant, ctx.author.id)
+    referral_lot = None
+    try:
+        referral_lot = track_referral_balance_credit(ctx.guild, member.id, montant, ctx.author.id)
+    except Exception as error:
+        print(f"Erreur tracking solde parrainé pour {member}: {error}")
     await mark_balance_ticket_credited(ctx.guild, member.id)
-    await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
+    referral_text = ""
+    if referral_lot:
+        referral_text = (
+            f"\n🤝 **{montant:.2f} €** sont maintenant suivis avec le code **{referral_lot['code']}**. "
+            "La commission sera calculée sur le bénéfice des achats réalisés avec ce solde."
+        )
+    await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.{referral_text}")
 
 
 @bot.hybrid_command(name="retirer_solde", description="Retirer un montant du solde d'un client")
@@ -3289,6 +3727,10 @@ async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
     except ValueError:
         await ctx.send("❌ Solde insuffisant.", delete_after=5)
         return
+    try:
+        reconcile_referral_balance(ctx.guild.id, member.id, balance)
+    except Exception as error:
+        print(f"Erreur réconciliation solde parrainé de {member}: {error}")
     await ctx.send(f"✅ **{montant:.2f} €** retirés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
 
 
@@ -3384,7 +3826,7 @@ PANEL_TEMPLATE = """
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Panel</title>
 <style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}nav{display:flex;gap:8px;margin-bottom:18px}.tab{color:#e8dce3;text-decoration:none;padding:10px 14px;border:1px solid #4c3543}.tab.active{background:#e8509a;color:white;border-color:#e8509a}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}input,select{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:160px}select{cursor:pointer}.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 16px 0}.filters label{color:#ff9dce;font-weight:bold}button{background:#e8509a;color:white;border:0;padding:10px 13px;cursor:pointer}.delete{background:#9d294b;margin-left:5px}.done{color:#74d99f}.pending{color:#ffd27b}.muted{color:#aa98a4;font-size:12px}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
-<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_finances') }}">Statistiques</a><a class="tab" href="{{ url_for('panel_prices') }}">Prix</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
+<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_finances') }}">Statistiques</a><a class="tab" href="{{ url_for('panel_referrals') }}">Parrainage</a><a class="tab" href="{{ url_for('panel_prices') }}">Prix</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
 {% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
 {% else %}{% if tab == 'orders' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="orders"><label for="service-filter">Service</label><select id="service-filter" name="service" onchange="this.form.submit()"><option value="">Tous les services</option>{% for service in service_options %}<option value="{{ service }}" {% if service == service_filter %}selected{% endif %}>{{ service }}</option>{% endfor %}</select><label for="amount-filter">Montant</label><select id="amount-filter" name="amount" onchange="this.form.submit()"><option value="">Tous les montants</option>{% for amount in amount_options %}<option value="{{ amount }}" {% if amount == amount_filter %}selected{% endif %}>{{ amount }}</option>{% endfor %}</select></form>{% elif tab == 'valorant' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="valorant"><label for="region-filter">Région</label><select id="region-filter" name="region" onchange="this.form.submit()"><option value="">Toutes les régions</option>{% for region in region_options %}<option value="{{ region }}" {% if region == region_filter %}selected{% endif %}>{{ region }}</option>{% endfor %}</select><label for="pack-filter">Pack VP</label><select id="pack-filter" name="pack" onchange="this.form.submit()"><option value="">Tous les packs</option>{% for pack in pack_options %}<option value="{{ pack }}" {% if pack == pack_filter %}selected{% endif %}>{{ pack }}</option>{% endfor %}</select></form>{% endif %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
@@ -3406,6 +3848,40 @@ PANEL_FINANCES_NITRO_TEMPLATE = PANEL_FINANCES_PRODUCT_TEMPLATE.replace(
     "</div><p class=\"muted\">",
     f"</div>{NITRO_FINANCE_BLOCK}<p class=\"muted\">",
     1,
+)
+
+PANEL_REFERRALS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Parrainage</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1200px}h1{color:#ff8fc8}.card{background:#171419;border:1px solid #332630;padding:16px;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:11px}.field{display:flex;flex-direction:column;gap:5px}.field span{color:#ff9dce;font-weight:bold}.field small,.muted{color:#aa98a4}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px}button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}table{width:100%;border-collapse:collapse;background:#171419;margin:18px 0}th,td{text-align:left;padding:10px;border-bottom:1px solid #332630;vertical-align:top}th{color:#ff9dce}.inline-form{display:flex;flex-wrap:wrap;gap:7px;align-items:center}.inline-form input{min-width:90px}.positive{color:#74d99f;font-weight:bold}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Parrainage</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<section class="card"><h2>Créer un code</h2><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="save"><div class="grid"><label class="field"><span>Code</span><input name="code" minlength="3" maxlength="32" placeholder="PINKY10" required></label><label class="field"><span>Nom du parrain</span><input name="sponsor_name" maxlength="80" required></label><label class="field"><span>ID Discord du parrain</span><input name="sponsor_id" inputmode="numeric" placeholder="Optionnel"></label><label class="field"><span>Commission (%)</span><input type="number" name="percentage" min="0" max="100" step="0.01" required></label><label class="field"><span>Déjà versé (€)</span><input type="number" name="paid" value="0" min="0" step="0.01" required></label></div><p><label><input type="checkbox" name="active" value="1" checked> Code actif</label></p><button>Créer le code</button></form></section><h2>Suivi des parrains</h2><table><thead><tr><th>Code / Parrain</th><th>Utilisations</th><th>Solde ajouté</th><th>Commission générée</th><th>Déjà versé</th><th>Reste à verser</th><th>Configuration</th></tr></thead><tbody>{% for item in summaries %}<tr><td><strong>{{ item.code }}</strong><br>{{ item.sponsor_name }}{% if item.sponsor_id %}<br><a href="https://discord.com/users/{{ item.sponsor_id }}" target="_blank">{{ item.sponsor_id }}</a>{% endif %}<br>{{ 'Actif' if item.active else 'Désactivé' }}</td><td>{{ item.uses }}</td><td>{{ '%.2f'|format(item.amount) }} €</td><td>{{ '%.2f'|format(item.commission) }} €</td><td>{{ '%.2f'|format(item.paid) }} €</td><td class="positive">{{ '%.2f'|format(item.due) }} €</td><td><form class="inline-form" method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="save"><input type="hidden" name="code" value="{{ item.code }}"><input name="sponsor_name" value="{{ item.sponsor_name }}" title="Nom" required><input name="sponsor_id" value="{{ item.sponsor_id }}" title="ID Discord"><input type="number" name="percentage" value="{{ item.percentage }}" min="0" max="100" step="0.01" title="Pourcentage" required><input type="number" name="paid" value="{{ item.paid }}" min="0" step="0.01" title="Déjà versé" required><label><input type="checkbox" name="active" value="1" {% if item.active %}checked{% endif %}> actif</label><button>Enregistrer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucun code créé.</td></tr>{% endfor %}</tbody></table><h2>Historique récent</h2><table><thead><tr><th>Date</th><th>Code</th><th>Client</th><th>Solde ajouté</th><th>Taux</th><th>Commission</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.code }}</td><td><a href="https://discord.com/users/{{ event.user_id }}" target="_blank">{{ event.user_id }}</a></td><td>{{ '%.2f'|format(event.amount) }} €</td><td>{{ event.percentage }} %</td><td>{{ '%.2f'|format(event.commission) }} €</td></tr>{% else %}<tr><td colspan="6">Aucune commission enregistrée.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
+
+PANEL_REFERRALS_PROFIT_TEMPLATE = (
+    PANEL_REFERRALS_TEMPLATE
+    .replace("Reste à verser", "À verser manuellement au parrain")
+    .replace("<span>Commission (%)</span>", "<span>% du bénéfice</span>")
+    .replace(
+        "<span>ID Discord du parrain</span>",
+        "<span>ID Discord du parrain (information interne)</span>",
+    )
+    .replace(
+        "<section class=\"card\"><h2>Créer un code</h2>",
+        "<p class=\"muted\">Seuls les codes actifs que tu crées dans ce panel sont acceptés. Un client ne peut pas devenir parrain en indiquant un ID Discord : l'ID renseigné ici est uniquement une information interne associée au code. Le solde obtenu avec un code est suivi jusqu'aux achats. La commission porte uniquement sur le bénéfice réel généré par la part de solde parrainée. Aucun solde n'est crédité automatiquement au parrain : le panel indique seulement le montant que tu dois lui verser manuellement.</p><section class=\"card\"><h2>Créer un code</h2>",
+    )
+    .replace(
+        "<th>Utilisations</th><th>Solde ajouté</th><th>Commission générée</th>",
+        "<th>Achats</th><th>Solde parrainé crédité</th><th>Solde parrainé restant</th><th>Solde utilisé</th><th>Bénéfice généré</th><th>Commission générée</th>",
+    )
+    .replace(
+        "<td>{{ item.uses }}</td><td>{{ '%.2f'|format(item.amount) }} €</td><td>{{ '%.2f'|format(item.commission) }} €</td>",
+        "<td>{{ item.uses }}</td><td>{{ '%.2f'|format(item.credited) }} €</td><td>{{ '%.2f'|format(item.remaining) }} €</td><td>{{ '%.2f'|format(item.amount) }} €</td><td>{{ '%.2f'|format(item.profit) }} €</td><td>{{ '%.2f'|format(item.commission) }} €</td>",
+    )
+    .replace('colspan="7">Aucun code créé.', 'colspan="10">Aucun code créé.')
+    .replace(
+        "<th>Date</th><th>Code</th><th>Client</th><th>Solde ajouté</th><th>Taux</th><th>Commission</th>",
+        "<th>Date</th><th>Code</th><th>Client</th><th>Produit</th><th>Solde utilisé</th><th>Bénéfice attribué</th><th>Taux</th><th>Commission</th>",
+    )
+    .replace(
+        "<td>{{ '%.2f'|format(event.amount) }} €</td><td>{{ event.percentage }} %</td>",
+        "<td>{{ event.service }}</td><td>{{ '%.2f'|format(event.referred_used) }} €</td><td>{{ '%.2f'|format(event.attributed_profit) }} €</td><td>{{ event.percentage }} %</td>",
+    )
+    .replace('colspan="6">Aucune commission enregistrée.', 'colspan="8">Aucune commission enregistrée.')
 )
 
 PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Modifie le JSON d'un embed puis clique sur Enregistrer. Pour uploader une image, choisis un fichier : le bot l'envoie dans le salon configuré par EMBED_UPLOAD_CHANNEL_ID et remplit automatiquement image_url.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
@@ -3624,11 +4100,70 @@ def panel_cost_value(field_name):
     return value
 
 
+def panel_percentage_value(field_name):
+    raw = request.form.get(field_name, "").strip().replace(",", ".")
+    try:
+        value = round(float(raw), 2)
+    except ValueError as error:
+        raise ValueError("Pourcentage invalide") from error
+    if not 0 <= value <= 100:
+        raise ValueError("Le pourcentage doit être compris entre 0 et 100")
+    return value
+
+
 def log_price_embed_refresh(future):
     try:
         print(f"Prix enregistrés : {future.result()} panneau(x) Discord actualisé(s).")
     except Exception as error:
         print(f"Erreur actualisation automatique des embeds de prix : {error}")
+
+
+@app.route("/panel/parrainage", methods=["GET", "POST"])
+@panel_required
+def panel_referrals():
+    if request.method == "POST":
+        if not valid_panel_csrf():
+            flash("Session invalide. Recharge la page.")
+            return redirect(url_for("panel_referrals"))
+        try:
+            code = normalize_referral_code(request.form.get("code"))
+            if len(code) < 3:
+                raise ValueError("Le code doit contenir au moins 3 caractères")
+            sponsor_name = request.form.get("sponsor_name", "").strip()[:80]
+            if not sponsor_name:
+                raise ValueError("Le nom du parrain est obligatoire")
+            sponsor_id = request.form.get("sponsor_id", "").strip()
+            if sponsor_id and not re.fullmatch(r"\d{15,25}", sponsor_id):
+                raise ValueError("L'ID Discord du parrain est invalide")
+            percentage = panel_percentage_value("percentage")
+            paid = panel_cost_value("paid")
+            codes = get_referral_codes()
+            previous = codes.get(code, {})
+            codes[code] = {
+                "code": code,
+                "sponsor_name": sponsor_name,
+                "sponsor_id": sponsor_id,
+                "percentage": percentage,
+                "paid": paid,
+                "active": request.form.get("active") == "1",
+                "created_at": previous.get("created_at") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            save_referral_codes(codes)
+            flash(f"Code {code} enregistré à {percentage:g} % du bénéfice attribué.")
+        except Exception as error:
+            print(f"Erreur configuration parrainage : {error}")
+            flash(f"Impossible d'enregistrer le code : {error}")
+        return redirect(url_for("panel_referrals"))
+
+    codes = get_referral_codes()
+    ledgers = load_referral_ledgers()
+    events = load_referral_events(ledgers)
+    summaries = build_referral_summaries(codes, ledgers)
+    return render_template_string(
+        PANEL_REFERRALS_PROFIT_TEMPLATE,
+        summaries=summaries,
+        events=events[:200],
+    )
 
 
 @app.route("/panel/statistiques")
