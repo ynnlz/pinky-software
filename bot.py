@@ -1493,6 +1493,33 @@ DEFAULT_EMBED_DATA.update({
 
 DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde & paiements PinkGift","description":["Consulte ton solde ou ouvre un ticket de recharge avec les boutons ci-dessous.","","💳 **Moyens de paiement acceptés**","<:paypal:1517582845315649751> **PayPal**","🏦 **Virement bancaire**","₿ **Cryptomonnaies**","","Une fois le paiement confirmé par le staff, ton solde sera ajouté et utilisable pour commander."],"color_rgb":[255,192,203],"image_key":"paiement_securise","footer":"PinkGift — Solde & paiements"},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
 
+DEFAULT_EMBED_DATA.update({
+    "parrainages_embed": {
+        "title": "🤝 PARRAINAGES PINKGIFT",
+        "description": [
+            "Tu es **streamer Twitch**, créateur de contenu ou responsable d'une communauté ? PinkGift propose un programme de parrainage simple pour récompenser les partenaires qui nous présentent à leur audience.",
+            "",
+            "🎟️ **Un code personnalisé**",
+            "Nous créons un code unique au nom du partenaire. Les membres de sa communauté peuvent l'indiquer lorsqu'ils rechargent leur solde PinkGift.",
+            "",
+            "📊 **Un suivi automatique**",
+            "Le solde ajouté avec ce code est suivi en interne. Lorsqu'un client effectue un achat, le système calcule la part de bénéfice réellement générée grâce au parrainage.",
+            "",
+            "💸 **Une commission sur le bénéfice**",
+            "Le partenaire reçoit le pourcentage convenu sur le bénéfice attribué à ses clients. Le taux et les modalités sont définis avec PinkGift avant l'activation du code.",
+            "",
+            "✨ **Pour quels partenaires ?**",
+            "Streamers Twitch, créateurs TikTok ou YouTube, influenceurs, serveurs communautaires et autres partenaires capables de présenter PinkGift à une audience engagée.",
+            "",
+            "📩 **Intéressé par un partenariat ?**",
+            "Contacte l'équipe PinkGift afin de présenter ton activité, ton audience et discuter des conditions de collaboration."
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Programme de parrainage",
+        "image_url": ""
+    }
+})
+
 DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.", "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.", "Le staff intervient uniquement pour les recharges de solde."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
 
 DEFAULT_EMBED_DATA.update({
@@ -3533,6 +3560,7 @@ def public_embed_builders():
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
+        (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
         (["FAQ PinkGift", "FAQ"], lambda: build_json_embed("faq_embed"), None),
         (["Classement", "CLASSEMENT"], build_leaderboard_embed, None),
@@ -4831,6 +4859,13 @@ async def cmd_reglement(ctx):
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_faq(ctx):
     await ctx.send(embed=build_json_embed("faq_embed"))
+
+
+@bot.hybrid_command(name="parrainages", description="Publier la présentation du programme de parrainage")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_parrainages(ctx):
+    await ctx.send(embed=build_json_embed("parrainages_embed"))
 
 
 @bot.hybrid_command(name="classement", description="Publier le classement clients PinkGift")
