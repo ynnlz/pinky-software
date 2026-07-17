@@ -109,7 +109,9 @@
     "description": [
       "Bonjour {user} !",
       "",
-      "Ta commande a bien été enregistrée. Le staff va te prendre en charge rapidement."
+      "Ta commande a bien été enregistrée et ton solde a été débité.",
+      "La livraison est automatique : ton code sera envoyé ici dès qu'il sera disponible.",
+      "Le staff intervient uniquement pour les recharges de solde."
     ],
     "fields": [
       {
@@ -123,7 +125,7 @@
         "inline": true
       },
       {
-        "name": "Montant à payer (-30 %)",
+        "name": "Montant débité",
         "value": "**{paid} €**",
         "inline": true
       },
@@ -148,7 +150,8 @@
       "Merci de l'intérêt que tu portes à PinkGift.",
       "Indique le pack Valorant Points souhaité dans ce ticket.",
       "",
-      "Le staff a été prévenu et va te prendre en charge rapidement."
+      "La livraison est automatique : ton code Valorant sera envoyé dans ce ticket dès qu'il sera disponible.",
+      "Le staff intervient uniquement pour les recharges de solde."
     ],
     "color_rgb": [
       255,
@@ -169,9 +172,10 @@
     ]
   },
   "commande_embed": {
-    "title": "{emoji} Commande prise en charge",
+    "title": "{emoji} Livraison automatique en cours",
     "description": [
-      "Merci pour votre confiance {user} !"
+      "Merci pour ta confiance {user} !",
+      "Ta commande est traitée automatiquement. Ton code apparaîtra ci-dessous dès qu'il sera prêt."
     ],
     "fields": [
       {
@@ -204,9 +208,10 @@
     "footer": "PinkGift — Ticket commande"
   },
   "commande_vp_embed": {
-    "title": "{emoji} Commande Valorant prise en charge",
+    "title": "{emoji} Livraison Valorant automatique en cours",
     "description": [
-      "Merci pour votre confiance {user} !"
+      "Merci pour ta confiance {user} !",
+      "Ta commande est traitée automatiquement. Ton code Valorant apparaîtra ci-dessous dès qu'il sera prêt."
     ],
     "fields": [
       {
@@ -249,14 +254,19 @@
     "footer": "PinkGift — Ticket Valorant"
   },
   "commande_finalisee": {
+    "title": "✅ Commande livrée automatiquement",
+    "description": [
+      "Ta commande a été livrée automatiquement.",
+      "Ton code est disponible ci-dessous."
+    ],
     "color_rgb": [
       46,
       204,
       113
     ],
     "image_key": "commande_livree",
-    "footer": "PinkGift — Commande finalisée",
-    "code_field_name": "Code"
+    "footer": "PinkGift — Livraison automatique terminée",
+    "code_field_name": "Code livré automatiquement"
   },
   "commandes_embed": {
     "title": "📜 COMMANDES STAFF — PinkGift",
@@ -281,7 +291,7 @@
       },
       {
         "name": "🎁 Commandes et livraisons",
-        "value": "Les commandes sont créées depuis les menus et débitées automatiquement.\nLes codes cadeaux et suppressions sont gérés depuis le panneau web.",
+        "value": "Les commandes sont créées depuis les menus et débitées automatiquement.\nLes codes cadeaux et suppressions sont gérés depuis le panneau web.\n!giveaway durée nom [invitations] [tag_serveur] — créer un giveaway avec conditions\n!reroll ID_ou_lien — tirer un nouveau gagnant éligible\n!config_compteurs #salon-avis — configurer le compteur d'avis vérifiés",
         "inline": false
       },
       {
@@ -321,6 +331,34 @@
     "footer": "PinkGift — Solde & paiements",
     "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525626921537507500/A_polished_ultra-wide_219_cinematic_banner_for_th-1783808104704-text-shapes-1x.jpg?ex=6a54124a&is=6a52c0ca&hm=be9de76f91072e5c6817e5fde7346376f10ac84da07b5a1c1ca533bf19bc1ec6&=&format=webp&width=1872&height=796"
   },
+  "parrainages_embed": {
+    "title": "🤝 PARRAINAGES PINKGIFT",
+    "description": [
+      "Tu es **streamer Twitch**, créateur de contenu ou responsable d'une communauté ? PinkGift propose un programme de parrainage simple pour récompenser les partenaires qui nous présentent à leur audience.",
+      "",
+      "🎟️ **Un code personnalisé**",
+      "Nous créons un code unique au nom du partenaire. Les membres de sa communauté peuvent l'indiquer lorsqu'ils rechargent leur solde PinkGift.",
+      "",
+      "📊 **Un suivi automatique**",
+      "Le solde ajouté avec ce code est suivi en interne. Lorsqu'un client effectue un achat, le système calcule la part de bénéfice réellement générée grâce au parrainage.",
+      "",
+      "💸 **Une commission sur le bénéfice**",
+      "Le partenaire reçoit le pourcentage convenu sur le bénéfice attribué à ses clients. Le taux et les modalités sont définis avec PinkGift avant l'activation du code.",
+      "",
+      "✨ **Pour quels partenaires ?**",
+      "Streamers Twitch, créateurs TikTok ou YouTube, influenceurs, serveurs communautaires et autres partenaires capables de présenter PinkGift à une audience engagée.",
+      "",
+      "📩 **Intéressé par un partenariat ?**",
+      "Contacte l'équipe PinkGift afin de présenter ton activité, ton audience et discuter des conditions de collaboration."
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "footer": "PinkGift — Programme de parrainage",
+    "image_url": ""
+  },
   "balance_ticket_embed": {
     "title": "➕ Recharge de solde",
     "description": [
@@ -341,7 +379,9 @@
     "description": [
       "Bonjour {user} !",
       "",
-      "Ta commande Uber Eats a bien été enregistrée selon la grille fixe. Le staff va te prendre en charge rapidement."
+      "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.",
+      "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.",
+      "Le staff intervient uniquement pour les recharges de solde."
     ],
     "fields": [
       {
@@ -377,7 +417,9 @@
     "description": [
       "Bonjour {user} !",
       "",
-      "Ta commande Discord Nitro a bien été enregistrée. Le staff va te prendre en charge rapidement."
+      "Ta commande Discord Nitro a bien été enregistrée et ton solde a été débité.",
+      "La livraison est automatique : ton Nitro sera envoyé ici dès qu'il sera disponible.",
+      "Le staff intervient uniquement pour les recharges de solde."
     ],
     "fields": [
       {
