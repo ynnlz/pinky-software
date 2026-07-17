@@ -76,6 +76,7 @@ MUTED_ROLE_ID = 1525614378580312165
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:1517582297736413284>")
 VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
+REFERRAL_TRACKING_CHANNEL_ID = 1525601870561935391
 STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
 STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
 
@@ -718,6 +719,31 @@ def track_referral_balance_credit(guild, user_id, amount, staff_id):
     return lot
 
 
+async def send_referral_tracking_notification(guild, user, staff, lot, new_balance):
+    channel = guild.get_channel(REFERRAL_TRACKING_CHANNEL_ID) or bot.get_channel(REFERRAL_TRACKING_CHANNEL_ID)
+    if channel is None:
+        channel = await bot.fetch_channel(REFERRAL_TRACKING_CHANNEL_ID)
+    if not hasattr(channel, "send"):
+        raise RuntimeError("Le salon de suivi parrainage n'accepte pas les messages")
+    sponsor_name = str(lot.get("sponsor_name") or lot.get("code") or "Inconnu")
+    sponsor_id = str(lot.get("sponsor_id") or "").strip()
+    sponsor_label = sponsor_name + (f" (`{sponsor_id}`)" if sponsor_id else "")
+    embed = discord.Embed(
+        title="Recharge parrainée enregistrée",
+        description="Cette recharge est suivie en interne pour calculer la commission sur le bénéfice des achats.",
+        color=discord.Color.from_rgb(232, 80, 154),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.add_field(name="Client", value=f"{user.mention} (`{user.id}`)", inline=False)
+    embed.add_field(name="Montant ajouté", value=f"**{float(lot.get('credited') or 0):.2f} €**", inline=True)
+    embed.add_field(name="Nouveau solde", value=f"**{float(new_balance):.2f} €**", inline=True)
+    embed.add_field(name="Code", value=f"**{lot.get('code') or 'Inconnu'}**", inline=True)
+    embed.add_field(name="Parrain", value=sponsor_label, inline=True)
+    embed.add_field(name="Commission", value=f"**{valid_referral_percentage(lot.get('percentage'), 0):g} %** du bénéfice", inline=True)
+    embed.add_field(name="Ajout effectué par", value=f"{staff.mention} (`{staff.id}`)", inline=False)
+    await channel.send(embed=embed)
+
+
 def record_referral_purchase(guild_id, user_id, order_message_id, sale_amount, purchase_cost, service):
     sale_amount = round(float(sale_amount), 2)
     purchase_cost = round(float(purchase_cost), 2)
@@ -780,6 +806,27 @@ def record_referral_purchase(guild_id, user_id, order_message_id, sale_amount, p
     if new_events:
         save_referral_ledger(guild_id, user_id, ledger)
     return new_events
+
+
+def remove_referral_purchase(guild_id, user_id, order_message_id):
+    """Retire du suivi parrainage la commission associée à une commande supprimée."""
+    ledger = get_referral_ledger(guild_id, user_id)
+    kept_events = []
+    removed_events = []
+    order_key = str(order_message_id)
+    for event in ledger["events"]:
+        if isinstance(event, dict) and str(event.get("order_message_id")) == order_key:
+            removed_events.append(event)
+        else:
+            kept_events.append(event)
+    if not removed_events:
+        return {"events": 0, "commission": 0.0}
+    ledger["events"] = kept_events
+    save_referral_ledger(guild_id, user_id, ledger)
+    return {
+        "events": len(removed_events),
+        "commission": round(sum(float(event.get("commission") or 0) for event in removed_events), 2),
+    }
 
 
 def reduce_referral_balance(guild_id, user_id, amount):
@@ -2441,16 +2488,8 @@ async def create_balance_recharge_ticket(interaction, referral=None):
         if referral:
             save_balance_ticket_referral(channel, user.id, referral)
         embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": f"{get_balance(guild.id, user.id):.2f}"})
-        if referral:
-            sponsor = referral.get("sponsor_name") or referral["code"]
-            embed.add_field(
-                name="🤝 Code de parrainage",
-                value=f"**{referral['code']}** — Parrain : **{sponsor}**",
-                inline=False,
-            )
         await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
-        suffix = f" avec le code **{referral['code']}**" if referral else " sans code de parrainage"
-        await interaction.followup.send(f"✅ Ticket de recharge créé{suffix} : {channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"✅ Ticket de recharge créé : {channel.mention}", ephemeral=True)
     except Exception as error:
         print(f"Erreur création ticket solde pour {user}: {error}")
         await interaction.followup.send("❌ Impossible de créer le ticket de recharge actuellement.", ephemeral=True)
@@ -2495,11 +2534,11 @@ class ReferralChoiceView(discord.ui.View):
         await interaction.response.send_message("❌ Ce choix ne t'appartient pas.", ephemeral=True)
         return False
 
-    @discord.ui.button(label="Oui, j'ai un code", emoji="🤝", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Oui, j'ai un code", emoji="<:verify:1525796690899108000>", style=discord.ButtonStyle.success)
     async def yes_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ReferralCodeModal(self.user_id))
 
-    @discord.ui.button(label="Non, malheureusement", emoji="😔", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Non", emoji="<:crossmark:1525798036276514887>", style=discord.ButtonStyle.secondary)
     async def no_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True, thinking=True)
         await create_balance_recharge_ticket(interaction)
@@ -3705,13 +3744,12 @@ async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
     except Exception as error:
         print(f"Erreur tracking solde parrainé pour {member}: {error}")
     await mark_balance_ticket_credited(ctx.guild, member.id)
-    referral_text = ""
     if referral_lot:
-        referral_text = (
-            f"\n🤝 **{montant:.2f} €** sont maintenant suivis avec le code **{referral_lot['code']}**. "
-            "La commission sera calculée sur le bénéfice des achats réalisés avec ce solde."
-        )
-    await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.{referral_text}")
+        try:
+            await send_referral_tracking_notification(ctx.guild, member, ctx.author, referral_lot, balance)
+        except Exception as error:
+            print(f"Erreur notification recharge parrainée pour {member}: {error}")
+    await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
 
 
 @bot.hybrid_command(name="retirer_solde", description="Retirer un montant du solde d'un client")
@@ -4391,20 +4429,42 @@ def panel_delete_order(order_id):
     if not valid_panel_csrf():
         flash("Session invalide. Recharge la page.")
         return panel_filter_redirect()
+    order = None
     try:
         if USE_SUPABASE:
+            rows = supabase_request("GET", f"orders?id=eq.{order_id}&select=guild_id,user_id,message_id") or []
+            order = rows[0] if rows else None
+            if order is None:
+                raise RuntimeError("Commande introuvable")
             deleted = supabase_request("DELETE", f"orders?id=eq.{order_id}", prefer="return=representation")
             if not deleted:
                 raise RuntimeError("Aucune ligne supprimée. Vérifie que SUPABASE_SECRET_KEY est bien une clé secrète et non la clé publishable/anon.")
         else:
             with db_connect() as db:
+                row = db.execute("SELECT guild_id,user_id,message_id FROM orders WHERE id=?", (order_id,)).fetchone()
+                order = dict(row) if row else None
+                if order is None:
+                    raise RuntimeError("Commande introuvable")
                 cursor = db.execute("DELETE FROM orders WHERE id=?", (order_id,))
                 if cursor.rowcount == 0:
                     raise RuntimeError("Commande introuvable")
-        flash("Commande supprimée du panel. Les numéros ont été recalculés.")
     except Exception as error:
         print(f"Erreur suppression commande {order_id}: {error}")
         flash("La suppression a échoué.")
+        return panel_filter_redirect()
+    try:
+        referral_sync = remove_referral_purchase(order["guild_id"], order["user_id"], order["message_id"])
+        removed_commission = referral_sync["commission"]
+        if referral_sync["events"]:
+            flash(
+                f"Commande supprimée du panel et commission parrain retirée "
+                f"({removed_commission:.2f} €). Les numéros ont été recalculés."
+            )
+        else:
+            flash("Commande supprimée du panel. Les numéros ont été recalculés.")
+    except Exception as error:
+        print(f"Erreur synchronisation parrainage après suppression commande {order_id}: {error}")
+        flash("Commande supprimée, mais la synchronisation du parrainage a échoué.")
     return panel_filter_redirect()
 
 
