@@ -342,6 +342,7 @@ def build_referral_summaries(codes, ledgers):
     for code, data in codes.items():
         summaries[code] = {
             **data,
+            "configured": True,
             "uses": 0,
             "_orders": set(),
             "credited": 0.0,
@@ -361,7 +362,7 @@ def build_referral_summaries(codes, ledgers):
                 "code": code, "sponsor_name": str(lot.get("sponsor_name") or code),
                 "sponsor_id": str(lot.get("sponsor_id") or ""),
                 "percentage": valid_referral_percentage(lot.get("percentage"), 0),
-                "paid": 0.0, "active": False, "created_at": "", "uses": 0, "_orders": set(),
+                "paid": 0.0, "active": False, "configured": False, "created_at": "", "uses": 0, "_orders": set(),
                 "credited": 0.0, "remaining": 0.0, "amount": 0.0,
                 "profit": 0.0, "commission": 0.0,
             })
@@ -375,7 +376,7 @@ def build_referral_summaries(codes, ledgers):
             "code": code, "sponsor_name": str(event.get("sponsor_name") or code),
             "sponsor_id": str(event.get("sponsor_id") or ""),
             "percentage": valid_referral_percentage(event.get("percentage"), 0),
-            "paid": 0.0, "active": False, "created_at": "", "uses": 0, "_orders": set(),
+            "paid": 0.0, "active": False, "configured": False, "created_at": "", "uses": 0, "_orders": set(),
             "credited": 0.0, "remaining": 0.0, "amount": 0.0,
             "profit": 0.0, "commission": 0.0,
         })
@@ -3892,6 +3893,11 @@ PANEL_REFERRALS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset
 
 PANEL_REFERRALS_PROFIT_TEMPLATE = (
     PANEL_REFERRALS_TEMPLATE
+    .replace(
+        "button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}table",
+        "button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}.delete{background:#9d294b}table",
+        1,
+    )
     .replace("Reste à verser", "À verser manuellement au parrain")
     .replace("<span>Commission (%)</span>", "<span>% du bénéfice</span>")
     .replace(
@@ -3901,6 +3907,19 @@ PANEL_REFERRALS_PROFIT_TEMPLATE = (
     .replace(
         "<section class=\"card\"><h2>Créer un code</h2>",
         "<p class=\"muted\">Seuls les codes actifs que tu crées dans ce panel sont acceptés. Un client ne peut pas devenir parrain en indiquant un ID Discord : l'ID renseigné ici est uniquement une information interne associée au code. Le solde obtenu avec un code est suivi jusqu'aux achats. La commission porte uniquement sur le bénéfice réel généré par la part de solde parrainée. Aucun solde n'est crédité automatiquement au parrain : le panel indique seulement le montant que tu dois lui verser manuellement.</p><section class=\"card\"><h2>Créer un code</h2>",
+    )
+    .replace(
+        "<br>{{ 'Actif' if item.active else 'Désactivé' }}",
+        "<br>{% if item.configured %}{{ 'Actif' if item.active else 'Désactivé' }}{% else %}Supprimé — historique conservé{% endif %}",
+    )
+    .replace(
+        "<td><form class=\"inline-form\" method=\"post\"><input type=\"hidden\" name=\"csrf\" value=\"{{ session.csrf }}\"><input type=\"hidden\" name=\"action\" value=\"save\">",
+        "<td>{% if item.configured %}<form class=\"inline-form\" method=\"post\"><input type=\"hidden\" name=\"csrf\" value=\"{{ session.csrf }}\"><input type=\"hidden\" name=\"action\" value=\"save\">",
+    )
+    .replace(
+        "<button>Enregistrer</button></form></td></tr>{% else %}",
+        "<button>Enregistrer</button></form><form class=\"inline-form\" method=\"post\" onsubmit=\"return confirm('Supprimer ce code de parrainage ? Son historique financier sera conservé.')\"><input type=\"hidden\" name=\"csrf\" value=\"{{ session.csrf }}\"><input type=\"hidden\" name=\"action\" value=\"delete\"><input type=\"hidden\" name=\"code\" value=\"{{ item.code }}\"><button class=\"delete\" type=\"submit\">Supprimer</button></form>{% else %}<span class=\"muted\">Aucune modification possible : seul l'historique financier est conservé.</span>{% endif %}</td></tr>{% else %}",
+        1,
     )
     .replace(
         "<th>Utilisations</th><th>Solde ajouté</th><th>Commission générée</th>",
@@ -4164,9 +4183,20 @@ def panel_referrals():
             flash("Session invalide. Recharge la page.")
             return redirect(url_for("panel_referrals"))
         try:
+            action = request.form.get("action", "save")
             code = normalize_referral_code(request.form.get("code"))
             if len(code) < 3:
                 raise ValueError("Le code doit contenir au moins 3 caractères")
+            codes = get_referral_codes()
+            if action == "delete":
+                if code not in codes:
+                    raise ValueError("Ce code est déjà supprimé ou introuvable")
+                del codes[code]
+                save_referral_codes(codes)
+                flash(f"Code {code} supprimé. Il n'est plus utilisable ; son historique financier est conservé.")
+                return redirect(url_for("panel_referrals"))
+            if action != "save":
+                raise ValueError("Action inconnue")
             sponsor_name = request.form.get("sponsor_name", "").strip()[:80]
             if not sponsor_name:
                 raise ValueError("Le nom du parrain est obligatoire")
@@ -4175,7 +4205,6 @@ def panel_referrals():
                 raise ValueError("L'ID Discord du parrain est invalide")
             percentage = panel_percentage_value("percentage")
             paid = panel_cost_value("paid")
-            codes = get_referral_codes()
             previous = codes.get(code, {})
             codes[code] = {
                 "code": code,
@@ -4190,7 +4219,7 @@ def panel_referrals():
             flash(f"Code {code} enregistré à {percentage:g} % du bénéfice attribué.")
         except Exception as error:
             print(f"Erreur configuration parrainage : {error}")
-            flash(f"Impossible d'enregistrer le code : {error}")
+            flash(f"Impossible de modifier le code : {error}")
         return redirect(url_for("panel_referrals"))
 
     codes = get_referral_codes()
