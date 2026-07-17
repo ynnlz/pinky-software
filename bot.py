@@ -2151,9 +2151,9 @@ async def count_verified_reviews(guild, data):
 
 async def ensure_server_counter_channels(guild):
     data = get_server_counter_data(guild.id)
-    category = guild.get_channel(int(data.get("category_id") or 0))
-    if not isinstance(category, discord.CategoryChannel):
-        category = discord.utils.get(guild.categories, name=SERVER_COUNTER_CATEGORY_NAME)
+    old_category = guild.get_channel(int(data.get("category_id") or 0))
+    if not isinstance(old_category, discord.CategoryChannel):
+        old_category = discord.utils.get(guild.categories, name=SERVER_COUNTER_CATEGORY_NAME)
 
     me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
     overwrites = {
@@ -2167,16 +2167,6 @@ async def ensure_server_counter_channels(guild):
             read_message_history=True,
         )
 
-    if category is None:
-        category = await guild.create_category(
-            SERVER_COUNTER_CATEGORY_NAME,
-            overwrites=overwrites,
-            position=0,
-            reason="Création automatique des compteurs PinkGift",
-        )
-    elif category.position != 0:
-        await category.edit(position=0, reason="Placement des compteurs PinkGift en haut du serveur")
-
     counter_specs = (
         ("members_channel_id", "👥・Membres"),
         ("tags_channel_id", "🏷️・Tags serveur"),
@@ -2187,25 +2177,37 @@ async def ensure_server_counter_channels(guild):
         channel = guild.get_channel(int(data.get(key) or 0))
         if not isinstance(channel, discord.VoiceChannel):
             channel = next(
-                (item for item in category.voice_channels if item.name.startswith(prefix)),
+                (item for item in guild.voice_channels if item.name.startswith(prefix)),
                 None,
             )
         if channel is None:
             channel = await guild.create_voice_channel(
                 f"{prefix} : 0",
-                category=category,
+                category=None,
+                position=0,
                 overwrites=overwrites,
                 reason="Création automatique d'un compteur PinkGift",
             )
-        elif channel.category_id != category.id:
+        elif channel.category_id is not None:
             await channel.edit(
-                category=category,
-                reason="Regroupement des compteurs PinkGift",
+                category=None,
+                position=0,
+                reason="Placement des compteurs PinkGift hors catégorie",
             )
         channels[key] = channel
         data[key] = channel.id
 
-    data["category_id"] = category.id
+    for position, (key, _) in enumerate(counter_specs):
+        channel = channels[key]
+        if channel.position != position:
+            await channel.edit(
+                position=position,
+                reason="Placement des compteurs PinkGift en haut du serveur",
+            )
+
+    if old_category is not None and not old_category.channels:
+        await old_category.delete(reason="Ancienne catégorie de compteurs PinkGift devenue inutile")
+    data.pop("category_id", None)
     save_server_counter_data(guild.id, data)
     return data, channels
 
