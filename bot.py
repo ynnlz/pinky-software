@@ -75,6 +75,7 @@ SERVER_COUNTER_CATEGORY_NAME = "📊・STATISTIQUES"
 MUTED_ROLE_ID = 1525614378580312165
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:1517582297736413284>")
+VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
 STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
 
@@ -2125,27 +2126,32 @@ def save_server_counter_data(guild_id, data):
     set_panel_setting(server_counter_setting_key(guild_id), data)
 
 
-def verified_reviews_channel_id(guild_id):
+def verified_reviews_channel_ids(guild_id):
     data = get_server_counter_data(guild_id)
-    try:
-        return int(data.get("reviews_channel_id") or 0)
-    except (TypeError, ValueError):
-        return 0
+    channel_ids = set(VERIFIED_REVIEWS_CHANNEL_IDS)
+    configured_ids = data.get("reviews_channel_ids", [])
+    if not isinstance(configured_ids, (list, tuple, set)):
+        configured_ids = []
+    configured_ids = [*configured_ids, data.get("reviews_channel_id")]
+    for value in configured_ids:
+        try:
+            channel_id = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if channel_id:
+            channel_ids.add(channel_id)
+    return channel_ids
 
 
 async def count_verified_reviews(guild, data):
-    try:
-        channel_id = int(data.get("reviews_channel_id") or 0)
-    except (TypeError, ValueError):
-        channel_id = 0
-    channel = guild.get_channel(channel_id) if channel_id else None
-    if not isinstance(channel, discord.TextChannel):
-        return 0
-
     count = 0
-    async for message in channel.history(limit=None, oldest_first=False):
-        if not message.author.bot:
-            count += 1
+    for channel_id in verified_reviews_channel_ids(guild.id):
+        channel = guild.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            continue
+        async for message in channel.history(limit=None, oldest_first=False):
+            if not message.author.bot:
+                count += 1
     return count
 
 
@@ -2469,7 +2475,7 @@ async def on_message(message):
             except discord.HTTPException as error:
                 print(f"Erreur réaction auto dans {message.channel}: {error}")
     guild = getattr(message, "guild", None)
-    if guild is not None and message.channel.id == verified_reviews_channel_id(guild.id):
+    if guild is not None and message.channel.id in verified_reviews_channel_ids(guild.id):
         schedule_server_counter_refresh(guild, refresh_reviews=True)
     await bot.process_commands(message)
 
@@ -2477,14 +2483,14 @@ async def on_message(message):
 @bot.event
 async def on_raw_message_delete(payload):
     guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
-    if guild is not None and payload.channel_id == verified_reviews_channel_id(guild.id):
+    if guild is not None and payload.channel_id in verified_reviews_channel_ids(guild.id):
         schedule_server_counter_refresh(guild, refresh_reviews=True)
 
 
 @bot.event
 async def on_raw_bulk_message_delete(payload):
     guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
-    if guild is not None and payload.channel_id == verified_reviews_channel_id(guild.id):
+    if guild is not None and payload.channel_id in verified_reviews_channel_ids(guild.id):
         schedule_server_counter_refresh(guild, refresh_reviews=True)
 
 
