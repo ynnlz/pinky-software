@@ -4305,14 +4305,13 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
 }
 .discord-message { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
 .discord-avatar {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  color: white;
-  font-weight: 850;
-  background: linear-gradient(145deg, var(--pink), var(--purple));
+  object-fit: cover;
+  background: #09080d;
+  box-shadow: 0 0 18px rgba(247,103,174,.28);
 }
 .discord-message-content { min-width: 0; }
 .discord-author { margin-bottom: 5px; color: #f2f3f5; font-size: 15px; font-weight: 650; }
@@ -4368,10 +4367,15 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     return "";
   };
   const textValue = value => {
+    if (Array.isArray(value)) return value.map(textValue).filter(Boolean).join("\n");
     if (typeof value === "string" || typeof value === "number") return String(value);
     return value && (value.text || value.name) ? String(value.text || value.name) : "";
   };
   const safeColor = value => {
+    if (Array.isArray(value) && value.length >= 3) {
+      const [red, green, blue] = value.map(part => Math.max(0, Math.min(255, Number(part) || 0)));
+      return `rgb(${red}, ${green}, ${blue})`;
+    }
     if (Number.isFinite(value)) return `#${Math.max(0, Math.min(0xffffff, value)).toString(16).padStart(6, "0")}`;
     if (typeof value === "string" && /^#?[0-9a-f]{6}$/i.test(value)) return value.startsWith("#") ? value : `#${value}`;
     return "#f767ae";
@@ -4397,13 +4401,16 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       return;
     }
     const message = make("div", "discord-message");
-    message.appendChild(make("div", "discord-avatar", "P"));
+    const avatar = make("img", "discord-avatar");
+    avatar.src = "/static/discord_icon.gif";
+    avatar.alt = "Logo PinkGift";
+    message.appendChild(avatar);
     const content = make("div", "discord-message-content");
     const authorLine = make("div", "discord-author", "PinkGift");
     authorLine.appendChild(make("span", "discord-bot-tag", "BOT"));
     content.appendChild(authorLine);
     const card = make("article", "discord-embed-card");
-    card.style.borderLeftColor = safeColor(data.color);
+    card.style.borderLeftColor = safeColor(data.color ?? data.color_rgb);
     const inner = make("div", "discord-embed-inner");
     const thumbnail = imageUrl(data.thumbnail_url || data.thumbnail);
     appendImage(inner, "preview-thumbnail", thumbnail, "Miniature de l'embed");
@@ -4521,17 +4528,14 @@ header h1 {
   letter-spacing: -.035em;
 }
 header h1::before {
-  content: "P";
+  content: "";
   display: grid;
   place-items: center;
   width: 38px;
   height: 38px;
   flex: 0 0 38px;
   border-radius: 12px;
-  color: white;
-  font-size: 17px;
-  font-weight: 850;
-  background: linear-gradient(145deg, var(--pink), var(--purple));
+  background: #09080d url("/static/discord_icon.gif") center / cover no-repeat;
   box-shadow: 0 10px 30px rgba(233, 70, 152, .3), inset 0 1px rgba(255,255,255,.24);
 }
 header > a {
@@ -4735,17 +4739,14 @@ body > form {
   box-shadow: var(--shadow);
 }
 body > form::before {
-  content: "P";
+  content: "";
   display: grid;
   place-items: center;
   width: 54px;
   height: 54px;
   margin-bottom: 18px;
   border-radius: 16px;
-  color: white;
-  font-size: 23px;
-  font-weight: 850;
-  background: linear-gradient(145deg, var(--pink), var(--purple));
+  background: #09080d url("/static/discord_icon.gif") center / cover no-repeat;
   box-shadow: 0 14px 38px rgba(233,70,152,.3);
 }
 body > form h1 { margin: 0 0 20px; color: white !important; font-size: 28px; letter-spacing: -.045em; }
@@ -4777,15 +4778,7 @@ body > form button { min-height: 45px; margin-top: 14px; }
 }
 """
 
-PANEL_FAVICON = (
-    '<link rel="icon" href="data:image/svg+xml,'
-    '<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22>'
-    '<defs><linearGradient id=%22g%22 x2=%221%22 y2=%221%22>'
-    '<stop stop-color=%22%23f767ae%22/><stop offset=%221%22 stop-color=%22%238b6cff%22/>'
-    '</linearGradient></defs><rect width=%2264%22 height=%2264%22 rx=%2218%22 fill=%22url(%23g)%22/>'
-    '<path d=%22M21 48V16h14c9 0 14 5 14 13S43 42 34 42h-5v6zm8-14h5c4 0 7-2 7-5s-3-5-7-5h-5z%22 fill=%22white%22/>'
-    '</svg>">'
-)
+PANEL_FAVICON = '<link rel="icon" type="image/gif" href="/static/discord_icon.gif">'
 
 
 def apply_panel_theme(template):
