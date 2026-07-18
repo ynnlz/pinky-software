@@ -5008,6 +5008,7 @@ def run_discord():
                 DISCORD_LAST_ERROR = "Discord 429 Too Many Requests"
                 print(f"{DISCORD_LAST_ERROR}. Nouvel essai dans {wait_seconds} secondes.")
                 time.sleep(wait_seconds)
+                bot.clear()
                 continue
             DISCORD_STATE = "nouvel essai dans 1 min"
             DISCORD_LAST_ERROR = f"Discord HTTP {status or 'inconnu'}"
