@@ -1363,8 +1363,16 @@ DEFAULT_EMBED_DATA = {
             "",
             "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus sont visibles uniquement par toi."
         ],
+        "gift_cards_field_name": "💳 Cartes cadeaux — toutes les marques",
+        "gift_card_line_template": "**{amount} € reçus** → {price} € débités",
+        "uber_eats_field_name": "🍔 Uber Eats",
+        "uber_eats_line_template": "**{drop} € estimés** → {price} € débités",
+        "nitro_field_name": "💎 Discord Nitro",
+        "nitro_value_template": "**{price} €** débités",
+        "dynamic_fields_inline": False,
         "color_rgb": [255, 192, 203],
-        "image_url": ""
+        "image_url": "",
+        "footer": "PinkGift — Tarifs"
     },
     "valo_embed": {
         "title": "💘 VALORANT POINTS 💘",
@@ -1383,8 +1391,12 @@ DEFAULT_EMBED_DATA = {
             "",
             "🛒 Clique sur le bouton ci-dessous pour ouvrir un ticket."
         ],
+        "region_field_name_template": "{emoji} {region}",
+        "pack_line_template": "<:vp:1519915966476320901> **{pack}** — {price} €",
+        "dynamic_fields_inline": False,
         "color_rgb": [255, 192, 203],
-        "image_url": ""
+        "image_url": "",
+        "footer": "PinkGift — Valorant Points"
     },
     "ticket_bienvenue": {
         "title": "🎫 Ticket d achat",
@@ -1790,6 +1802,9 @@ DEFAULT_EMBED_DATA.update({
             "📩 Livraison du code dans un ticket privé dès sa réception",
             "💳 Recharge ton solde avec le panneau `/solde`"
         ],
+        "packs_field_name": "<:cp:1528128623117205624> Packs disponibles",
+        "pack_line_template": "<:cp:1528128623117205624> **{points} CP** — **{price} €** · officiel ≈ ~~{official} €~~",
+        "dynamic_fields_inline": False,
         "color_rgb": [255, 103, 174],
         "footer": "PinkGift — COD Points"
     },
@@ -1877,8 +1892,8 @@ def format_embed_text(value, variables=None):
     return str(value).format_map(SafeFormatDict(variables or {}))
 
 
-def build_json_embed(embed_key, variables=None):
-    data = load_embed_texts().get(embed_key, DEFAULT_EMBED_DATA.get(embed_key, {}))
+def build_json_embed(embed_key, variables=None, data_override=None):
+    data = data_override if isinstance(data_override, dict) else load_embed_texts().get(embed_key, DEFAULT_EMBED_DATA.get(embed_key, {}))
     variables = variables or {}
     rgb = data.get("color_rgb", [255, 192, 203])
     desc_raw = data.get("description", [])
@@ -4050,7 +4065,6 @@ async def on_guild_channel_delete(channel):
 
 def build_tarifs_embed():
     texts = load_embed_texts()["tarifs_embed"]
-    rgb = texts.get("color_rgb", [255, 192, 203])
     desc_raw = texts.get("description", [])
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
     description = re.sub(
@@ -4061,21 +4075,47 @@ def build_tarifs_embed():
     )
     description = re.sub(r"(\*\*Discord Nitro)(?:\s+—\s+[^*]+)(\*\*)", r"\1\2", description, flags=re.IGNORECASE)
     description = apply_custom_brand_emojis(description)
-    embed = discord.Embed(title=texts.get("title", "🎟️ COMMANDES PINKGIFT"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+    embed = build_json_embed("tarifs_embed", data_override=texts)
+    embed.description = description or None
     prices = get_pricing_config()
-    gift_lines = [f"**{amount} € reçus** → {format_price(prices['gift_cards'][str(amount)])} € débités" for amount in GIFT_CARD_AMOUNTS]
-    uber_lines = [f"**{pack['drop']} € estimés** → {format_price(prices['uber_eats'][pack_key])} € débités" for pack_key, pack in UBEREATS_PACKS.items()]
-    embed.add_field(name="💳 Cartes cadeaux — toutes les marques", value="\n".join(gift_lines), inline=False)
-    embed.add_field(name="🍔 Uber Eats", value="\n".join(uber_lines), inline=False)
-    embed.add_field(name="💎 Discord Nitro", value=f"**{format_price(prices['discord_nitro'])} €** débités", inline=False)
-    image_url = texts.get("image_url", TARIFS_IMAGE_URL)
-    if image_url:
-        embed.set_image(url=image_url)
+    gift_template = texts.get("gift_card_line_template", "**{amount} € reçus** → {price} € débités")
+    uber_template = texts.get("uber_eats_line_template", "**{drop} € estimés** → {price} € débités")
+    nitro_template = texts.get("nitro_value_template", "**{price} €** débités")
+    gift_lines = [
+        format_embed_text(gift_template, {
+            "amount": amount,
+            "price": format_price(prices["gift_cards"][str(amount)]),
+        })
+        for amount in GIFT_CARD_AMOUNTS
+    ]
+    uber_lines = [
+        format_embed_text(uber_template, {
+            "pack_key": pack_key,
+            "drop": pack["drop"],
+            "price": format_price(prices["uber_eats"][pack_key]),
+        })
+        for pack_key, pack in UBEREATS_PACKS.items()
+    ]
+    dynamic_inline = bool(texts.get("dynamic_fields_inline", False))
+    embed.add_field(
+        name=texts.get("gift_cards_field_name", "💳 Cartes cadeaux — toutes les marques"),
+        value="\n".join(gift_lines),
+        inline=dynamic_inline,
+    )
+    embed.add_field(
+        name=texts.get("uber_eats_field_name", "🍔 Uber Eats"),
+        value="\n".join(uber_lines),
+        inline=dynamic_inline,
+    )
+    embed.add_field(
+        name=texts.get("nitro_field_name", "💎 Discord Nitro"),
+        value=format_embed_text(nitro_template, {"price": format_price(prices["discord_nitro"])}),
+        inline=dynamic_inline,
+    )
     return embed
 
 def build_valo_embed():
     texts = load_embed_texts().get("valo_embed", DEFAULT_EMBED_DATA["valo_embed"])
-    rgb = texts.get("color_rgb", [255, 192, 203])
     desc_raw = texts.get("description", [])
     description = "\n".join(desc_raw) if isinstance(desc_raw, list) else str(desc_raw)
     kept_lines = []
@@ -4088,33 +4128,59 @@ def build_valo_embed():
             continue
         kept_lines.append(line)
     description = "\n".join(kept_lines).strip()
-    embed = discord.Embed(title=texts.get("title", "💘 VALORANT POINTS 💘"), description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
+    embed = build_json_embed("valo_embed", data_override=texts)
+    embed.description = description or None
     prices = get_pricing_config()["valorant"]
+    field_name_template = texts.get("region_field_name_template", "{emoji} {region}")
+    pack_line_template = texts.get("pack_line_template", "<:vp:1519915966476320901> **{pack}** — {price} €")
+    dynamic_inline = bool(texts.get("dynamic_fields_inline", False))
     for region_key, region in VALO_REGIONS.items():
         lines = [
-            f"<:vp:1519915966476320901> **{pack['label']}** — {format_price(prices[region_key][pack_key])} €"
+            format_embed_text(pack_line_template, {
+                "region_key": region_key,
+                "region": region["label"],
+                "emoji": region["emoji"],
+                "pack_key": pack_key,
+                "pack": pack["label"],
+                "price": format_price(prices[region_key][pack_key]),
+            })
             for pack_key, pack in region["packs"].items()
         ]
-        embed.add_field(name=f"{region['emoji']} {region['label']}", value="\n".join(lines), inline=False)
-    image_url = texts.get("image_url", "")
-    if image_url:
-        embed.set_image(url=image_url)
-    embed.set_footer(text="PinkGift — Valorant Points")
+        embed.add_field(
+            name=format_embed_text(field_name_template, {
+                "region_key": region_key,
+                "region": region["label"],
+                "emoji": region["emoji"],
+            }),
+            value="\n".join(lines),
+            inline=dynamic_inline,
+        )
     return embed
 
 
 def build_cp_embed():
-    embed = build_json_embed("cp_embed")
+    texts = load_embed_texts().get("cp_embed", DEFAULT_EMBED_DATA["cp_embed"])
+    embed = build_json_embed("cp_embed", data_override=texts)
     prices = get_pricing_config()["cp"]
+    line_template = texts.get(
+        "pack_line_template",
+        "<:cp:1528128623117205624> **{points} CP** — **{price} €** · officiel ≈ ~~{official} €~~",
+    )
     lines = []
     for pack_key, pack in CP_PACKS.items():
         points = f"{pack['points']:,}".replace(",", " ")
         official = f"{pack['official_price']:.2f}".replace(".", ",")
-        lines.append(
-            f"🛒 **{points} CP** — **{format_price(prices[pack_key])} €** "
-            f"· officiel ≈ ~~{official} €~~"
-        )
-    embed.add_field(name="🪙 Packs disponibles", value="\n".join(lines), inline=False)
+        lines.append(format_embed_text(line_template, {
+            "pack_key": pack_key,
+            "points": points,
+            "price": format_price(prices[pack_key]),
+            "official": official,
+        }))
+    embed.add_field(
+        name=texts.get("packs_field_name", "<:cp:1528128623117205624> Packs disponibles"),
+        value="\n".join(lines),
+        inline=bool(texts.get("dynamic_fields_inline", False)),
+    )
     return embed
 
 async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
@@ -4813,8 +4879,18 @@ PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="u
 PANEL_EMBEDS_TEMPLATE = (
     PANEL_EMBEDS_TEMPLATE
     .replace(
+        '<summary>{{ item.key }}</summary>',
+        '<summary>{{ item.key }}</summary>{% if item.help %}<p class="muted">{{ item.help }}</p>{% endif %}',
+        1,
+    )
+    .replace(
         '<form method="post" enctype="multipart/form-data">',
         '<form class="embed-editor" method="post" enctype="multipart/form-data">',
+        1,
+    )
+    .replace(
+        '<input type="hidden" name="embed_key" value="{{ item.key }}">',
+        '<input type="hidden" name="embed_key" value="{{ item.key }}"><textarea class="embed-preview-context" hidden>{{ item.preview_context }}</textarea>',
         1,
     )
     .replace(
@@ -4954,9 +5030,58 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     if (typeof value === "string" || typeof value === "number") return String(value);
     return value && (value.text || value.name) ? String(value.text || value.name) : "";
   };
+  const parsePreviewContext = form => {
+    try {
+      return JSON.parse(form.querySelector(".embed-preview-context")?.value || "{}");
+    } catch (error) {
+      return {};
+    }
+  };
+  const fillTokens = (template, values) => textValue(template).replace(/\{([A-Za-z0-9_]+)\}/g, (match, key) => (
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
+  ));
+  const dynamicPreviewFields = (data, form) => {
+    const fields = Array.isArray(data.fields) ? data.fields.map(field => ({...field})) : [];
+    const key = form.querySelector('input[name="embed_key"]')?.value || "";
+    const context = parsePreviewContext(form);
+    const inline = data.dynamic_fields_inline === true;
+    if (key === "cp_embed" && Array.isArray(context.packs)) {
+      const template = data.pack_line_template || "<:cp:1528128623117205624> **{points} CP** — **{price} €** · officiel ≈ ~~{official} €~~";
+      fields.push({
+        name: data.packs_field_name || "<:cp:1528128623117205624> Packs disponibles",
+        value: context.packs.map(pack => fillTokens(template, pack)).join("\n"),
+        inline,
+      });
+    } else if (key === "tarifs_embed") {
+      const giftTemplate = data.gift_card_line_template || "**{amount} € reçus** → {price} € débités";
+      const uberTemplate = data.uber_eats_line_template || "**{drop} € estimés** → {price} € débités";
+      const nitroTemplate = data.nitro_value_template || "**{price} €** débités";
+      if (Array.isArray(context.gift_cards)) fields.push({
+        name: data.gift_cards_field_name || "💳 Cartes cadeaux — toutes les marques",
+        value: context.gift_cards.map(item => fillTokens(giftTemplate, item)).join("\n"), inline,
+      });
+      if (Array.isArray(context.uber_eats)) fields.push({
+        name: data.uber_eats_field_name || "🍔 Uber Eats",
+        value: context.uber_eats.map(item => fillTokens(uberTemplate, item)).join("\n"), inline,
+      });
+      if (context.nitro) fields.push({
+        name: data.nitro_field_name || "💎 Discord Nitro",
+        value: fillTokens(nitroTemplate, context.nitro), inline,
+      });
+    } else if (key === "valo_embed" && Array.isArray(context.regions)) {
+      const nameTemplate = data.region_field_name_template || "{emoji} {region}";
+      const packTemplate = data.pack_line_template || "<:vp:1519915966476320901> **{pack}** — {price} €";
+      context.regions.forEach(region => fields.push({
+        name: fillTokens(nameTemplate, region),
+        value: (region.packs || []).map(pack => fillTokens(packTemplate, {...region, ...pack})).join("\n"),
+        inline,
+      }));
+    }
+    return fields;
+  };
   const appendRichText = (parent, value) => {
     const raw = textValue(value);
-    const tokenPattern = /(<a?:[A-Za-z0-9_]+:\d+>|\*\*[^*\n]+?\*\*|__[^_\n]+?__|`[^`\n]+?`|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s<]+)/g;
+    const tokenPattern = /(<a?:[A-Za-z0-9_]+:\d+>|\*\*[^*\n]+?\*\*|~~[^~\n]+?~~|__[^_\n]+?__|`[^`\n]+?`|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s<]+)/g;
     let cursor = 0;
     for (const match of raw.matchAll(tokenPattern)) {
       if (match.index > cursor) parent.appendChild(document.createTextNode(raw.slice(cursor, match.index)));
@@ -4974,6 +5099,10 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
         const strong = make("strong");
         appendRichText(strong, token.slice(2, -2));
         parent.appendChild(strong);
+      } else if (token.startsWith("~~")) {
+        const strike = make("s");
+        appendRichText(strike, token.slice(2, -2));
+        parent.appendChild(strike);
       } else if (token.startsWith("__")) {
         const underline = make("u");
         appendRichText(underline, token.slice(2, -2));
@@ -5136,7 +5265,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       inner.appendChild(titleNode);
     }
     if (description) inner.appendChild(makeRich("div", "preview-description", description));
-    renderFields(inner, data.fields, Boolean(thumbnail));
+    renderFields(inner, dynamicPreviewFields(data, form), Boolean(thumbnail));
     const mainImage = resolvedMainImage(data, form);
     appendImage(inner, "preview-image", mainImage, "Image de l'embed");
     const footer = textValue(data.footer?.text ?? data.footer);
@@ -6135,9 +6264,68 @@ def panel_embeds():
             flash(f"Sauvegarde impossible : {error}")
         return redirect(url_for("panel_embeds"))
     data = load_embed_texts()
+    preview_contexts = {}
+    try:
+        pricing = get_pricing_config()
+        preview_contexts["tarifs_embed"] = {
+            "gift_cards": [
+                {"amount": amount, "price": format_price(pricing["gift_cards"][str(amount)])}
+                for amount in GIFT_CARD_AMOUNTS
+            ],
+            "uber_eats": [
+                {
+                    "pack_key": pack_key,
+                    "drop": pack["drop"],
+                    "price": format_price(pricing["uber_eats"][pack_key]),
+                }
+                for pack_key, pack in UBEREATS_PACKS.items()
+            ],
+            "nitro": {"price": format_price(pricing["discord_nitro"])},
+        }
+        preview_contexts["valo_embed"] = {
+            "regions": [
+                {
+                    "region_key": region_key,
+                    "region": region["label"],
+                    "emoji": region["emoji"],
+                    "packs": [
+                        {
+                            "pack_key": pack_key,
+                            "pack": pack["label"],
+                            "price": format_price(pricing["valorant"][region_key][pack_key]),
+                        }
+                        for pack_key, pack in region["packs"].items()
+                    ],
+                }
+                for region_key, region in VALO_REGIONS.items()
+            ]
+        }
+        preview_contexts["cp_embed"] = {
+            "packs": [
+                {
+                    "pack_key": pack_key,
+                    "points": f"{pack['points']:,}".replace(",", " "),
+                    "price": format_price(pricing["cp"][pack_key]),
+                    "official": f"{pack['official_price']:.2f}".replace(".", ","),
+                }
+                for pack_key, pack in CP_PACKS.items()
+            ]
+        }
+    except Exception as error:
+        print(f"Erreur préparation aperçus dynamiques du panel : {error}")
+    embed_help = {
+        "tarifs_embed": "Les champs de prix sont entièrement modifiables. Variables : {amount}, {drop}, {price} et {pack_key}. Les montants restent synchronisés avec l'onglet Prix.",
+        "valo_embed": "Les régions et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key} et {price}.",
+        "cp_embed": "Le bloc Packs disponibles est entièrement modifiable. Variables : {points}, {price}, {official} et {pack_key}. Les prix restent synchronisés avec l'onglet CP.",
+    }
     embeds = []
     for key in sorted(k for k, value in data.items() if isinstance(value, dict)):
-        embeds.append({"key": key, "json": json.dumps(data[key], ensure_ascii=False, indent=2)})
+        embeds.append({
+            "key": key,
+            "json": json.dumps(data[key], ensure_ascii=False, indent=2),
+            "preview_context": json.dumps(preview_contexts.get(key, {}), ensure_ascii=False),
+            "help": embed_help.get(key, ""),
+        })
     return render_template_string(PANEL_EMBEDS_TEMPLATE, embeds=embeds)
 
 
