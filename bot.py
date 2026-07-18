@@ -4317,6 +4317,7 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
 .discord-author { margin-bottom: 5px; color: #f2f3f5; font-size: 15px; font-weight: 650; }
 .discord-bot-tag { margin-left: 6px; padding: 1px 4px; border-radius: 3px; color: white; font-size: 9px; background: #5865f2; vertical-align: 2px; }
 .discord-embed-card {
+  width: min(520px, 100%);
   max-width: 520px;
   overflow: hidden;
   border-left: 4px solid var(--pink);
@@ -4324,18 +4325,28 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   color: #dbdee1;
   background: #2b2d31;
 }
-.discord-embed-inner { padding: 13px 16px 14px; }
-.preview-author { margin-bottom: 8px; color: #f2f3f5; font-size: 13px; font-weight: 650; }
+.discord-embed-inner { display: flow-root; padding: 13px 16px 14px; }
+.preview-author { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #f2f3f5; font-size: 13px; font-weight: 650; }
+.preview-author-icon { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .preview-title { margin-bottom: 8px; color: #f2f3f5; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.preview-title[href] { color: #00a8fc; text-decoration: none; }
+.preview-title[href]:hover { text-decoration: underline; }
 .preview-description { color: #dbdee1; font-size: 14px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
-.preview-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 14px; }
+.preview-fields { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px 16px; margin-top: 14px; }
 .preview-field { min-width: 0; }
-.preview-field.wide { grid-column: 1 / -1; }
+.preview-field.wide { grid-column: span 12; }
 .preview-field-name { color: #f2f3f5; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
 .preview-field-value { margin-top: 2px; color: #dbdee1; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .preview-thumbnail { float: right; width: 80px; max-height: 80px; margin: 0 0 10px 14px; border-radius: 4px; object-fit: cover; }
 .preview-image { display: block; width: 100%; max-height: 320px; margin-top: 14px; border-radius: 4px; object-fit: contain; background: rgba(0,0,0,.12); }
-.preview-footer { margin-top: 13px; color: #b5bac1; font-size: 11px; overflow-wrap: anywhere; }
+.preview-footer { display: flex; align-items: center; gap: 7px; margin-top: 13px; color: #b5bac1; font-size: 11px; overflow-wrap: anywhere; }
+.preview-footer-icon { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.preview-custom-emoji { width: 1.35em; height: 1.35em; vertical-align: -.28em; object-fit: contain; }
+.preview-inline-code { padding: 1px 4px; border-radius: 3px; background: #1e1f22; font-family: Consolas, monospace; }
+.preview-link { color: #00a8fc; text-decoration: none; }
+.preview-link:hover { text-decoration: underline; }
+.preview-media-error { clear: both; margin-top: 12px; padding: 9px 11px; border: 1px dashed rgba(255,100,129,.35); border-radius: 5px; color: #ff9aaa; font-size: 11px; }
+.preview-image-key { display: inline-flex; align-items: center; margin: 0 0 10px; padding: 3px 7px; border-radius: 999px; color: #b5bac1; background: #1e1f22; font: 11px Consolas, monospace; }
 .preview-empty, .preview-error { padding: 18px; border: 1px dashed rgba(255,255,255,.12); border-radius: 10px; color: #b5bac1; text-align: center; }
 .preview-error { color: #ff9aaa; border-color: rgba(255,100,129,.28); background: rgba(255,100,129,.06); }
 @media (max-width: 950px) {
@@ -4348,13 +4359,14 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   .discord-message { grid-template-columns: 32px minmax(0, 1fr); gap: 9px; }
   .discord-avatar { width: 32px; height: 32px; font-size: 12px; }
   .preview-fields { grid-template-columns: minmax(0, 1fr); }
-  .preview-field { grid-column: 1 / -1; }
+  .preview-field, .preview-field.wide { grid-column: 1 / -1 !important; }
 }
 """
 
 PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
 <script>
 (() => {
+  const allForms = [...document.querySelectorAll(".embed-editor")];
   const make = (tag, className, value) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -4371,6 +4383,54 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     if (typeof value === "string" || typeof value === "number") return String(value);
     return value && (value.text || value.name) ? String(value.text || value.name) : "";
   };
+  const appendRichText = (parent, value) => {
+    const raw = textValue(value);
+    const tokenPattern = /(<a?:[A-Za-z0-9_]+:\d+>|\*\*[^*\n]+?\*\*|__[^_\n]+?__|`[^`\n]+?`|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s<]+)/g;
+    let cursor = 0;
+    for (const match of raw.matchAll(tokenPattern)) {
+      if (match.index > cursor) parent.appendChild(document.createTextNode(raw.slice(cursor, match.index)));
+      const token = match[0];
+      const emoji = token.match(/^<(a?):([A-Za-z0-9_]+):(\d+)>$/);
+      const markdownLink = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+      if (emoji) {
+        const image = make("img", "preview-custom-emoji");
+        image.src = `https://cdn.discordapp.com/emojis/${emoji[3]}.${emoji[1] ? "gif" : "webp"}?size=32&quality=lossless`;
+        image.alt = `:${emoji[2]}:`;
+        image.title = image.alt;
+        image.addEventListener("error", () => image.replaceWith(document.createTextNode(image.alt)));
+        parent.appendChild(image);
+      } else if (token.startsWith("**")) {
+        const strong = make("strong");
+        appendRichText(strong, token.slice(2, -2));
+        parent.appendChild(strong);
+      } else if (token.startsWith("__")) {
+        const underline = make("u");
+        appendRichText(underline, token.slice(2, -2));
+        parent.appendChild(underline);
+      } else if (token.startsWith("`")) {
+        parent.appendChild(make("code", "preview-inline-code", token.slice(1, -1)));
+      } else if (markdownLink) {
+        const link = make("a", "preview-link", markdownLink[1]);
+        link.href = markdownLink[2];
+        link.target = "_blank";
+        link.rel = "noreferrer noopener";
+        parent.appendChild(link);
+      } else {
+        const link = make("a", "preview-link", token);
+        link.href = token;
+        link.target = "_blank";
+        link.rel = "noreferrer noopener";
+        parent.appendChild(link);
+      }
+      cursor = match.index + token.length;
+    }
+    if (cursor < raw.length) parent.appendChild(document.createTextNode(raw.slice(cursor)));
+  };
+  const makeRich = (tag, className, value) => {
+    const node = make(tag, className);
+    appendRichText(node, value);
+    return node;
+  };
   const safeColor = value => {
     if (Array.isArray(value) && value.length >= 3) {
       const [red, green, blue] = value.map(part => Math.max(0, Math.min(255, Number(part) || 0)));
@@ -4381,22 +4441,74 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     return "#f767ae";
   };
   const appendImage = (parent, className, url, alt) => {
-    if (!/^https?:\/\//i.test(url || "")) return;
+    if (!url) return false;
+    if (!/^https?:\/\//i.test(url)) {
+      parent.appendChild(make("div", "preview-media-error", `${alt} : l'URL n'est pas valide.`));
+      return false;
+    }
     const img = make("img", className);
     img.src = url;
     img.alt = alt;
     img.loading = "lazy";
-    img.addEventListener("error", () => img.remove());
+    img.addEventListener("error", () => {
+      const error = make("div", "preview-media-error", `${alt} indisponible ou lien expiré.`);
+      img.replaceWith(error);
+    });
     parent.appendChild(img);
+    return true;
+  };
+  const parseFormJson = form => {
+    try {
+      return JSON.parse(form.querySelector('textarea[name="embed_json"]')?.value || "{}");
+    } catch (error) {
+      return null;
+    }
+  };
+  const sharedImages = () => {
+    const form = allForms.find(item => item.querySelector('input[name="embed_key"]')?.value === "images");
+    const data = form && parseFormJson(form);
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  };
+  const resolvedMainImage = data => {
+    const fallback = imageUrl(data.image_url || data.image);
+    const key = typeof data.image_key === "string" ? data.image_key.trim() : "";
+    return key ? imageUrl(sharedImages()[key]) || fallback : fallback;
+  };
+  const renderFields = (inner, rawFields, hasThumbnail) => {
+    if (!Array.isArray(rawFields) || !rawFields.length) return;
+    const fields = make("div", "preview-fields");
+    const appendField = (field, span) => {
+      const fieldNode = make("div", `preview-field${span === 12 ? " wide" : ""}`);
+      fieldNode.style.gridColumn = `span ${span}`;
+      fieldNode.appendChild(makeRich("div", "preview-field-name", textValue(field?.name) || "Champ"));
+      fieldNode.appendChild(makeRich("div", "preview-field-value", textValue(field?.value) || "—"));
+      fields.appendChild(fieldNode);
+    };
+    const inlineLimit = hasThumbnail ? 2 : 3;
+    let index = 0;
+    while (index < rawFields.length) {
+      const field = rawFields[index] || {};
+      if (field.inline !== true) {
+        appendField(field, 12);
+        index += 1;
+        continue;
+      }
+      const run = [];
+      while (index < rawFields.length && rawFields[index]?.inline === true && run.length < inlineLimit) {
+        run.push(rawFields[index]);
+        index += 1;
+      }
+      const span = 12 / run.length;
+      run.forEach(item => appendField(item, span));
+    }
+    inner.appendChild(fields);
   };
   const render = form => {
     const textarea = form.querySelector('textarea[name="embed_json"]');
     const preview = form.querySelector(".discord-preview");
     if (!textarea || !preview) return;
-    let data;
-    try {
-      data = JSON.parse(textarea.value || "{}");
-    } catch (error) {
+    const data = parseFormJson(form);
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
       preview.replaceChildren(make("div", "preview-error", "JSON invalide : corrige la syntaxe pour retrouver l'aperçu."));
       return;
     }
@@ -4414,26 +4526,49 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     const inner = make("div", "discord-embed-inner");
     const thumbnail = imageUrl(data.thumbnail_url || data.thumbnail);
     appendImage(inner, "preview-thumbnail", thumbnail, "Miniature de l'embed");
-    const author = textValue(data.author);
+    const author = textValue(data.author?.name ?? data.author);
+    const authorIcon = imageUrl(data.author?.icon_url || data.author_icon_url);
     const title = textValue(data.title);
     const description = textValue(data.description);
-    if (author) inner.appendChild(make("div", "preview-author", author));
-    if (title) inner.appendChild(make("div", "preview-title", title));
-    if (description) inner.appendChild(make("div", "preview-description", description));
-    if (Array.isArray(data.fields) && data.fields.length) {
-      const fields = make("div", "preview-fields");
-      data.fields.forEach(field => {
-        const fieldNode = make("div", `preview-field${field && field.inline === false ? " wide" : ""}`);
-        fieldNode.appendChild(make("div", "preview-field-name", textValue(field && field.name) || "Champ"));
-        fieldNode.appendChild(make("div", "preview-field-value", textValue(field && field.value) || "—"));
-        fields.appendChild(fieldNode);
-      });
-      inner.appendChild(fields);
+    if (author) {
+      const authorNode = make("div", "preview-author");
+      appendImage(authorNode, "preview-author-icon", authorIcon, "Icône de l'auteur");
+      const authorText = makeRich(data.author?.url ? "a" : "span", data.author?.url ? "preview-link" : "", author);
+      if (data.author?.url) {
+        authorText.href = data.author.url;
+        authorText.target = "_blank";
+        authorText.rel = "noreferrer noopener";
+      }
+      authorNode.appendChild(authorText);
+      inner.appendChild(authorNode);
     }
-    appendImage(inner, "preview-image", imageUrl(data.image_url || data.image), "Image de l'embed");
-    const footer = textValue(data.footer);
-    if (footer) inner.appendChild(make("div", "preview-footer", footer));
-    if (!author && !title && !description && !(Array.isArray(data.fields) && data.fields.length) && !thumbnail && !imageUrl(data.image_url || data.image) && !footer) {
+    if (title) {
+      const titleNode = makeRich(data.url ? "a" : "div", "preview-title", title);
+      if (data.url) {
+        titleNode.href = data.url;
+        titleNode.target = "_blank";
+        titleNode.rel = "noreferrer noopener";
+      }
+      inner.appendChild(titleNode);
+    }
+    if (description) inner.appendChild(makeRich("div", "preview-description", description));
+    renderFields(inner, data.fields, Boolean(thumbnail));
+    const mainImage = resolvedMainImage(data);
+    appendImage(inner, "preview-image", mainImage, "Image de l'embed");
+    const footer = textValue(data.footer?.text ?? data.footer);
+    const footerIcon = imageUrl(data.footer?.icon_url || data.footer_icon_url);
+    let timestamp = "";
+    if (data.timestamp) {
+      const parsed = new Date(data.timestamp);
+      if (!Number.isNaN(parsed.getTime())) timestamp = parsed.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+    }
+    if (footer || timestamp) {
+      const footerNode = make("div", "preview-footer");
+      appendImage(footerNode, "preview-footer-icon", footerIcon, "Icône du pied de page");
+      footerNode.appendChild(make("span", "", [footer, timestamp].filter(Boolean).join(" • ")));
+      inner.appendChild(footerNode);
+    }
+    if (!author && !title && !description && !(Array.isArray(data.fields) && data.fields.length) && !thumbnail && !mainImage && !footer && !timestamp) {
       inner.appendChild(make("div", "preview-empty", "Cet embed ne contient encore aucun élément visible."));
     }
     card.appendChild(inner);
@@ -4441,10 +4576,14 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     message.appendChild(content);
     preview.replaceChildren(message);
   };
-  document.querySelectorAll(".embed-editor").forEach(form => {
+  allForms.forEach(form => {
     const textarea = form.querySelector('textarea[name="embed_json"]');
     render(form);
-    if (textarea) textarea.addEventListener("input", () => render(form));
+    if (textarea) textarea.addEventListener("input", () => {
+      const key = form.querySelector('input[name="embed_key"]')?.value;
+      if (key === "images") allForms.forEach(render);
+      else render(form);
+    });
   });
 })();
 </script>
@@ -5703,4 +5842,3 @@ if __name__ == "__main__":
     # boutons inactifs après un redémarrage du service.
     start_discord_background()
     run_web()
-
