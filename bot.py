@@ -1105,10 +1105,10 @@ VALO_REGIONS = {
     "TURQUIE": {
         "label": "Turquie", "emoji": "🇹🇷",
         "packs": {
-            "2925": {"label": "2925 VP", "default_price": 15, "original_price": 30},
-            "4325": {"label": "4325 VP", "default_price": 20, "original_price": 40},
-            "8900": {"label": "8900 VP", "default_price": 45, "original_price": 80},
-            "11000": {"label": "11000 VP", "default_price": 55, "original_price": 100},
+            "2925": {"label": "2925 VP", "default_price": 15, "original_price": 15.75},
+            "4325": {"label": "4325 VP", "default_price": 20, "original_price": 22.80},
+            "8900": {"label": "8900 VP", "default_price": 45, "original_price": 45.41},
+            "11000": {"label": "11000 VP", "default_price": 55, "original_price": 57.45},
         }
     }
 }
@@ -1172,10 +1172,17 @@ def get_pricing_config():
             packs[pack_key] = valid_price(saved_packs.get(pack_key, saved_packs.get(legacy_key)), fallback)
 
     saved_valorant_original = saved.get("valorant_original", {}) if isinstance(saved.get("valorant_original"), dict) else {}
+    obsolete_turkish_originals = {"2925": 30, "4325": 40, "8900": 80, "11000": 100}
     for region_key, packs in prices["valorant_original"].items():
         saved_packs = saved_valorant_original.get(region_key, {}) if isinstance(saved_valorant_original.get(region_key), dict) else {}
         for pack_key, fallback in list(packs.items()):
-            packs[pack_key] = valid_price(saved_packs.get(pack_key), fallback)
+            saved_price = saved_packs.get(pack_key)
+            if (
+                region_key == "TURQUIE"
+                and valid_price(saved_price, fallback) == obsolete_turkish_originals.get(pack_key)
+            ):
+                saved_price = None
+            packs[pack_key] = valid_price(saved_price, fallback)
     return prices
 
 
