@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from flask import Flask, request, session, redirect, url_for, render_template_string, flash
-from threading import Thread
+from threading import Thread, Lock
 import os
 import json
 import asyncio
@@ -43,6 +43,7 @@ class PinkGiftBot(commands.Bot):
         persistent_views = (
             OrderLauncherView(),
             ValoOrderLauncherView(),
+            CPOrderLauncherView(),
             BalanceView(),
             OpenTicketView(),
             ValoTicketButton(),
@@ -60,6 +61,7 @@ BOT_LOOP = None
 DISCORD_STATE = "démarrage"
 DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
+CP_INVENTORY_LOCK = Lock()
 INVITE_USAGE_CACHE = {}
 INVITE_TRACKING_LOCKS = {}
 RECENTLY_DELETED_INVITES = {}
@@ -1031,6 +1033,7 @@ PURGE_ROLE_ID = 1517495087825817691
 NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
 VALO_TICKET_CATEGORY_ID = 1519913523440779404
+CP_TICKET_CATEGORY_ID = 1528115477501706300
 BALANCE_CATEGORY_ID = int(os.environ.get("BALANCE_CATEGORY_ID", TICKET_CATEGORY_ID))
 CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
 EMBED_CONFIG_URL = os.environ.get("EMBED_CONFIG_URL", "https://raw.githubusercontent.com/ynnlz/pinky-software/main/config_embeds.json")
@@ -1077,6 +1080,15 @@ UBEREATS_PACKS = {
     "pack_350": {"default_price": 350, "drop": "501–680"},
 }
 NITRO_PRICE = 8
+CP_PACKS = {
+    "2400": {"points": 2400, "default_price": 12, "default_cost": 5, "official_price": 19.99},
+    "4800": {"points": 4800, "default_price": 20, "default_cost": 8, "official_price": 39.98},
+    "9500": {"points": 9500, "default_price": 35, "default_cost": 15, "official_price": 74.99},
+    "14400": {"points": 14400, "default_price": 50, "default_cost": 22, "official_price": 113.92},
+    "21000": {"points": 21000, "default_price": 70, "default_cost": 31, "official_price": 165.94},
+    "30000": {"points": 30000, "default_price": 95, "default_cost": 42, "official_price": 234.95},
+    "40800": {"points": 40800, "default_price": 125, "default_cost": 55, "official_price": 316.94},
+}
 VALO_REGIONS = {
     "EUROPE": {
         "label": "Europe", "emoji": "🇪🇺",
@@ -1114,6 +1126,7 @@ def default_pricing_config():
         "gift_cards": {str(amount): round(amount * 0.70, 2) for amount in GIFT_CARD_AMOUNTS},
         "uber_eats": {pack_key: float(pack["default_price"]) for pack_key, pack in UBEREATS_PACKS.items()},
         "discord_nitro": float(NITRO_PRICE),
+        "cp": {pack_key: float(pack["default_price"]) for pack_key, pack in CP_PACKS.items()},
         "valorant": {
             region_key: {pack_key: float(pack["default_price"]) for pack_key, pack in region["packs"].items()}
             for region_key, region in VALO_REGIONS.items()
@@ -1139,6 +1152,10 @@ def get_pricing_config():
         prices["uber_eats"][pack_key] = valid_price(saved_uber.get(pack_key, saved_uber.get(legacy_key)), fallback)
 
     prices["discord_nitro"] = valid_price(saved.get("discord_nitro"), prices["discord_nitro"])
+
+    saved_cp = saved.get("cp", {}) if isinstance(saved.get("cp"), dict) else {}
+    for pack_key, fallback in list(prices["cp"].items()):
+        prices["cp"][pack_key] = valid_price(saved_cp.get(pack_key), fallback)
 
     saved_valorant = saved.get("valorant", {}) if isinstance(saved.get("valorant"), dict) else {}
     for region_key, packs in prices["valorant"].items():
@@ -1175,6 +1192,7 @@ def default_purchase_cost_config():
         },
         "uber_eats": {pack_key: 0.0 for pack_key in UBEREATS_PACKS},
         "discord_nitro": 0.0,
+        "cp": {pack_key: float(pack["default_cost"]) for pack_key, pack in CP_PACKS.items()},
         "valorant": {
             region_key: {pack_key: 0.0 for pack_key in region["packs"]}
             for region_key, region in VALO_REGIONS.items()
@@ -1200,6 +1218,10 @@ def get_purchase_cost_config():
 
     costs["discord_nitro"] = valid_purchase_cost(saved.get("discord_nitro"), 0)
 
+    saved_cp = saved.get("cp", {}) if isinstance(saved.get("cp"), dict) else {}
+    for pack_key, fallback in list(costs["cp"].items()):
+        costs["cp"][pack_key] = valid_purchase_cost(saved_cp.get(pack_key), fallback)
+
     saved_valorant = saved.get("valorant", {}) if isinstance(saved.get("valorant"), dict) else {}
     for region_key, packs in costs["valorant"].items():
         saved_packs = saved_valorant.get(region_key, {}) if isinstance(saved_valorant.get(region_key), dict) else {}
@@ -1210,6 +1232,84 @@ def get_purchase_cost_config():
 
 def save_order_purchase_cost(message_id, cost):
     set_panel_setting(f"order_cost:{int(message_id)}", {"cost": valid_purchase_cost(cost), "saved_at": utc_now().isoformat()})
+
+
+def normalize_cp_inventory_code(value):
+    return str(value or "").strip()[:500]
+
+
+def get_cp_inventory():
+    saved = get_panel_setting("cp_inventory", {}) or {}
+    if not isinstance(saved, dict):
+        saved = {}
+    inventory = {pack_key: [] for pack_key in CP_PACKS}
+    for pack_key in inventory:
+        raw_codes = saved.get(pack_key, [])
+        if not isinstance(raw_codes, list):
+            continue
+        seen = set()
+        for raw_code in raw_codes:
+            code = normalize_cp_inventory_code(raw_code)
+            if code and code not in seen:
+                inventory[pack_key].append(code)
+                seen.add(code)
+    return inventory
+
+
+def save_cp_inventory(inventory):
+    cleaned = {pack_key: [] for pack_key in CP_PACKS}
+    for pack_key in cleaned:
+        seen = set()
+        for raw_code in inventory.get(pack_key, []) if isinstance(inventory, dict) else []:
+            code = normalize_cp_inventory_code(raw_code)
+            if code and code not in seen:
+                cleaned[pack_key].append(code)
+                seen.add(code)
+    set_panel_setting("cp_inventory", cleaned)
+
+
+def cp_stock_counts():
+    inventory = get_cp_inventory()
+    return {pack_key: len(codes) for pack_key, codes in inventory.items()}
+
+
+def reserve_cp_code(pack_key):
+    if pack_key not in CP_PACKS:
+        return None
+    with CP_INVENTORY_LOCK:
+        inventory = get_cp_inventory()
+        if not inventory[pack_key]:
+            return None
+        code = inventory[pack_key].pop(0)
+        save_cp_inventory(inventory)
+        return code
+
+
+def restore_cp_code(pack_key, code):
+    code = normalize_cp_inventory_code(code)
+    if pack_key not in CP_PACKS or not code:
+        return
+    with CP_INVENTORY_LOCK:
+        inventory = get_cp_inventory()
+        if code not in inventory[pack_key]:
+            inventory[pack_key].insert(0, code)
+            save_cp_inventory(inventory)
+
+
+def mark_order_delivered(order_id, code):
+    values = {
+        "code": normalize_cp_inventory_code(code),
+        "status": "done",
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    if USE_SUPABASE:
+        supabase_request("PATCH", f"orders?id=eq.{int(order_id)}", values)
+        return
+    with db_connect() as db:
+        db.execute(
+            "UPDATE orders SET code=?, status='done', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (values["code"], int(order_id)),
+        )
 
 DEFAULT_EMBED_DATA = {
     "images": {
@@ -1457,7 +1557,7 @@ DEFAULT_EMBED_DATA.update({
         "fields": [
             {
                 "name": "🎫 Tickets",
-                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!maj_embed : met à jour tous les embeds publics du serveur sans ping.\n!close_button : ajoute un bouton Close persistant.\n!faq : publie la FAQ PinkGift.",
+                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!cp : publie les COD Points avec commande et livraison automatiques.\n!maj_embed : met à jour tous les embeds publics du serveur sans ping.\n!close_button : ajoute un bouton Close persistant.\n!faq : publie la FAQ PinkGift.",
                 "inline": False
             },
             {
@@ -1658,6 +1758,36 @@ DEFAULT_EMBED_DATA.update({
         "title": "🏆 Classement des invitations",
         "color_rgb": [255, 192, 203],
         "footer": "PinkGift — Invitations"
+    }
+})
+
+DEFAULT_EMBED_DATA.update({
+    "cp_embed": {
+        "title": "🪙 CALL OF DUTY POINTS — PINKGIFT",
+        "description": [
+            "Commande tes **COD Points** directement avec ton solde PinkGift.",
+            "",
+            "✅ Livraison automatique dans un ticket privé",
+            "⚡ Débit uniquement si le pack est disponible",
+            "💳 Recharge ton solde avec le panneau `/solde`"
+        ],
+        "color_rgb": [255, 103, 174],
+        "footer": "PinkGift — COD Points"
+    },
+    "cp_delivery_embed": {
+        "title": "✅ COD Points livrés automatiquement",
+        "description": [
+            "Merci pour ta commande {user} !",
+            "Ton code est disponible ci-dessous. Conserve-le jusqu'à son activation."
+        ],
+        "fields": [
+            {"name": "Pack", "value": "**{points} CP**", "inline": True},
+            {"name": "Prix débité", "value": "**{paid} €**", "inline": True},
+            {"name": "Solde restant", "value": "**{balance} €**", "inline": True},
+            {"name": "Code COD Points", "value": "{code}", "inline": False}
+        ],
+        "color_rgb": [46, 204, 113],
+        "footer": "PinkGift — Livraison CP automatique"
     }
 })
 
@@ -1947,6 +2077,13 @@ def infer_order_purchase_cost(order, costs=None):
             for pack_key, pack in region["packs"].items():
                 if pack["label"].upper() in service_upper:
                     return costs["valorant"][region_key][pack_key]
+        return 0.0
+
+    if service_upper.startswith("COD POINTS") or service_upper.startswith("CALL OF DUTY POINTS"):
+        received = f"{order.get('received_label') or ''} {service}"
+        for pack_key, pack in CP_PACKS.items():
+            if re.search(rf"(?<!\d){pack['points']}(?!\d)", received.replace(" ", "")):
+                return costs["cp"][pack_key]
         return 0.0
 
     product_key = next(
@@ -2408,6 +2545,181 @@ class ValoOrderLauncherView(discord.ui.View):
         await interaction.edit_original_response(
             content="Choisis d'abord ta région Valorant :",
             view=ValoRegionView()
+        )
+
+
+def cp_pack_is_available(pack_key):
+    return cp_stock_counts().get(str(pack_key), 0) > 0
+
+
+async def create_cp_order(interaction, pack_key):
+    guild = interaction.guild
+    user = interaction.user
+    pack_key = str(pack_key)
+    pack = CP_PACKS.get(pack_key)
+    if guild is None or pack is None:
+        await interaction.followup.send("❌ Pack COD Points invalide.", ephemeral=True)
+        return
+
+    lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
+    async with lock:
+        pricing = get_pricing_config()
+        purchase_costs = get_purchase_cost_config()
+        price = pricing["cp"][pack_key]
+        purchase_cost = purchase_costs["cp"][pack_key]
+        if not cp_pack_is_available(pack_key):
+            await interaction.followup.send(f"{STOCK_KO_EMOJI} Le pack **{pack['points']:,} CP** est en rupture.", ephemeral=True)
+            return
+        current_balance = get_balance(guild.id, user.id)
+        if current_balance < price:
+            await interaction.followup.send(
+                f"❌ Solde insuffisant. Il faut **{format_price(price)} €**, ton solde est de **{current_balance:.2f} €**. Recharge-le avec `/solde`.",
+                ephemeral=True,
+            )
+            return
+
+        category = guild.get_channel(CP_TICKET_CATEGORY_ID)
+        if not isinstance(category, discord.CategoryChannel):
+            await interaction.followup.send("❌ La catégorie des tickets CP est introuvable ou mal configurée.", ephemeral=True)
+            return
+
+        ticket_channel = next(
+            (
+                channel for channel in category.text_channels
+                if channel.topic == f"pinkgift-cp-owner:{user.id}" and not channel.name.startswith("closed-")
+            ),
+            None,
+        )
+        if ticket_channel is None:
+            staff_role = guild.get_role(STAFF_ROLE_ID)
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            }
+            me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+            if me:
+                overwrites[me] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            try:
+                ticket_channel = await guild.create_text_channel(
+                    name=f"🪙・cp-{user.display_name}"[:95],
+                    category=category,
+                    topic=f"pinkgift-cp-owner:{user.id}",
+                    overwrites=overwrites,
+                    reason=f"Commande COD Points de {user}",
+                )
+            except discord.HTTPException as error:
+                print(f"Erreur création ticket CP pour {user}: {error}")
+                await interaction.followup.send("⏳ Discord ne peut pas créer le ticket CP actuellement.", ephemeral=True)
+                return
+
+        code = reserve_cp_code(pack_key)
+        if not code:
+            await interaction.followup.send(f"{STOCK_KO_EMOJI} Ce pack vient de passer en rupture. Aucun montant n'a été débité.", ephemeral=True)
+            return
+        try:
+            remaining_balance = change_balance(guild.id, user.id, -price, bot.user.id if bot.user else 0)
+        except Exception as error:
+            restore_cp_code(pack_key, code)
+            print(f"Erreur débit CP de {user}: {error}")
+            await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
+            return
+
+        displayed_code = code.replace("`", "ˋ")
+        code_block = f"```\n{displayed_code}\n```"
+        embed = build_json_embed("cp_delivery_embed", {
+            "user": user.mention,
+            "points": f"{pack['points']:,}".replace(",", " "),
+            "paid": format_price(price),
+            "balance": f"{remaining_balance:.2f}",
+            "code": code_block,
+        })
+        try:
+            order_message = await ticket_channel.send(
+                content=user.mention,
+                embed=embed,
+                view=CloseTicketView(user.id),
+            )
+        except Exception as error:
+            restore_cp_code(pack_key, code)
+            try:
+                change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
+            except Exception as refund_error:
+                print(f"ERREUR REMBOURSEMENT CP {user}: {refund_error}")
+            print(f"Erreur livraison CP pour {user}: {error}")
+            await interaction.followup.send("❌ La livraison a échoué. Le montant a été recrédité et le code remis en stock.", ephemeral=True)
+            return
+
+        service = f"COD Points {pack['points']} CP"
+        try:
+            order_id = save_order(
+                guild.id,
+                ticket_channel.id,
+                order_message.id,
+                user.id,
+                service,
+                pack["points"],
+                price,
+                user.name,
+                f"{pack['points']} CP",
+            )
+            save_order_purchase_cost(order_message.id, purchase_cost)
+            mark_order_delivered(order_id, code)
+        except Exception as error:
+            print(f"Erreur sauvegarde commande CP déjà livrée: {error}")
+        try:
+            record_referral_purchase(guild.id, user.id, order_message.id, price, purchase_cost, service)
+        except Exception as error:
+            print(f"Erreur calcul parrainage CP de {user}: {error}")
+        await interaction.followup.send(
+            f"✅ **{pack['points']:,} CP** livrés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.".replace(",", " "),
+            ephemeral=True,
+        )
+
+
+class CPPackSelect(discord.ui.Select):
+    def __init__(self):
+        prices = get_pricing_config()["cp"]
+        stock = cp_stock_counts()
+        options = []
+        for pack_key, pack in CP_PACKS.items():
+            available = stock.get(pack_key, 0) > 0
+            points_label = f"{pack['points']:,}".replace(",", " ")
+            options.append(discord.SelectOption(
+                label=f"{points_label} CP — {format_price(prices[pack_key])} €",
+                value=pack_key,
+                emoji=stock_partial_emoji(available),
+                description=stock_label(available),
+            ))
+        super().__init__(placeholder="Choisis ton pack de COD Points", options=options, custom_id="pinkgift_cp_pack")
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_cp_order(interaction, self.values[0])
+
+
+class CPPackView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(CPPackSelect())
+
+
+class CPOrderLauncherView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Commander des COD Points",
+        emoji="🪙",
+        style=discord.ButtonStyle.success,
+        custom_id="pinkgift_start_cp_order",
+    )
+    async def start_cp_order(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.edit_original_response(
+            content="Choisis ton pack. Le solde sera débité uniquement si un code est disponible :",
+            view=CPPackView(),
         )
 
 
@@ -3575,6 +3887,24 @@ def build_valo_embed():
     embed.set_footer(text="PinkGift — Valorant Points")
     return embed
 
+
+def build_cp_embed():
+    embed = build_json_embed("cp_embed")
+    prices = get_pricing_config()["cp"]
+    stock = cp_stock_counts()
+    lines = []
+    for pack_key, pack in CP_PACKS.items():
+        points = f"{pack['points']:,}".replace(",", " ")
+        official = f"{pack['official_price']:.2f}".replace(".", ",")
+        available = stock.get(pack_key, 0) > 0
+        status = STOCK_OK_EMOJI if available else STOCK_KO_EMOJI
+        lines.append(
+            f"{status} **{points} CP** — **{format_price(prices[pack_key])} €** "
+            f"· officiel ≈ ~~{official} €~~"
+        )
+    embed.add_field(name="🪙 Packs disponibles", value="\n".join(lines), inline=False)
+    return embed
+
 async def update_last_embed(ctx, embed_builder, title_keywords, view=None):
     embed = embed_builder()
     updated_count = 0
@@ -3607,6 +3937,7 @@ def public_embed_builders():
     return [
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
+        (["CALL OF DUTY POINTS", "COD POINTS"], build_cp_embed, CPOrderLauncherView()),
         (["Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
@@ -3621,6 +3952,7 @@ async def repair_public_launcher_views():
     launcher_rules = (
         (("commandes pinkgift", "carte cadeaux"), OrderLauncherView),
         (("valorant", "valorant points"), ValoOrderLauncherView),
+        (("call of duty points", "cod points"), CPOrderLauncherView),
     )
 
     for guild in bot.guilds:
@@ -3681,10 +4013,11 @@ async def update_public_embeds_without_ping(ctx):
 
 
 async def refresh_price_embeds_from_panel():
-    """Actualise les panneaux /tarifs et /valo déjà publiés, sans envoyer de message."""
+    """Actualise les panneaux /tarifs, /valo et /cp déjà publiés, sans envoyer de message."""
     rules = (
         (("commandes pinkgift", "carte cadeaux"), build_tarifs_embed, OrderLauncherView),
         (("valorant", "valorant points"), build_valo_embed, ValoOrderLauncherView),
+        (("call of duty points", "cod points"), build_cp_embed, CPOrderLauncherView),
     )
     updated = 0
     for guild in bot.guilds:
@@ -3772,6 +4105,14 @@ async def send_tarifs(ctx):
 async def cmd_valo(ctx):
     embed = build_valo_embed()
     await ctx.send(content="||@everyone||", embed=embed, view=ValoOrderLauncherView())
+
+
+@bot.hybrid_command(name="cp", description="Publier le panneau des Call of Duty Points")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_cp(ctx):
+    embed = build_cp_embed()
+    await ctx.send(content="||@everyone||", embed=embed, view=CPOrderLauncherView())
 
 @bot.hybrid_command(name="purge_all", description="Supprimer tous les messages du salon")
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -4061,7 +4402,7 @@ PANEL_TEMPLATE = """
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Panel</title>
 <style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}nav{display:flex;gap:8px;margin-bottom:18px}.tab{color:#e8dce3;text-decoration:none;padding:10px 14px;border:1px solid #4c3543}.tab.active{background:#e8509a;color:white;border-color:#e8509a}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}input,select{background:#0e0d11;color:white;border:1px solid #5a3a4d;padding:9px;min-width:160px}select{cursor:pointer}.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 16px 0}.filters label{color:#ff9dce;font-weight:bold}button{background:#e8509a;color:white;border:0;padding:10px 13px;cursor:pointer}.delete{background:#9d294b;margin-left:5px}.done{color:#74d99f}.pending{color:#ffd27b}.muted{color:#aa98a4;font-size:12px}@media(max-width:800px){table,thead,tbody,tr,td{display:block}thead{display:none}tr{padding:12px;border-bottom:1px solid #332630}td{border:0;padding:6px}}</style></head><body>
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
-<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_finances') }}">Statistiques</a><a class="tab" href="{{ url_for('panel_referrals') }}">Parrainage</a><a class="tab" href="{{ url_for('panel_prices') }}">Prix</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
+<nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab" href="{{ url_for('panel_cp') }}">CP</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_finances') }}">Statistiques</a><a class="tab" href="{{ url_for('panel_referrals') }}">Parrainage</a><a class="tab" href="{{ url_for('panel_prices') }}">Prix</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
 {% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
 {% else %}{% if tab == 'orders' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="orders"><label for="service-filter">Service</label><select id="service-filter" name="service" onchange="this.form.submit()"><option value="">Tous les services</option>{% for service in service_options %}<option value="{{ service }}" {% if service == service_filter %}selected{% endif %}>{{ service }}</option>{% endfor %}</select><label for="amount-filter">Montant</label><select id="amount-filter" name="amount" onchange="this.form.submit()"><option value="">Tous les montants</option>{% for amount in amount_options %}<option value="{{ amount }}" {% if amount == amount_filter %}selected{% endif %}>{{ amount }}</option>{% endfor %}</select></form>{% elif tab == 'valorant' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="valorant"><label for="region-filter">Région</label><select id="region-filter" name="region" onchange="this.form.submit()"><option value="">Toutes les régions</option>{% for region in region_options %}<option value="{{ region }}" {% if region == region_filter %}selected{% endif %}>{{ region }}</option>{% endfor %}</select><label for="pack-filter">Pack VP</label><select id="pack-filter" name="pack" onchange="this.form.submit()"><option value="">Tous les packs</option>{% for pack in pack_options %}<option value="{{ pack }}" {% if pack == pack_filter %}selected{% endif %}>{{ pack }}</option>{% endfor %}</select></form>{% endif %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
@@ -4638,6 +4979,9 @@ LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><
 PANEL_ACCESS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Accès panel</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630;vertical-align:top}th{color:#ff9dce}.muted{color:#aa98a4;font-size:12px}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:11px;min-width:260px}button{background:#e8509a;color:#fff;border:0;padding:12px 14px;cursor:pointer}a{color:#ff9dce}.ua{max-width:520px;word-break:break-word}</style></head><body><header><h1>PinkGift — Accès panel</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}{% if locked %}<form method="get"><h2>Accès protégé</h2><p class="muted">Entre la clé privée configurée dans PANEL_AUDIT_KEY.</p><input type="password" name="key" placeholder="Clé privée" required><button type="submit">Ouvrir</button></form>{% else %}<table><thead><tr><th>Heure</th><th>IP</th><th>Mode</th><th>Page</th><th>Méthode</th><th>User-agent</th></tr></thead><tbody>{% for log in logs %}<tr><td>{{ log.created_at }}</td><td>{{ log.ip }}</td><td>{{ log.device }}</td><td>{{ log.path }}</td><td>{{ log.method }}</td><td class="ua muted">{{ log.user_agent }}</td></tr>{% else %}<tr><td colspan="6">Aucun accès enregistré.</td></tr>{% endfor %}</tbody></table>{% endif %}</main></body></html>"""
 
 
+PANEL_CP_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — COD Points</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1400px}h1{color:#ff8fc8}.card{background:#171419;border:1px solid #332630;padding:16px;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field span,th{color:#ff9dce;font-weight:bold}.field small,.muted{color:#aa98a4}input,select,textarea,button{box-sizing:border-box;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px}textarea{width:100%;min-height:150px;font-family:Consolas,monospace}button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}.danger{background:#9d294b}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419;margin:14px 0 24px}th,td{text-align:left;padding:10px;border-bottom:1px solid #332630;vertical-align:top}code{overflow-wrap:anywhere;color:#ffd2e8}.positive{color:#74d99f;font-weight:bold}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — COD Points</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Les prix et coûts sont appliqués immédiatement. Une commande est acceptée uniquement lorsqu'un code du pack est en stock ; le solde est alors débité et le code livré automatiquement dans le ticket client.</p><form method="post" class="card"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="save_settings"><h2>Prix et coûts des packs</h2><div class="grid">{% for item in packs %}<section class="card"><h3>{{ item.points_label }} CP</h3><label class="field"><span>Prix de vente</span><input type="number" name="cp_price_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Débit du solde client</small></label><label class="field"><span>Coût d'achat</span><input type="number" name="cp_cost_{{ item.key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required><small>Utilisé pour le bénéfice</small></label><p class="muted">Officiel ≈ {{ item.official }} € · Stock : <strong>{{ item.stock }}</strong></p></section>{% endfor %}</div><button type="submit">Enregistrer les prix et coûts</button></form><section class="card"><h2>Ajouter des codes au stock</h2><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="add_codes"><div class="grid"><label class="field"><span>Pack</span><select name="pack_key" required>{% for item in packs %}<option value="{{ item.key }}">{{ item.points_label }} CP — {{ item.stock }} en stock</option>{% endfor %}</select></label><label class="field"><span>Codes à ajouter</span><textarea name="codes" placeholder="Un code par ligne" required></textarea><small>Les doublons sont ignorés.</small></label></div><button type="submit">Ajouter au stock</button></form></section><h2>Inventaire actuel</h2>{% for item in packs %}<details class="card"><summary><strong>{{ item.points_label }} CP</strong> — {{ item.stock }} code(s)</summary>{% if item.codes %}<table><thead><tr><th>Code</th><th>Action</th></tr></thead><tbody>{% for code in item.codes %}<tr><td><code>{{ code }}</code></td><td><form method="post" onsubmit="return confirm('Supprimer ce code du stock ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="delete_code"><input type="hidden" name="pack_key" value="{{ item.key }}"><input type="hidden" name="code" value="{{ code }}"><button class="danger" type="submit">Supprimer</button></form></td></tr>{% endfor %}</tbody></table><form method="post" onsubmit="return confirm('Vider tout le stock de ce pack ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="clear_pack"><input type="hidden" name="pack_key" value="{{ item.key }}"><button class="danger" type="submit">Vider ce pack</button></form>{% else %}<p class="muted">Aucun code disponible.</p>{% endif %}</details>{% endfor %}<h2>Dernières commandes CP</h2><table><thead><tr><th>Client</th><th>Pack</th><th>Payé</th><th>État</th><th>Date</th></tr></thead><tbody>{% for order in orders %}<tr><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.received_label }}</td><td>{{ order.paid }} €</td><td class="{{ 'positive' if order.status == 'done' else '' }}">{{ order.status }}</td><td>{{ order.updated_at or order.created_at }}</td></tr>{% else %}<tr><td colspan="5">Aucune commande CP.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
+
+
 # Thème commun du panel. Les templates historiques gardent leur structure et
 # leurs formulaires, puis ces règles unifient toute l'interface en un seul
 # design responsive. Cela évite aussi de dupliquer les futures retouches CSS.
@@ -4971,6 +5315,7 @@ def apply_panel_theme(template):
 
 PANEL_TEMPLATE = apply_panel_theme(PANEL_TEMPLATE)
 PANEL_STOCK_TEMPLATE = apply_panel_theme(PANEL_STOCK_TEMPLATE)
+PANEL_CP_TEMPLATE = apply_panel_theme(PANEL_CP_TEMPLATE)
 PANEL_PRICES_TEMPLATE = apply_panel_theme(PANEL_PRICES_TEMPLATE)
 PANEL_FINANCES_TEMPLATE = apply_panel_theme(PANEL_FINANCES_TEMPLATE)
 PANEL_PRICES_COSTS_TEMPLATE = apply_panel_theme(PANEL_PRICES_COSTS_TEMPLATE)
@@ -5310,6 +5655,104 @@ def panel_finances():
     )
 
 
+@app.route("/panel/cp", methods=["GET", "POST"])
+@panel_required
+def panel_cp():
+    if request.method == "POST":
+        if not valid_panel_csrf():
+            flash("Session invalide. Recharge la page.")
+            return redirect(url_for("panel_cp"))
+        try:
+            action = request.form.get("action", "")
+            if action == "save_settings":
+                pricing = get_pricing_config()
+                purchase_costs = get_purchase_cost_config()
+                for pack_key in CP_PACKS:
+                    pricing["cp"][pack_key] = panel_price_value(f"cp_price_{pack_key}")
+                    purchase_costs["cp"][pack_key] = panel_cost_value(f"cp_cost_{pack_key}")
+                set_panel_setting("pricing", pricing)
+                set_panel_setting("purchase_costs", purchase_costs)
+                if BOT_LOOP is not None:
+                    future = asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
+                    future.add_done_callback(log_price_embed_refresh)
+                flash("Prix et coûts CP enregistrés. Le débit, le bénéfice et l'embed /cp sont synchronisés sans redémarrage.")
+            elif action == "add_codes":
+                pack_key = request.form.get("pack_key", "")
+                if pack_key not in CP_PACKS:
+                    raise ValueError("Pack CP invalide")
+                submitted = [normalize_cp_inventory_code(line) for line in request.form.get("codes", "").splitlines()]
+                submitted = [code for code in submitted if code]
+                if not submitted:
+                    raise ValueError("Ajoute au moins un code")
+                with CP_INVENTORY_LOCK:
+                    inventory = get_cp_inventory()
+                    before = len(inventory[pack_key])
+                    known = set(inventory[pack_key])
+                    for code in submitted:
+                        if code not in known:
+                            inventory[pack_key].append(code)
+                            known.add(code)
+                    save_cp_inventory(inventory)
+                    added = len(inventory[pack_key]) - before
+                flash(f"{added} code(s) ajouté(s) au pack {CP_PACKS[pack_key]['points']} CP.")
+            elif action == "delete_code":
+                pack_key = request.form.get("pack_key", "")
+                code = normalize_cp_inventory_code(request.form.get("code"))
+                if pack_key not in CP_PACKS or not code:
+                    raise ValueError("Code CP invalide")
+                with CP_INVENTORY_LOCK:
+                    inventory = get_cp_inventory()
+                    if code not in inventory[pack_key]:
+                        raise ValueError("Ce code n'est plus en stock")
+                    inventory[pack_key].remove(code)
+                    save_cp_inventory(inventory)
+                flash("Code supprimé du stock CP.")
+            elif action == "clear_pack":
+                pack_key = request.form.get("pack_key", "")
+                if pack_key not in CP_PACKS:
+                    raise ValueError("Pack CP invalide")
+                with CP_INVENTORY_LOCK:
+                    inventory = get_cp_inventory()
+                    removed = len(inventory[pack_key])
+                    inventory[pack_key] = []
+                    save_cp_inventory(inventory)
+                flash(f"Stock du pack {CP_PACKS[pack_key]['points']} CP vidé ({removed} code(s) supprimé(s)).")
+            else:
+                raise ValueError("Action CP inconnue")
+            if action in {"add_codes", "delete_code", "clear_pack"} and BOT_LOOP is not None:
+                future = asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
+                future.add_done_callback(log_price_embed_refresh)
+        except Exception as error:
+            print(f"Erreur panel CP : {error}")
+            flash(f"Modification CP impossible : {error}")
+        return redirect(url_for("panel_cp"))
+
+    pricing = get_pricing_config()["cp"]
+    purchase_costs = get_purchase_cost_config()["cp"]
+    inventory = get_cp_inventory()
+    packs = []
+    for pack_key, pack in CP_PACKS.items():
+        codes = inventory.get(pack_key, [])
+        packs.append({
+            "key": pack_key,
+            "points_label": f"{pack['points']:,}".replace(",", " "),
+            "price": format_price(pricing[pack_key]),
+            "cost": format_price(purchase_costs[pack_key]),
+            "official": f"{pack['official_price']:.2f}".replace(".", ","),
+            "stock": len(codes),
+            "codes": codes,
+        })
+    try:
+        orders = [
+            order for order in load_orders_for_stats(limit=1000)
+            if str(order.get("service") or "").upper().startswith("COD POINTS")
+        ][:200]
+    except Exception as error:
+        print(f"Erreur historique CP panel : {error}")
+        orders = []
+    return render_template_string(PANEL_CP_TEMPLATE, packs=packs, orders=orders)
+
+
 @app.route("/panel/prix", methods=["GET", "POST"])
 @panel_required
 def panel_prices():
@@ -5322,6 +5765,7 @@ def panel_prices():
                 "gift_cards": {str(amount): panel_price_value(f"gift_{amount}") for amount in GIFT_CARD_AMOUNTS},
                 "uber_eats": {pack_key: panel_price_value(f"uber_{pack_key}") for pack_key in UBEREATS_PACKS},
                 "discord_nitro": panel_price_value("discord_nitro"),
+                "cp": get_pricing_config()["cp"],
                 "valorant": {
                     region_key: {
                         pack_key: panel_price_value(f"valo_{region_key}_{pack_key}")
@@ -5343,6 +5787,7 @@ def panel_prices():
                     for pack_key in UBEREATS_PACKS
                 },
                 "discord_nitro": panel_cost_value("cost_discord_nitro"),
+                "cp": get_purchase_cost_config()["cp"],
                 "valorant": {
                     region_key: {
                         pack_key: panel_cost_value(f"cost_valo_{region_key}_{pack_key}")
