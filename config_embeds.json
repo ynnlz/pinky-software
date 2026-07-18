@@ -46,12 +46,20 @@
       "🎫 Clique sur le bouton **Commander** ci-dessous.",
       "`Les menus ne sont visibles uniquement par toi.`"
     ],
+    "gift_cards_field_name": "💳 Cartes cadeaux — toutes les marques",
+    "gift_card_line_template": "**{amount} € reçus** → {price} € débités",
+    "uber_eats_field_name": "🍔 Uber Eats",
+    "uber_eats_line_template": "**{drop} € estimés** → {price} € débités",
+    "nitro_field_name": "💎 Discord Nitro",
+    "nitro_value_template": "**{price} €** débités",
+    "dynamic_fields_inline": false,
     "color_rgb": [
       255,
       192,
       203
     ],
-    "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525630636923158620/carte_cadeau.jpg?ex=6a5415c0&is=6a52c440&hm=3ad3f843fe840ad6019e67ff75c1457f46749b8c25c79247839f43084498b556&=&format=webp&width=1872&height=802"
+    "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525630636923158620/carte_cadeau.jpg?ex=6a5415c0&is=6a52c440&hm=3ad3f843fe840ad6019e67ff75c1457f46749b8c25c79247839f43084498b556&=&format=webp&width=1872&height=802",
+    "footer": "PinkGift — Tarifs"
   },
   "valo_embed": {
     "title": "💘 VALORANT POINTS 💘",
@@ -73,12 +81,16 @@
       "",
       "🛒 Clique sur **Commander des VP**, puis choisis ta région et ton pack."
     ],
+    "region_field_name_template": "{emoji} {region}",
+    "pack_line_template": "<:vp:1519915966476320901> **{pack}** — {price} €",
+    "dynamic_fields_inline": false,
     "color_rgb": [
       255,
       192,
       203
     ],
-    "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525631364710531202/Valorant.jpg?ex=6a54166e&is=6a52c4ee&hm=553b860bfce2649a454fc22601c0e4f3fec7521a6b1280cf3afb51becc20f0a5&=&format=webp&width=1872&height=802"
+    "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525631364710531202/Valorant.jpg?ex=6a54166e&is=6a52c4ee&hm=553b860bfce2649a454fc22601c0e4f3fec7521a6b1280cf3afb51becc20f0a5&=&format=webp&width=1872&height=802",
+    "footer": "PinkGift — Valorant Points"
   },
   "ticket_bienvenue": {
     "title": "🎫 Ticket d'achat",
@@ -477,6 +489,9 @@
       "📩 Livraison du code dans un ticket privé dès sa réception",
       "💳 Recharge ton solde avec le panneau `/solde`"
     ],
+    "packs_field_name": "<:cp:1528128623117205624> Packs disponibles",
+    "pack_line_template": "<:cp:1528128623117205624> **{points} CP** — **{price} €** · officiel ≈ ~~{official} €~~",
+    "dynamic_fields_inline": false,
     "color_rgb": [
       255,
       103,
