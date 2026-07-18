@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from flask import Flask, request, session, redirect, url_for, render_template_string, flash
-from threading import Thread, Lock
+from threading import Lock, Thread
 import os
 import json
 import asyncio
@@ -44,6 +44,8 @@ class PinkGiftBot(commands.Bot):
             OrderLauncherView(),
             ValoOrderLauncherView(),
             CPOrderLauncherView(),
+            CPPendingOrderView(),
+            PendingOrderActionsView(),
             BalanceView(),
             OpenTicketView(),
             ValoTicketButton(),
@@ -61,7 +63,7 @@ BOT_LOOP = None
 DISCORD_STATE = "démarrage"
 DISCORD_LAST_ERROR = ""
 ORDER_LOCKS = {}
-CP_INVENTORY_LOCK = Lock()
+ORDER_REFUND_LOCK = Lock()
 INVITE_USAGE_CACHE = {}
 INVITE_TRACKING_LOCKS = {}
 RECENTLY_DELETED_INVITES = {}
@@ -1234,71 +1236,88 @@ def save_order_purchase_cost(message_id, cost):
     set_panel_setting(f"order_cost:{int(message_id)}", {"cost": valid_purchase_cost(cost), "saved_at": utc_now().isoformat()})
 
 
-def normalize_cp_inventory_code(value):
+def normalize_cp_code(value):
     return str(value or "").strip()[:500]
 
 
-def get_cp_inventory():
-    saved = get_panel_setting("cp_inventory", {}) or {}
-    if not isinstance(saved, dict):
-        saved = {}
-    inventory = {pack_key: [] for pack_key in CP_PACKS}
-    for pack_key in inventory:
-        raw_codes = saved.get(pack_key, [])
-        if not isinstance(raw_codes, list):
-            continue
-        seen = set()
-        for raw_code in raw_codes:
-            code = normalize_cp_inventory_code(raw_code)
-            if code and code not in seen:
-                inventory[pack_key].append(code)
-                seen.add(code)
-    return inventory
-
-
-def save_cp_inventory(inventory):
-    cleaned = {pack_key: [] for pack_key in CP_PACKS}
-    for pack_key in cleaned:
-        seen = set()
-        for raw_code in inventory.get(pack_key, []) if isinstance(inventory, dict) else []:
-            code = normalize_cp_inventory_code(raw_code)
-            if code and code not in seen:
-                cleaned[pack_key].append(code)
-                seen.add(code)
-    set_panel_setting("cp_inventory", cleaned)
-
-
-def cp_stock_counts():
-    inventory = get_cp_inventory()
-    return {pack_key: len(codes) for pack_key, codes in inventory.items()}
-
-
-def reserve_cp_code(pack_key):
-    if pack_key not in CP_PACKS:
+def get_order_record(message_id=None, order_id=None):
+    if message_id is None and order_id is None:
         return None
-    with CP_INVENTORY_LOCK:
-        inventory = get_cp_inventory()
-        if not inventory[pack_key]:
-            return None
-        code = inventory[pack_key].pop(0)
-        save_cp_inventory(inventory)
-        return code
+    if USE_SUPABASE:
+        if order_id is not None:
+            query = f"orders?id=eq.{int(order_id)}&select=*"
+        else:
+            query = f"orders?message_id=eq.{int(message_id)}&select=*"
+        rows = supabase_request("GET", query) or []
+        order = rows[0] if rows else None
+    else:
+        with db_connect() as db:
+            if order_id is not None:
+                row = db.execute("SELECT * FROM orders WHERE id=?", (int(order_id),)).fetchone()
+            else:
+                row = db.execute("SELECT * FROM orders WHERE message_id=?", (int(message_id),)).fetchone()
+            order = dict(row) if row else None
+    return order
 
 
-def restore_cp_code(pack_key, code):
-    code = normalize_cp_inventory_code(code)
-    if pack_key not in CP_PACKS or not code:
+def get_cp_order(message_id=None, order_id=None):
+    order = get_order_record(message_id=message_id, order_id=order_id)
+    if not order or not str(order.get("service") or "").upper().startswith("COD POINTS"):
+        return None
+    return order
+
+
+def mark_order_status(order_id, status):
+    status = str(status or "pending")[:30]
+    values = {
+        "status": status,
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    if USE_SUPABASE:
+        supabase_request("PATCH", f"orders?id=eq.{int(order_id)}", values)
         return
-    with CP_INVENTORY_LOCK:
-        inventory = get_cp_inventory()
-        if code not in inventory[pack_key]:
-            inventory[pack_key].insert(0, code)
-            save_cp_inventory(inventory)
+    with db_connect() as db:
+        db.execute(
+            "UPDATE orders SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (status, int(order_id)),
+        )
+
+
+def mark_order_cancelled(order_id):
+    mark_order_status(order_id, "cancelled")
+
+
+def refund_pending_order(order, staff_id):
+    if not order:
+        raise ValueError("Commande introuvable")
+    # Tous les points d'entrée (Discord et panel) passent par ce verrou afin
+    # qu'un double clic ne puisse jamais créditer deux fois la même commande.
+    with ORDER_REFUND_LOCK:
+        order = get_order_record(order_id=order["id"])
+        if not order or str(order.get("status") or "pending").lower() != "pending":
+            raise ValueError("Cette commande n'est plus en attente")
+        mark_order_status(order["id"], "refunding")
+        try:
+            new_balance = change_balance(
+                int(order["guild_id"]),
+                int(order["user_id"]),
+                float(order.get("paid") or 0),
+                int(staff_id or 0),
+            )
+        except Exception:
+            mark_order_status(order["id"], "pending")
+            raise
+        mark_order_cancelled(order["id"])
+        try:
+            remove_referral_purchase(order["guild_id"], order["user_id"], order["message_id"])
+        except Exception as error:
+            print(f"Erreur retrait parrainage remboursement commande #{order['id']}: {error}")
+        return new_balance
 
 
 def mark_order_delivered(order_id, code):
     values = {
-        "code": normalize_cp_inventory_code(code),
+        "code": normalize_cp_code(code),
         "status": "done",
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
@@ -1767,15 +1786,30 @@ DEFAULT_EMBED_DATA.update({
         "description": [
             "Commande tes **COD Points** directement avec ton solde PinkGift.",
             "",
-            "✅ Livraison automatique dans un ticket privé",
-            "⚡ Débit uniquement si le pack est disponible",
+            "🛒 Chaque pack est commandé à la demande auprès du fournisseur",
+            "📩 Livraison du code dans un ticket privé dès sa réception",
             "💳 Recharge ton solde avec le panneau `/solde`"
         ],
         "color_rgb": [255, 103, 174],
         "footer": "PinkGift — COD Points"
     },
+    "cp_order_pending_embed": {
+        "title": "🕒 Commande COD Points en attente",
+        "description": [
+            "Merci pour ta commande {user} !",
+            "Le pack est maintenant commandé auprès du fournisseur. Le code sera envoyé ici dès sa réception."
+        ],
+        "fields": [
+            {"name": "Pack", "value": "**{points} CP**", "inline": True},
+            {"name": "Prix débité", "value": "**{paid} €**", "inline": True},
+            {"name": "Solde restant", "value": "**{balance} €**", "inline": True},
+            {"name": "Statut", "value": "⏳ Commande fournisseur en cours", "inline": False}
+        ],
+        "color_rgb": [255, 170, 64],
+        "footer": "PinkGift — Commande CP à la demande"
+    },
     "cp_delivery_embed": {
-        "title": "✅ COD Points livrés automatiquement",
+        "title": "✅ COD Points livrés",
         "description": [
             "Merci pour ta commande {user} !",
             "Ton code est disponible ci-dessous. Conserve-le jusqu'à son activation."
@@ -1787,7 +1821,7 @@ DEFAULT_EMBED_DATA.update({
             {"name": "Code COD Points", "value": "{code}", "inline": False}
         ],
         "color_rgb": [46, 204, 113],
-        "footer": "PinkGift — Livraison CP automatique"
+        "footer": "PinkGift — Livraison CP"
     }
 })
 
@@ -2312,7 +2346,7 @@ async def create_product_ticket(interaction, product_key, amount):
             "amount": amount, "paid": f"{paid_amount:g}", "drop": received_display, "balance": f"{remaining_balance:.2f}"
         })
         try:
-            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=PendingOrderActionsView(user.id))
         except Exception as error:
             try:
                 change_balance(guild.id, user.id, paid_amount, bot.user.id if bot.user else 0)
@@ -2460,7 +2494,7 @@ async def create_valo_order(interaction, region_key, pack_key):
             "code": code_pending, "balance": f"{remaining_balance:.2f}"
         })
         try:
-            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=PendingOrderActionsView(user.id))
         except Exception as error:
             try:
                 change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
@@ -2548,10 +2582,6 @@ class ValoOrderLauncherView(discord.ui.View):
         )
 
 
-def cp_pack_is_available(pack_key):
-    return cp_stock_counts().get(str(pack_key), 0) > 0
-
-
 async def create_cp_order(interaction, pack_key):
     guild = interaction.guild
     user = interaction.user
@@ -2567,9 +2597,6 @@ async def create_cp_order(interaction, pack_key):
         purchase_costs = get_purchase_cost_config()
         price = pricing["cp"][pack_key]
         purchase_cost = purchase_costs["cp"][pack_key]
-        if not cp_pack_is_available(pack_key):
-            await interaction.followup.send(f"{STOCK_KO_EMOJI} Le pack **{pack['points']:,} CP** est en rupture.", ephemeral=True)
-            return
         current_balance = get_balance(guild.id, user.id)
         if current_balance < price:
             await interaction.followup.send(
@@ -2614,46 +2641,37 @@ async def create_cp_order(interaction, pack_key):
                 await interaction.followup.send("⏳ Discord ne peut pas créer le ticket CP actuellement.", ephemeral=True)
                 return
 
-        code = reserve_cp_code(pack_key)
-        if not code:
-            await interaction.followup.send(f"{STOCK_KO_EMOJI} Ce pack vient de passer en rupture. Aucun montant n'a été débité.", ephemeral=True)
-            return
         try:
             remaining_balance = change_balance(guild.id, user.id, -price, bot.user.id if bot.user else 0)
         except Exception as error:
-            restore_cp_code(pack_key, code)
             print(f"Erreur débit CP de {user}: {error}")
             await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
             return
 
-        displayed_code = code.replace("`", "ˋ")
-        code_block = f"```\n{displayed_code}\n```"
-        embed = build_json_embed("cp_delivery_embed", {
+        embed = build_json_embed("cp_order_pending_embed", {
             "user": user.mention,
             "points": f"{pack['points']:,}".replace(",", " "),
             "paid": format_price(price),
             "balance": f"{remaining_balance:.2f}",
-            "code": code_block,
         })
         try:
             order_message = await ticket_channel.send(
-                content=user.mention,
+                content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
                 embed=embed,
-                view=CloseTicketView(user.id),
+                view=CPPendingOrderView(),
             )
         except Exception as error:
-            restore_cp_code(pack_key, code)
             try:
                 change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
             except Exception as refund_error:
                 print(f"ERREUR REMBOURSEMENT CP {user}: {refund_error}")
-            print(f"Erreur livraison CP pour {user}: {error}")
-            await interaction.followup.send("❌ La livraison a échoué. Le montant a été recrédité et le code remis en stock.", ephemeral=True)
+            print(f"Erreur création commande CP pour {user}: {error}")
+            await interaction.followup.send("❌ La commande n'a pas pu être créée. Le montant a été recrédité.", ephemeral=True)
             return
 
         service = f"COD Points {pack['points']} CP"
         try:
-            order_id = save_order(
+            save_order(
                 guild.id,
                 ticket_channel.id,
                 order_message.id,
@@ -2665,32 +2683,190 @@ async def create_cp_order(interaction, pack_key):
                 f"{pack['points']} CP",
             )
             save_order_purchase_cost(order_message.id, purchase_cost)
-            mark_order_delivered(order_id, code)
         except Exception as error:
-            print(f"Erreur sauvegarde commande CP déjà livrée: {error}")
+            try:
+                change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
+            except Exception as refund_error:
+                print(f"ERREUR REMBOURSEMENT CP après sauvegarde {user}: {refund_error}")
+            await order_message.edit(
+                content=user.mention,
+                embed=discord.Embed(
+                    title="❌ Commande CP non enregistrée",
+                    description="La commande n'a pas été enregistrée et le montant a été recrédité.",
+                    color=discord.Color.red(),
+                ),
+                view=CloseTicketView(user.id),
+            )
+            print(f"Erreur sauvegarde commande CP: {error}")
+            await interaction.followup.send("❌ La commande n'a pas été enregistrée. Le montant a été recrédité.", ephemeral=True)
+            return
         try:
             record_referral_purchase(guild.id, user.id, order_message.id, price, purchase_cost, service)
         except Exception as error:
             print(f"Erreur calcul parrainage CP de {user}: {error}")
         await interaction.followup.send(
-            f"✅ **{pack['points']:,} CP** livrés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.".replace(",", " "),
+            f"✅ Commande de **{pack['points']:,} CP** enregistrée dans {ticket_channel.mention}. Le code sera livré dès sa réception. Nouveau solde : **{remaining_balance:.2f} €**.".replace(",", " "),
             ephemeral=True,
         )
+
+
+def can_manage_cp_order(member):
+    return bool(
+        member
+        and (
+            member.guild_permissions.manage_guild
+            or any(role.id == STAFF_ROLE_ID for role in getattr(member, "roles", []))
+        )
+    )
+
+
+async def deliver_cp_order_to_discord(order, code):
+    code = normalize_cp_code(code)
+    if not code:
+        raise ValueError("Le code est vide")
+    channel = bot.get_channel(int(order["channel_id"]))
+    if channel is None:
+        channel = await bot.fetch_channel(int(order["channel_id"]))
+    message = await channel.fetch_message(int(order["message_id"]))
+    balance = get_balance(int(order["guild_id"]), int(order["user_id"]))
+    displayed_code = code.replace("`", "ˋ")
+    embed = build_json_embed("cp_delivery_embed", {
+        "user": f"<@{int(order['user_id'])}>",
+        "points": str(order.get("received_label") or order.get("amount") or "COD Points").replace(" CP", ""),
+        "paid": format_price(order.get("paid") or 0),
+        "balance": f"{balance:.2f}",
+        "code": f"```\n{displayed_code}\n```",
+    })
+    await message.edit(
+        content=f"<@{int(order['user_id'])}>",
+        embed=embed,
+        view=CloseTicketView(int(order["user_id"])),
+    )
+    mark_order_delivered(int(order["id"]), code)
+
+
+async def show_order_refund_on_discord(order, new_balance):
+    channel = bot.get_channel(int(order["channel_id"]))
+    if channel is None:
+        channel = await bot.fetch_channel(int(order["channel_id"]))
+    message = await channel.fetch_message(int(order["message_id"]))
+    cancelled = discord.Embed(
+        title="↩️ Commande annulée et remboursée",
+        description=(
+            f"<@{int(order['user_id'])}>, la commande **{order.get('service') or 'PinkGift'}** a été annulée et "
+            f"**{format_price(order.get('paid') or 0)} €** ont été recrédités.\n"
+            f"Nouveau solde : **{new_balance:.2f} €**."
+        ),
+        color=discord.Color.red(),
+    )
+    cancelled.set_footer(text="PinkGift — Commande remboursée")
+    await message.edit(
+        content=f"<@{int(order['user_id'])}>",
+        embed=cancelled,
+        view=CloseTicketView(int(order["user_id"])),
+    )
+
+
+class CPCodeDeliveryModal(discord.ui.Modal, title="Livrer la commande COD Points"):
+    code = discord.ui.TextInput(
+        label="Code reçu du fournisseur",
+        placeholder="Colle le code COD Points ici",
+        min_length=2,
+        max_length=500,
+        style=discord.TextStyle.paragraph,
+    )
+
+    def __init__(self, message_id):
+        super().__init__()
+        self.message_id = int(message_id)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not can_manage_cp_order(interaction.user):
+            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        order = get_cp_order(message_id=self.message_id)
+        if not order or str(order.get("status") or "pending").lower() != "pending":
+            await interaction.followup.send("❌ Cette commande n'est plus en attente.", ephemeral=True)
+            return
+        lock = ORDER_LOCKS.setdefault((int(order["guild_id"]), int(order["user_id"])), asyncio.Lock())
+        async with lock:
+            order = get_cp_order(order_id=order["id"])
+            if not order or str(order.get("status") or "pending").lower() != "pending":
+                await interaction.followup.send("❌ Cette commande vient déjà d'être traitée.", ephemeral=True)
+                return
+            mark_order_status(order["id"], "delivering")
+            try:
+                await deliver_cp_order_to_discord(order, str(self.code.value))
+            except Exception as error:
+                mark_order_status(order["id"], "pending")
+                print(f"Erreur livraison manuelle CP #{order['id']}: {error}")
+                await interaction.followup.send(f"❌ Livraison impossible : {error}", ephemeral=True)
+                return
+        await interaction.followup.send("✅ Code livré au client et commande marquée comme terminée.", ephemeral=True)
+
+
+class CPPendingOrderView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Livrer le code",
+        emoji="📩",
+        style=discord.ButtonStyle.success,
+        custom_id="pinkgift_cp_deliver_pending",
+    )
+    async def deliver(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not can_manage_cp_order(interaction.user):
+            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
+            return
+        await interaction.response.send_modal(CPCodeDeliveryModal(interaction.message.id))
+
+    @discord.ui.button(
+        label="Annuler et rembourser",
+        emoji="↩️",
+        style=discord.ButtonStyle.danger,
+        custom_id="pinkgift_cp_cancel_pending",
+    )
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not can_manage_cp_order(interaction.user):
+            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        order = get_cp_order(message_id=interaction.message.id)
+        if not order or str(order.get("status") or "pending").lower() != "pending":
+            await interaction.followup.send("❌ Cette commande n'est plus en attente.", ephemeral=True)
+            return
+        lock = ORDER_LOCKS.setdefault((int(order["guild_id"]), int(order["user_id"])), asyncio.Lock())
+        async with lock:
+            order = get_cp_order(order_id=order["id"])
+            if not order or str(order.get("status") or "pending").lower() != "pending":
+                await interaction.followup.send("❌ Cette commande vient déjà d'être traitée.", ephemeral=True)
+                return
+            try:
+                new_balance = refund_pending_order(order, interaction.user.id)
+            except Exception as error:
+                print(f"Erreur remboursement CP #{order['id']}: {error}")
+                await interaction.followup.send("❌ Le remboursement a échoué ; la commande reste en attente.", ephemeral=True)
+                return
+            try:
+                await show_order_refund_on_discord(order, new_balance)
+            except Exception as error:
+                print(f"Erreur mise à jour message remboursement CP #{order['id']}: {error}")
+        await interaction.followup.send("✅ Commande annulée et client remboursé.", ephemeral=True)
 
 
 class CPPackSelect(discord.ui.Select):
     def __init__(self):
         prices = get_pricing_config()["cp"]
-        stock = cp_stock_counts()
         options = []
         for pack_key, pack in CP_PACKS.items():
-            available = stock.get(pack_key, 0) > 0
             points_label = f"{pack['points']:,}".replace(",", " ")
             options.append(discord.SelectOption(
                 label=f"{points_label} CP — {format_price(prices[pack_key])} €",
                 value=pack_key,
-                emoji=stock_partial_emoji(available),
-                description=stock_label(available),
+                emoji="🛒",
+                description="Commandé à la demande",
             ))
         super().__init__(placeholder="Choisis ton pack de COD Points", options=options, custom_id="pinkgift_cp_pack")
 
@@ -2718,7 +2894,7 @@ class CPOrderLauncherView(discord.ui.View):
     async def start_cp_order(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True, thinking=True)
         await interaction.edit_original_response(
-            content="Choisis ton pack. Le solde sera débité uniquement si un code est disponible :",
+            content="Choisis ton pack. Il sera commandé au fournisseur après le débit du solde :",
             view=CPPackView(),
         )
 
@@ -3069,6 +3245,45 @@ class CloseTicketView(discord.ui.View):
                 await channel.edit(name=new_name, reason=f"Ticket ferme par {interaction.user}")
         except:
             pass
+
+
+class PendingOrderActionsView(CloseTicketView):
+    def __init__(self, client_id: int = 0):
+        super().__init__(client_id)
+
+    @discord.ui.button(
+        label="Annuler et rembourser",
+        emoji="↩️",
+        style=discord.ButtonStyle.danger,
+        custom_id="pinkgift_refund_pending_order",
+    )
+    async def refund(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not can_manage_cp_order(interaction.user):
+            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        order = get_order_record(message_id=interaction.message.id)
+        if not order or str(order.get("status") or "pending").lower() != "pending":
+            await interaction.followup.send("❌ Cette commande n'est plus en attente et ne peut pas être remboursée ici.", ephemeral=True)
+            return
+        lock = ORDER_LOCKS.setdefault((int(order["guild_id"]), int(order["user_id"])), asyncio.Lock())
+        async with lock:
+            order = get_order_record(order_id=order["id"])
+            if not order or str(order.get("status") or "pending").lower() != "pending":
+                await interaction.followup.send("❌ Cette commande vient déjà d'être traitée.", ephemeral=True)
+                return
+            try:
+                new_balance = refund_pending_order(order, interaction.user.id)
+            except Exception as error:
+                print(f"Erreur remboursement commande #{order['id']}: {error}")
+                await interaction.followup.send("❌ Le remboursement a échoué ; la commande reste en attente.", ephemeral=True)
+                return
+            try:
+                await show_order_refund_on_discord(order, new_balance)
+            except Exception as error:
+                print(f"Erreur mise à jour ticket remboursement commande #{order['id']}: {error}")
+        await interaction.followup.send("✅ Commande annulée et montant recrédité sur le solde du client.", ephemeral=True)
+
 
 class OpenTicketView(discord.ui.View):
     def __init__(self):
@@ -3891,15 +4106,12 @@ def build_valo_embed():
 def build_cp_embed():
     embed = build_json_embed("cp_embed")
     prices = get_pricing_config()["cp"]
-    stock = cp_stock_counts()
     lines = []
     for pack_key, pack in CP_PACKS.items():
         points = f"{pack['points']:,}".replace(",", " ")
         official = f"{pack['official_price']:.2f}".replace(".", ",")
-        available = stock.get(pack_key, 0) > 0
-        status = STOCK_OK_EMOJI if available else STOCK_KO_EMOJI
         lines.append(
-            f"{status} **{points} CP** — **{format_price(prices[pack_key])} €** "
+            f"🛒 **{points} CP** — **{format_price(prices[pack_key])} €** "
             f"· officiel ≈ ~~{official} €~~"
         )
     embed.add_field(name="🪙 Packs disponibles", value="\n".join(lines), inline=False)
@@ -5308,12 +5520,45 @@ body > form button { min-height: 45px; margin-top: 14px; }
 PANEL_FAVICON = '<link rel="icon" type="image/gif" href="/static/discord_icon.gif">'
 
 
+PANEL_CP_TEMPLATE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PinkGift — COD Points</title>
+<style>
+body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1400px}h1{color:#ff8fc8}.card{background:#171419;border:1px solid #332630;padding:16px;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field span,th{color:#ff9dce;font-weight:bold}.field small,.muted{color:#aa98a4}input,button{box-sizing:border-box;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px}button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}.danger{background:#9d294b}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}table{width:100%;border-collapse:collapse;background:#171419;margin:14px 0 24px}th,td{text-align:left;padding:10px;border-bottom:1px solid #332630;vertical-align:top}.positive{color:#74d99f;font-weight:bold}.pending{color:#ffbd66;font-weight:bold}.cancelled{color:#ff6c8f;font-weight:bold}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions form{display:flex;gap:6px}.actions input{min-width:210px}a{color:#ff9dce}@media(max-width:850px){table{display:block;overflow-x:auto}.actions input{min-width:150px}}
+</style></head><body>
+<header><h1>PinkGift — COD Points</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header>
+<main>
+{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
+<p class="muted">Les packs sont commandés au fournisseur au cas par cas. Le client paie avec son solde, puis la commande apparaît ici et dans son ticket jusqu'à la livraison du code.</p>
+<form method="post" class="card"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="save_settings">
+<h2>Prix et coûts des packs</h2><div class="grid">{% for item in packs %}<section class="card"><h3>{{ item.points_label }} CP</h3>
+<label class="field"><span>Prix de vente</span><input type="number" name="cp_price_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Débit du solde client</small></label>
+<label class="field"><span>Coût d'achat</span><input type="number" name="cp_cost_{{ item.key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required><small>Utilisé pour calculer le bénéfice</small></label>
+<p class="muted">Prix officiel ≈ {{ item.official }} €</p></section>{% endfor %}</div><button type="submit">Enregistrer les prix et coûts</button></form>
+<h2>Commandes CP</h2><table><thead><tr><th>Client</th><th>Pack</th><th>Payé</th><th>État</th><th>Date</th><th>Actions</th></tr></thead><tbody>
+{% for order in orders %}<tr><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.received_label }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td>{{ order.updated_at or order.created_at }}</td><td><div class="actions">
+{% if order.status == 'pending' %}<form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="deliver_order"><input type="hidden" name="order_id" value="{{ order.id }}"><input name="code" required placeholder="Code reçu du fournisseur"><button type="submit">Livrer</button></form>
+<form method="post" onsubmit="return confirm('Annuler cette commande et rembourser le client ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="refund_order"><input type="hidden" name="order_id" value="{{ order.id }}"><button class="danger" type="submit">Annuler + rembourser</button></form>{% elif order.status == 'done' %}<span class="positive">Livrée</span>{% else %}<span>—</span>{% endif %}
+</div></td></tr>{% else %}<tr><td colspan="6">Aucune commande CP.</td></tr>{% endfor %}</tbody></table>
+</main></body></html>"""
+
+
 def apply_panel_theme(template):
     themed = template.replace("</style>", PANEL_THEME_CSS + "</style>", 1)
     return themed.replace("</head>", PANEL_FAVICON + "</head>", 1)
 
 
-PANEL_TEMPLATE = apply_panel_theme(PANEL_TEMPLATE)
+PANEL_TEMPLATE = apply_panel_theme(PANEL_TEMPLATE).replace(
+    '<form method="post" action="{{ url_for(\'panel_delete_order\', order_id=order.id) }}" style="display:inline"',
+    '''{% if order.status == 'pending' %}<form method="post" action="{{ url_for('panel_refund_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Annuler cette commande et rembourser le client en solde ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit">Rembourser</button></form>{% endif %}<form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline"'''
+)
+PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
+    '<form method="post" action="{{ url_for(\'panel_set_code\', order_id=order.id) }}" style="display:inline">',
+    '''{% if order.status == 'pending' %}<form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline">'''
+).replace(
+    "<button type=\"submit\">Livrer</button></form>{% if order.status == 'pending' %}",
+    "<button type=\"submit\">Livrer</button></form>{% endif %}{% if order.status == 'pending' %}",
+)
 PANEL_STOCK_TEMPLATE = apply_panel_theme(PANEL_STOCK_TEMPLATE)
 PANEL_CP_TEMPLATE = apply_panel_theme(PANEL_CP_TEMPLATE)
 PANEL_PRICES_TEMPLATE = apply_panel_theme(PANEL_PRICES_TEMPLATE)
@@ -5676,52 +5921,33 @@ def panel_cp():
                     future = asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
                     future.add_done_callback(log_price_embed_refresh)
                 flash("Prix et coûts CP enregistrés. Le débit, le bénéfice et l'embed /cp sont synchronisés sans redémarrage.")
-            elif action == "add_codes":
-                pack_key = request.form.get("pack_key", "")
-                if pack_key not in CP_PACKS:
-                    raise ValueError("Pack CP invalide")
-                submitted = [normalize_cp_inventory_code(line) for line in request.form.get("codes", "").splitlines()]
-                submitted = [code for code in submitted if code]
-                if not submitted:
-                    raise ValueError("Ajoute au moins un code")
-                with CP_INVENTORY_LOCK:
-                    inventory = get_cp_inventory()
-                    before = len(inventory[pack_key])
-                    known = set(inventory[pack_key])
-                    for code in submitted:
-                        if code not in known:
-                            inventory[pack_key].append(code)
-                            known.add(code)
-                    save_cp_inventory(inventory)
-                    added = len(inventory[pack_key]) - before
-                flash(f"{added} code(s) ajouté(s) au pack {CP_PACKS[pack_key]['points']} CP.")
-            elif action == "delete_code":
-                pack_key = request.form.get("pack_key", "")
-                code = normalize_cp_inventory_code(request.form.get("code"))
-                if pack_key not in CP_PACKS or not code:
-                    raise ValueError("Code CP invalide")
-                with CP_INVENTORY_LOCK:
-                    inventory = get_cp_inventory()
-                    if code not in inventory[pack_key]:
-                        raise ValueError("Ce code n'est plus en stock")
-                    inventory[pack_key].remove(code)
-                    save_cp_inventory(inventory)
-                flash("Code supprimé du stock CP.")
-            elif action == "clear_pack":
-                pack_key = request.form.get("pack_key", "")
-                if pack_key not in CP_PACKS:
-                    raise ValueError("Pack CP invalide")
-                with CP_INVENTORY_LOCK:
-                    inventory = get_cp_inventory()
-                    removed = len(inventory[pack_key])
-                    inventory[pack_key] = []
-                    save_cp_inventory(inventory)
-                flash(f"Stock du pack {CP_PACKS[pack_key]['points']} CP vidé ({removed} code(s) supprimé(s)).")
+            elif action == "deliver_order":
+                order = get_cp_order(order_id=int(request.form.get("order_id", 0)))
+                code = normalize_cp_code(request.form.get("code"))
+                if not order or str(order.get("status") or "pending").lower() != "pending" or not code:
+                    raise ValueError("Commande CP ou code invalide")
+                if BOT_LOOP is None:
+                    raise RuntimeError("Le bot Discord n'est pas encore prêt")
+                mark_order_status(order["id"], "delivering")
+                try:
+                    asyncio.run_coroutine_threadsafe(deliver_cp_order_to_discord(order, code), BOT_LOOP).result(timeout=25)
+                except Exception:
+                    mark_order_status(order["id"], "pending")
+                    raise
+                flash(f"Commande CP #{order['id']} livrée au client.")
+            elif action == "refund_order":
+                order = get_cp_order(order_id=int(request.form.get("order_id", 0)))
+                if not order or str(order.get("status") or "pending").lower() != "pending":
+                    raise ValueError("Cette commande CP n'est plus en attente")
+                new_balance = refund_pending_order(order, bot.user.id if bot.user else 0)
+                if BOT_LOOP is not None:
+                    try:
+                        asyncio.run_coroutine_threadsafe(show_order_refund_on_discord(order, new_balance), BOT_LOOP).result(timeout=25)
+                    except Exception as discord_error:
+                        print(f"Erreur mise à jour ticket après remboursement CP #{order['id']}: {discord_error}")
+                flash(f"Commande CP #{order['id']} annulée et client remboursé.")
             else:
                 raise ValueError("Action CP inconnue")
-            if action in {"add_codes", "delete_code", "clear_pack"} and BOT_LOOP is not None:
-                future = asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
-                future.add_done_callback(log_price_embed_refresh)
         except Exception as error:
             print(f"Erreur panel CP : {error}")
             flash(f"Modification CP impossible : {error}")
@@ -5729,18 +5955,14 @@ def panel_cp():
 
     pricing = get_pricing_config()["cp"]
     purchase_costs = get_purchase_cost_config()["cp"]
-    inventory = get_cp_inventory()
     packs = []
     for pack_key, pack in CP_PACKS.items():
-        codes = inventory.get(pack_key, [])
         packs.append({
             "key": pack_key,
             "points_label": f"{pack['points']:,}".replace(",", " "),
             "price": format_price(pricing[pack_key]),
             "cost": format_price(purchase_costs[pack_key]),
             "official": f"{pack['official_price']:.2f}".replace(".", ","),
-            "stock": len(codes),
-            "codes": codes,
         })
     try:
         orders = [
@@ -5956,11 +6178,41 @@ def valid_panel_csrf():
     return bool(expected and secrets.compare_digest(expected, received))
 
 
+@app.post("/panel/orders/<int:order_id>/refund")
+@panel_required
+def panel_refund_order(order_id):
+    if not valid_panel_csrf():
+        flash("Session invalide. Recharge la page.")
+        return panel_filter_redirect()
+    try:
+        order = get_order_record(order_id=order_id)
+        if not order or str(order.get("status") or "pending").lower() != "pending":
+            raise ValueError("Seule une commande en attente peut être remboursée")
+        new_balance = refund_pending_order(order, bot.user.id if bot.user else 0)
+        if BOT_LOOP is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(show_order_refund_on_discord(order, new_balance), BOT_LOOP).result(timeout=25)
+            except Exception as discord_error:
+                print(f"Erreur mise à jour ticket après remboursement commande #{order_id}: {discord_error}")
+        flash(
+            f"Commande #{order_id} annulée : {format_price(order.get('paid') or 0)} € "
+            f"recrédités au client. La commission de parrainage a été retirée."
+        )
+    except Exception as error:
+        print(f"Erreur remboursement commande {order_id}: {error}")
+        flash(f"Remboursement impossible : {error}")
+    return panel_filter_redirect()
+
+
 @app.post("/panel/orders/<int:order_id>/delete")
 @panel_required
 def panel_delete_order(order_id):
     if not valid_panel_csrf():
         flash("Session invalide. Recharge la page.")
+        return panel_filter_redirect()
+    existing_order = get_order_record(order_id=order_id)
+    if existing_order and str(existing_order.get("status") or "pending").lower() == "pending":
+        flash("Commande en attente : utilise « Rembourser » pour recréditer le client avant de la supprimer.")
         return panel_filter_redirect()
     order = None
     try:
@@ -6013,8 +6265,9 @@ def panel_set_code(order_id):
         order = rows[0] if rows else None
     else:
         with db_connect() as db:
-            order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
-    if not order or not code:
+            row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+            order = dict(row) if row else None
+    if not order or not code or str(order.get("status") or "pending").lower() != "pending":
         flash("Commande ou code invalide.")
         return panel_filter_redirect()
     if BOT_LOOP is None:
