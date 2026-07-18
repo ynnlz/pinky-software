@@ -473,8 +473,8 @@
     "description": [
       "Commande tes **COD Points** directement avec ton solde PinkGift.",
       "",
-      "✅ Livraison automatique dans un ticket privé",
-      "⚡ Débit uniquement si le pack est disponible",
+      "🛒 Chaque pack est commandé à la demande auprès du fournisseur",
+      "📩 Livraison du code dans un ticket privé dès sa réception",
       "💳 Recharge ton solde avec le panneau `/solde`"
     ],
     "color_rgb": [
@@ -484,8 +484,43 @@
     ],
     "footer": "PinkGift — COD Points"
   },
+  "cp_order_pending_embed": {
+    "title": "🕒 Commande COD Points en attente",
+    "description": [
+      "Merci pour ta commande {user} !",
+      "Le pack est maintenant commandé auprès du fournisseur. Le code sera envoyé ici dès sa réception."
+    ],
+    "fields": [
+      {
+        "name": "Pack",
+        "value": "**{points} CP**",
+        "inline": true
+      },
+      {
+        "name": "Prix débité",
+        "value": "**{paid} €**",
+        "inline": true
+      },
+      {
+        "name": "Solde restant",
+        "value": "**{balance} €**",
+        "inline": true
+      },
+      {
+        "name": "Statut",
+        "value": "⏳ Commande fournisseur en cours",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      255,
+      170,
+      64
+    ],
+    "footer": "PinkGift — Commande CP à la demande"
+  },
   "cp_delivery_embed": {
-    "title": "✅ COD Points livrés automatiquement",
+    "title": "✅ COD Points livrés",
     "description": [
       "Merci pour ta commande {user} !",
       "Ton code est disponible ci-dessous. Conserve-le jusqu'à son activation."
@@ -517,6 +552,6 @@
       204,
       113
     ],
-    "footer": "PinkGift — Livraison CP automatique"
+    "footer": "PinkGift — Livraison CP"
   }
 }
