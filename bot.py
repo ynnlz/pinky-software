@@ -70,7 +70,10 @@ SERVER_COUNTER_REFRESH_TASK = None
 SERVER_COUNTER_UPDATE_TASKS = {}
 SERVER_COUNTER_UPDATE_FLAGS = {}
 SERVER_COUNTER_LOCKS = {}
-SERVER_COUNTER_REFRESH_SECONDS = 300
+SERVER_COUNTER_REFRESH_SECONDS = 900
+SERVER_COUNTER_INITIAL_DELAY_SECONDS = 60
+SERVER_COUNTER_RATE_LIMIT_BACKOFF_SECONDS = 900
+SERVER_COUNTER_BACKOFF_UNTIL = 0.0
 SERVER_COUNTER_CATEGORY_NAME = "📊・STATISTIQUES"
 MUTED_ROLE_ID = 1525614378580312165
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
@@ -3092,6 +3095,16 @@ def save_server_counter_data(guild_id, data):
     set_panel_setting(server_counter_setting_key(guild_id), data)
 
 
+def adjust_verified_reviews_count(guild_id, delta):
+    data = get_server_counter_data(guild_id)
+    if "verified_reviews_count" not in data:
+        return False
+    current = max(0, int(data.get("verified_reviews_count", 0) or 0))
+    data["verified_reviews_count"] = max(0, current + int(delta))
+    save_server_counter_data(guild_id, data)
+    return True
+
+
 def verified_reviews_channel_ids(guild_id):
     data = get_server_counter_data(guild_id)
     channel_ids = set(VERIFIED_REVIEWS_CHANNEL_IDS)
@@ -3185,7 +3198,10 @@ async def ensure_server_counter_channels(guild):
 
 
 async def refresh_server_counters(guild, refresh_reviews=False):
+    global SERVER_COUNTER_BACKOFF_UNTIL
     if guild is None or not guild_is_authorized(guild.id):
+        return
+    if time.monotonic() < SERVER_COUNTER_BACKOFF_UNTIL:
         return
     lock = SERVER_COUNTER_LOCKS.setdefault(guild.id, asyncio.Lock())
     async with lock:
@@ -3219,11 +3235,17 @@ async def refresh_server_counters(guild, refresh_reviews=False):
 
 
 async def delayed_server_counter_refresh(guild):
+    global SERVER_COUNTER_BACKOFF_UNTIL
     await asyncio.sleep(5)
     refresh_reviews = bool(SERVER_COUNTER_UPDATE_FLAGS.pop(guild.id, False))
     try:
         await refresh_server_counters(guild, refresh_reviews=refresh_reviews)
     except (discord.Forbidden, discord.HTTPException) as error:
+        if getattr(error, "status", None) == 429:
+            SERVER_COUNTER_BACKOFF_UNTIL = max(
+                SERVER_COUNTER_BACKOFF_UNTIL,
+                time.monotonic() + SERVER_COUNTER_RATE_LIMIT_BACKOFF_SECONDS,
+            )
         print(f"Actualisation compteurs impossible sur {guild.id}: {error}")
     except Exception as error:
         print(f"Erreur compteurs serveur {guild.id}: {error}")
@@ -3245,12 +3267,19 @@ def schedule_server_counter_refresh(guild, refresh_reviews=False):
 
 
 async def server_counter_refresh_loop():
+    global SERVER_COUNTER_BACKOFF_UNTIL
+    await asyncio.sleep(SERVER_COUNTER_INITIAL_DELAY_SECONDS)
     while not bot.is_closed():
         for guild in bot.guilds:
             if guild_is_authorized(guild.id):
                 try:
-                    await refresh_server_counters(guild, refresh_reviews=True)
+                    await refresh_server_counters(guild, refresh_reviews=False)
                 except (discord.Forbidden, discord.HTTPException) as error:
+                    if getattr(error, "status", None) == 429:
+                        SERVER_COUNTER_BACKOFF_UNTIL = max(
+                            SERVER_COUNTER_BACKOFF_UNTIL,
+                            time.monotonic() + SERVER_COUNTER_RATE_LIMIT_BACKOFF_SECONDS,
+                        )
                     print(f"Actualisation périodique compteurs impossible sur {guild.id}: {error}")
                 except Exception as error:
                     print(f"Erreur périodique compteurs serveur {guild.id}: {error}")
@@ -3442,7 +3471,10 @@ async def on_message(message):
                 print(f"Erreur réaction auto dans {message.channel}: {error}")
     guild = getattr(message, "guild", None)
     if guild is not None and message.channel.id in verified_reviews_channel_ids(guild.id):
-        schedule_server_counter_refresh(guild, refresh_reviews=True)
+        if not adjust_verified_reviews_count(guild.id, 1):
+            schedule_server_counter_refresh(guild, refresh_reviews=True)
+        else:
+            schedule_server_counter_refresh(guild)
     await bot.process_commands(message)
 
 
@@ -3450,14 +3482,30 @@ async def on_message(message):
 async def on_raw_message_delete(payload):
     guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
     if guild is not None and payload.channel_id in verified_reviews_channel_ids(guild.id):
-        schedule_server_counter_refresh(guild, refresh_reviews=True)
+        cached_message = getattr(payload, "cached_message", None)
+        if cached_message is None or not cached_message.author.bot:
+            if not adjust_verified_reviews_count(guild.id, -1):
+                schedule_server_counter_refresh(guild, refresh_reviews=True)
+            else:
+                schedule_server_counter_refresh(guild)
 
 
 @bot.event
 async def on_raw_bulk_message_delete(payload):
     guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
     if guild is not None and payload.channel_id in verified_reviews_channel_ids(guild.id):
-        schedule_server_counter_refresh(guild, refresh_reviews=True)
+        cached_messages = getattr(payload, "cached_messages", ()) or ()
+        cached_by_id = {message.id: message for message in cached_messages}
+        deleted_count = sum(
+            1
+            for message_id in payload.message_ids
+            if message_id not in cached_by_id or not cached_by_id[message_id].author.bot
+        )
+        if deleted_count:
+            if not adjust_verified_reviews_count(guild.id, -deleted_count):
+                schedule_server_counter_refresh(guild, refresh_reviews=True)
+            else:
+                schedule_server_counter_refresh(guild)
 
 
 @bot.event
@@ -3749,20 +3797,26 @@ async def cmd_purge_all(ctx):
 @discord.app_commands.describe(amount="Nombre de messages à supprimer")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_clear_messages(ctx, amount: int):
+    is_slash_command = ctx.interaction is not None
+    if is_slash_command:
+        await ctx.defer(ephemeral=True)
     if amount <= 0:
-        await ctx.send("❌ Indique un nombre de messages superieur a 0.", delete_after=3)
+        await ctx.send(
+            "❌ Indique un nombre de messages superieur a 0.",
+            ephemeral=is_slash_command,
+            delete_after=None if is_slash_command else 3,
+        )
         return
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+    if not is_slash_command:
+        try:
+            await ctx.message.delete()
+        except discord.HTTPException:
+            pass
     deleted = await ctx.channel.purge(limit=amount)
-    msg = await ctx.send(f"🗑️ {len(deleted)} messages effaces.")
-    await asyncio.sleep(4)
-    try:
-        await msg.delete()
-    except:
-        pass
+    if is_slash_command:
+        await ctx.send(f"🗑️ {len(deleted)} messages effaces.", ephemeral=True)
+    else:
+        await ctx.send(f"🗑️ {len(deleted)} messages effaces.", delete_after=4)
 
 
 def member_timeout_until(member):
