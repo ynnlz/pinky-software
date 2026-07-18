@@ -2865,7 +2865,7 @@ class CPPackSelect(discord.ui.Select):
             options.append(discord.SelectOption(
                 label=f"{points_label} CP — {format_price(prices[pack_key])} €",
                 value=pack_key,
-                emoji="🛒",
+                emoji="<:cp:1528128623117205624>",
                 description="Commandé à la demande",
             ))
         super().__init__(placeholder="Choisis ton pack de COD Points", options=options, custom_id="pinkgift_cp_pack")
