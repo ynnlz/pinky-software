@@ -1,56 +1,86 @@
 {
+  "emojis": {
+    "GOOGLE_PLAY": "<:googleplay:1519907060555186278>",
+    "STEAM": "<:steam:1519907154545610873>",
+    "DISCORD_NITRO": "<:nitroboost:1524439577656561846>",
+    "PLAYSTATION": "<:playstation:1519906767268741200>",
+    "NINTENDO": "<:nintendo:1519907394157678632>",
+    "ZARA": "<:zara:1519907265681948773>",
+    "SEPHORA": "<:sephora:1519907492862103742>",
+    "ZALANDO": "<:zalando:1519907231812816906>",
+    "ADIDAS": "<:adidas:1519906784515588116>",
+    "FOOT_LOCKER": "<:footlocker:1519907296342310952>",
+    "SHEIN": "<:shein:1524439283367411793>",
+    "NIKE": "<:nike:1519906735589167164>",
+    "UBEREATS": "<:ubereats:1519907186636099604>",
+    "DELIVEROO": "<:deliveroo:1519906860356993174>",
+    "AMAZON": "<:amazon:1519907450403160104>",
+    "CARREFOUR": "<:carrefour:1519906825494073414>",
+    "INTERMARCHE": "<:intermarche:1519907100057276546>",
+    "APPLE": "<:apple:1519906800411869204>",
+    "JOYBUY": "<:Joybuy:1524439360638943242>",
+    "SMYTHS_TOYS": "<:smythstoys:1519907368429944832>",
+    "LEGO": "<:lego:1519907470854852720>",
+    "TESLA": "<:tesla:1524439914811359293>",
+    "AIRBNB": "<:airbnb:1519906701900386344>",
+    "SKRILL": "<:skrill:1524440310489288755>",
+    "PAYSAFECARD": "<:paysafecard:1519906750571085995>",
+    "VALORANT": "<:vp:1519915966476320901>",
+    "CP": "<:cp:1528128623117205624>",
+    "QUESTION": "<:questionmark:1525869342506614784>"
+  },
   "tarifs_embed": {
     "title": "🎟️ COMMANDES PINKGIFT",
     "description": [
       "> Recharge ton solde et paie avec.",
       "",
       "🎮 **GAMING**",
-      "🎮 **Google Play**",
-      "🎮 **Steam**",
+      "<:googleplay:1519907060555186278> **Google Play**",
+      "<:steam:1519907154545610873> **Steam**",
       "<:nitroboost:1524439577656561846> **Nitro Boost**",
-      "🎮 **PlayStation**",
-      "🎮 **Nintendo**",
+      "<:playstation:1519906767268741200> **PlayStation**",
+      "<:nintendo:1519907394157678632> **Nintendo**",
       "",
       "👗 **MODE & BEAUTÉ**",
-      "👕 **Zara**",
-      "💄 **Sephora**",
-      "👟 **Zalando**",
-      "👟 **Adidas**",
-      "👟 **Foot Locker**",
+      "<:zara:1519907265681948773> **Zara**",
+      "<:sephora:1519907492862103742> **Sephora**",
+      "<:zalando:1519907231812816906> **Zalando**",
+      "<:adidas:1519906784515588116> **Adidas**",
+      "<:footlocker:1519907296342310952> **Foot Locker**",
       "<:shein:1524439283367411793> **Shein**",
-      "👟 **Nike**",
+      "<:nike:1519906735589167164> **Nike**",
       "",
       "🍔 **FOOD & LIVRAISON**",
-      "🍔 **Uber Eats**",
-      "🍽️ **Deliveroo**",
+      "<:ubereats:1519907186636099604> **Uber Eats**",
+      "<:deliveroo:1519906860356993174> **Deliveroo**",
       "",
       "🛍️ **SHOPPING & COURSES**",
-      "📦 **Amazon**",
-      "🛒 **Carrefour**",
-      "🏬 **Intermarché**",
-      "🍎 **Apple**",
+      "<:amazon:1519907450403160104> **Amazon**",
+      "<:carrefour:1519906825494073414> **Carrefour**",
+      "<:intermarche:1519907100057276546> **Intermarché**",
+      "<:apple:1519906800411869204> **Apple**",
       "<:Joybuy:1524439360638943242> **Joybuy**",
       "",
       "🧸 **JOUETS**",
-      "🧸 **Smyths Toys**",
-      "🧱 **LEGO**",
+      "<:smythstoys:1519907368429944832> **Smyths Toys**",
+      "<:lego:1519907470854852720> **LEGO**",
       "",
       "🚗 **VOYAGE & AUTO**",
       "<:tesla:1524439914811359293> **Tesla**",
-      "🏠 **Airbnb**",
+      "<:airbnb:1519906701900386344> **Airbnb**",
       "",
       "💳 **PRÉPAYÉ**",
       "<:skrill:1524440310489288755> **Skrill**",
-      "💳 **Paysafecard**",
+      "<:paysafecard:1519906750571085995> **Paysafecard**",
       "",
       "🎫 Clique sur le bouton **Commander** ci-dessous.",
       "`Les menus ne sont visibles uniquement par toi.`"
     ],
     "gift_cards_field_name": "💳 Cartes cadeaux — toutes les marques",
     "gift_card_line_template": "**{amount} € reçus** → {price} € débités",
-    "uber_eats_field_name": "🍔 Uber Eats",
+    "uber_eats_field_name": "<:ubereats:1519907186636099604> Uber Eats",
     "uber_eats_line_template": "**{drop} € estimés** → {price} € débités",
-    "nitro_field_name": "💎 Discord Nitro",
+    "nitro_field_name": "<:nitroboost:1524439577656561846> Discord Nitro",
     "nitro_value_template": "**{price} €** débités",
     "dynamic_fields_inline": false,
     "color_rgb": [
@@ -62,27 +92,19 @@
     "footer": "PinkGift — Tarifs"
   },
   "valo_embed": {
-    "title": "💘 VALORANT POINTS 💘",
+    "title": "<:vp:1519915966476320901> VALORANT POINTS",
     "description": [
       "Choisis ta région puis ton pack.",
       "Le prix est débité automatiquement de ton solde.",
       "",
-      "🇪🇺 **Europe**",
-      "<:vp:1519915966476320901> **3650 VP** — 30€",
-      "<:vp:1519915966476320901> **5350 VP** — 40€",
-      "<:vp:1519915966476320901> **8700 VP** — 60€",
-      "<:vp:1519915966476320901> **11000 VP** — 80€",
-      "",
-      "🇹🇷 **Turquie**",
-      "<:vp:1519915966476320901> **2925 VP** — 15€",
-      "<:vp:1519915966476320901> **4325 VP** — 20€",
-      "<:vp:1519915966476320901> **8900 VP** — 45€",
-      "<:vp:1519915966476320901> **11000 VP** — 55€",
-      "",
       "🛒 Clique sur **Commander des VP**, puis choisis ta région et ton pack."
     ],
+    "region_emojis": {
+      "EUROPE": "🇪🇺",
+      "TURQUIE": "🇹🇷"
+    },
     "region_field_name_template": "{emoji} {region}",
-    "pack_line_template": "<:vp:1519915966476320901> **{pack}** — {price} €",
+    "pack_line_template": "<:vp:1519915966476320901> **{pack}** — **{price} €** · origine ≈ ~~{official} €~~",
     "dynamic_fields_inline": false,
     "color_rgb": [
       255,
@@ -155,7 +177,7 @@
     "image_key": "ticket_cree"
   },
   "valo_ticket_bienvenue_embed": {
-    "title": "🎫 Ticket d'achat — VALORANT",
+    "title": "<:vp:1519915966476320901> Ticket d'achat — VALORANT",
     "description": [
       "Bonjour {user} !",
       "",
@@ -387,7 +409,7 @@
     "image_key": "paiement_securise"
   },
   "uber_eats_ticket_embed": {
-    "title": "🍔 Commande — UBER EATS",
+    "title": "<:ubereats:1519907186636099604> Commande — UBER EATS",
     "description": [
       "Bonjour {user} !",
       "",
@@ -481,7 +503,7 @@
     "footer": "PinkGift — Invitations"
   },
   "cp_embed": {
-    "title": "🪙 CALL OF DUTY POINTS — PINKGIFT",
+    "title": "<:cp:1528128623117205624> CALL OF DUTY POINTS — PINKGIFT",
     "description": [
       "Commande tes **COD Points** directement avec ton solde PinkGift.",
       "",
@@ -500,7 +522,7 @@
     "footer": "PinkGift — COD Points"
   },
   "cp_order_pending_embed": {
-    "title": "🕒 Commande COD Points en attente",
+    "title": "<:cp:1528128623117205624> Commande COD Points en attente",
     "description": [
       "Merci pour ta commande {user} !",
       "Le pack est maintenant commandé auprès du fournisseur. Le code sera envoyé ici dès sa réception."
@@ -535,7 +557,7 @@
     "footer": "PinkGift — Commande CP à la demande"
   },
   "cp_delivery_embed": {
-    "title": "✅ COD Points livrés",
+    "title": "<:cp:1528128623117205624> COD Points livrés",
     "description": [
       "Merci pour ta commande {user} !",
       "Ton code est disponible ci-dessous. Conserve-le jusqu'à son activation."

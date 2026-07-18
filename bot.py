@@ -16,6 +16,7 @@ import secrets
 import hashlib
 import io
 import traceback
+import unicodedata
 from functools import wraps
 
 app = Flask('')
@@ -1095,19 +1096,19 @@ VALO_REGIONS = {
     "EUROPE": {
         "label": "Europe", "emoji": "🇪🇺",
         "packs": {
-            "3650": {"label": "3650 VP", "default_price": 30},
-            "5350": {"label": "5350 VP", "default_price": 40},
-            "8700": {"label": "8700 VP", "default_price": 60},
-            "11000": {"label": "11000 VP", "default_price": 80},
+            "3650": {"label": "3650 VP", "default_price": 30, "original_price": 35},
+            "5350": {"label": "5350 VP", "default_price": 40, "original_price": 50},
+            "8700": {"label": "8700 VP", "default_price": 60, "original_price": 80},
+            "11000": {"label": "11000 VP", "default_price": 80, "original_price": 100},
         }
     },
     "TURQUIE": {
         "label": "Turquie", "emoji": "🇹🇷",
         "packs": {
-            "2925": {"label": "2925 VP", "default_price": 15},
-            "4325": {"label": "4325 VP", "default_price": 20},
-            "8900": {"label": "8900 VP", "default_price": 45},
-            "11000": {"label": "11000 VP", "default_price": 55},
+            "2925": {"label": "2925 VP", "default_price": 15, "original_price": 30},
+            "4325": {"label": "4325 VP", "default_price": 20, "original_price": 40},
+            "8900": {"label": "8900 VP", "default_price": 45, "original_price": 80},
+            "11000": {"label": "11000 VP", "default_price": 55, "original_price": 100},
         }
     }
 }
@@ -1131,6 +1132,10 @@ def default_pricing_config():
         "cp": {pack_key: float(pack["default_price"]) for pack_key, pack in CP_PACKS.items()},
         "valorant": {
             region_key: {pack_key: float(pack["default_price"]) for pack_key, pack in region["packs"].items()}
+            for region_key, region in VALO_REGIONS.items()
+        },
+        "valorant_original": {
+            region_key: {pack_key: float(pack["original_price"]) for pack_key, pack in region["packs"].items()}
             for region_key, region in VALO_REGIONS.items()
         },
     }
@@ -1165,6 +1170,12 @@ def get_pricing_config():
         for pack_key, fallback in list(packs.items()):
             legacy_key = str(int(VALO_REGIONS[region_key]["packs"][pack_key]["default_price"]))
             packs[pack_key] = valid_price(saved_packs.get(pack_key, saved_packs.get(legacy_key)), fallback)
+
+    saved_valorant_original = saved.get("valorant_original", {}) if isinstance(saved.get("valorant_original"), dict) else {}
+    for region_key, packs in prices["valorant_original"].items():
+        saved_packs = saved_valorant_original.get(region_key, {}) if isinstance(saved_valorant_original.get(region_key), dict) else {}
+        for pack_key, fallback in list(packs.items()):
+            packs[pack_key] = valid_price(saved_packs.get(pack_key), fallback)
     return prices
 
 
@@ -1365,9 +1376,9 @@ DEFAULT_EMBED_DATA = {
         ],
         "gift_cards_field_name": "💳 Cartes cadeaux — toutes les marques",
         "gift_card_line_template": "**{amount} € reçus** → {price} € débités",
-        "uber_eats_field_name": "🍔 Uber Eats",
+        "uber_eats_field_name": "<:ubereats:1519907186636099604> Uber Eats",
         "uber_eats_line_template": "**{drop} € estimés** → {price} € débités",
-        "nitro_field_name": "💎 Discord Nitro",
+        "nitro_field_name": "<:nitroboost:1524439577656561846> Discord Nitro",
         "nitro_value_template": "**{price} €** débités",
         "dynamic_fields_inline": False,
         "color_rgb": [255, 192, 203],
@@ -1375,24 +1386,16 @@ DEFAULT_EMBED_DATA = {
         "footer": "PinkGift — Tarifs"
     },
     "valo_embed": {
-        "title": "💘 VALORANT POINTS 💘",
+        "title": "<:vp:1519915966476320901> VALORANT POINTS",
         "description": [
-            "Choisis ton montant. 💞",
+            "Choisis ta région puis ton pack.",
+            "Le prix est débité automatiquement de ton solde.",
             "",
-            "🇪🇺 **Europe**",
-            "<:vp:1519915966476320901> **3650 VP** — 30€",
-            "<:vp:1519915966476320901> **5350 VP** — 40€",
-            "<:vp:1519915966476320901> **8700 VP** — 60€",
-            "",
-            "🇹🇷 **Turquie**",
-            "<:vp:1519915966476320901> **2925 VP** — 15€",
-            "<:vp:1519915966476320901> **4325 VP** — 20€",
-            "<:vp:1519915966476320901> **8900 VP** — 45€",
-            "",
-            "🛒 Clique sur le bouton ci-dessous pour ouvrir un ticket."
+            "🛒 Clique sur **Commander des VP**, puis choisis ta région et ton pack."
         ],
+        "region_emojis": {"EUROPE": "🇪🇺", "TURQUIE": "🇹🇷"},
         "region_field_name_template": "{emoji} {region}",
-        "pack_line_template": "<:vp:1519915966476320901> **{pack}** — {price} €",
+        "pack_line_template": "<:vp:1519915966476320901> **{pack}** — **{price} €** · origine ≈ ~~{official} €~~",
         "dynamic_fields_inline": False,
         "color_rgb": [255, 192, 203],
         "image_url": "",
@@ -1465,7 +1468,7 @@ DEFAULT_EMBED_DATA.update({
         "image_key": "ticket_cree"
     },
     "valo_ticket_bienvenue_embed": {
-        "title": "🎫 Ticket d'achat — VALORANT",
+        "title": "<:vp:1519915966476320901> Ticket d'achat — VALORANT",
         "description": [
             "Bonjour {user} !",
             "",
@@ -1625,7 +1628,7 @@ DEFAULT_EMBED_DATA.update({
     }
 })
 
-DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"💰 Solde & paiements PinkGift","description":["Consulte ton solde ou ouvre un ticket de recharge avec les boutons ci-dessous.","","💳 **Moyens de paiement acceptés**","<:paypal:1517582845315649751> **PayPal**","🏦 **Virement bancaire**","₿ **Cryptomonnaies**","","Une fois le paiement confirmé par le staff, ton solde sera ajouté et utilisable pour commander."],"color_rgb":[255,192,203],"image_key":"paiement_securise","footer":"PinkGift — Solde & paiements"},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
+DEFAULT_EMBED_DATA.update({"balance_embed":{"title":"<:cash:1525568414117134528> Solde & paiements PinkGift","description":["Consulte ton solde personnel ou ouvre un ticket pour le recharger.","","> Minimum dépôt : 20€","Les informations de chaque client restent privées.","","<:cashapp:1525570860189225112> Moyens de paiement acceptés","","<:revolut:1525568035392459023> **Revolut**","<:paypal:1517582845315649751> **PayPal**","<:banque:1523803303253905590> **Virements bancaires**","<:litecoin:1523802843352531147> **Cryptomonnaies**","","Clique sur les boutons ci-dessous pour consulter ton solde ou ouvrir un ticket de recharge."],"color_rgb":[255,192,203],"image_key":"paiement_securise","footer":"PinkGift — Solde & paiements"},"balance_ticket_embed":{"title":"➕ Recharge de solde","description":["Bonjour {user} !","","Ton solde actuel est de **{balance} €**.","Indique au staff le montant et le moyen de paiement souhaités."],"color_rgb":[255,192,203],"image_key":"paiement_securise"}})
 
 DEFAULT_EMBED_DATA.update({
     "parrainages_embed": {
@@ -1655,6 +1658,8 @@ DEFAULT_EMBED_DATA.update({
 })
 
 DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.", "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.", "Le staff intervient uniquement pour les recharges de solde."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
+
+DEFAULT_EMBED_DATA["uber_eats_ticket_embed"]["title"] = "<:ubereats:1519907186636099604> Commande — UBER EATS"
 
 DEFAULT_EMBED_DATA.update({
     "faq_embed": {
@@ -1794,7 +1799,7 @@ DEFAULT_EMBED_DATA.update({
 
 DEFAULT_EMBED_DATA.update({
     "cp_embed": {
-        "title": "🪙 CALL OF DUTY POINTS — PINKGIFT",
+        "title": "<:cp:1528128623117205624> CALL OF DUTY POINTS — PINKGIFT",
         "description": [
             "Commande tes **COD Points** directement avec ton solde PinkGift.",
             "",
@@ -1809,7 +1814,7 @@ DEFAULT_EMBED_DATA.update({
         "footer": "PinkGift — COD Points"
     },
     "cp_order_pending_embed": {
-        "title": "🕒 Commande COD Points en attente",
+        "title": "<:cp:1528128623117205624> Commande COD Points en attente",
         "description": [
             "Merci pour ta commande {user} !",
             "Le pack est maintenant commandé auprès du fournisseur. Le code sera envoyé ici dès sa réception."
@@ -1824,7 +1829,7 @@ DEFAULT_EMBED_DATA.update({
         "footer": "PinkGift — Commande CP à la demande"
     },
     "cp_delivery_embed": {
-        "title": "✅ COD Points livrés",
+        "title": "<:cp:1528128623117205624> COD Points livrés",
         "description": [
             "Merci pour ta commande {user} !",
             "Ton code est disponible ci-dessous. Conserve-le jusqu'à son activation."
@@ -1840,6 +1845,66 @@ DEFAULT_EMBED_DATA.update({
     }
 })
 
+def normalize_embed_configuration(data):
+    """Applique les migrations visuelles aux anciens overrides enregistrés dans le panel."""
+    if not isinstance(data, dict):
+        return data
+
+    emoji_catalog = data.get("emojis", {}) if isinstance(data.get("emojis"), dict) else {}
+    for product_key, product in PRODUCT_CONFIG.items():
+        emoji_catalog.setdefault(product_key, product["emoji"])
+    emoji_catalog.setdefault("CP", "<:cp:1528128623117205624>")
+    emoji_catalog.setdefault("QUESTION", "<:questionmark:1525869342506614784>")
+    data["emojis"] = emoji_catalog
+
+    tarifs = data.get("tarifs_embed")
+    if isinstance(tarifs, dict) and isinstance(tarifs.get("description"), list):
+        product_by_name = {
+            "".join(c for c in unicodedata.normalize("NFD", product["display"].lower()) if unicodedata.category(c) != "Mn").replace(" ", "").replace("_", ""): product_key
+            for product_key, product in PRODUCT_CONFIG.items()
+        }
+        synced_lines = []
+        for raw_line in tarifs["description"]:
+            line = str(raw_line)
+            label_match = re.search(r"\*\*([^*]+)\*\*", line)
+            if label_match:
+                normalized_label = "".join(c for c in unicodedata.normalize("NFD", label_match.group(1).lower()) if unicodedata.category(c) != "Mn").replace(" ", "").replace("_", "")
+                product_key = product_by_name.get(normalized_label)
+                if product_key:
+                    line = f"{emoji_catalog[product_key]} **{label_match.group(1)}**"
+            synced_lines.append(line)
+        tarifs["description"] = synced_lines
+        if tarifs.get("uber_eats_field_name") in {None, "", "🍔 Uber Eats"}:
+            tarifs["uber_eats_field_name"] = f"{emoji_catalog['UBEREATS']} Uber Eats"
+        if tarifs.get("nitro_field_name") in {None, "", "💎 Discord Nitro"}:
+            tarifs["nitro_field_name"] = f"{emoji_catalog['DISCORD_NITRO']} Discord Nitro"
+
+    valo = data.get("valo_embed")
+    if isinstance(valo, dict):
+        valo.setdefault("region_emojis", {"EUROPE": "🇪🇺", "TURQUIE": "🇹🇷"})
+        template = str(valo.get("pack_line_template") or "")
+        if "{official}" not in template:
+            valo["pack_line_template"] = f"{template} · origine ≈ ~~{{official}} €~~".strip()
+        description = valo.get("description")
+        if isinstance(description, list):
+            cleaned = []
+            region_labels = tuple(region["label"].lower() for region in VALO_REGIONS.values())
+            for raw_line in description:
+                line = str(raw_line)
+                lowered = line.lower()
+                if any(label in lowered for label in region_labels) and "**" in line:
+                    continue
+                if "vp" in lowered and re.search(r"\d+(?:[.,]\d+)?\s*€", line):
+                    continue
+                if not line and (not cleaned or not cleaned[-1]):
+                    continue
+                cleaned.append(line)
+            while cleaned and not cleaned[-1]:
+                cleaned.pop()
+            valo["description"] = cleaned
+    return data
+
+
 def load_embed_texts():
     if EMBED_CONFIG_URL:
         try:
@@ -1853,7 +1918,7 @@ def load_embed_texts():
             for key, default_value in DEFAULT_EMBED_DATA.items():
                 if key not in data or not isinstance(data[key], dict):
                     data[key] = default_value
-            return apply_embed_overrides(data)
+            return normalize_embed_configuration(apply_embed_overrides(data))
         except Exception as e:
             print(f"Erreur chargement JSON distant : {e}")
 
@@ -1869,10 +1934,23 @@ def load_embed_texts():
                 for key, default_value in DEFAULT_EMBED_DATA.items():
                     if key not in data or not isinstance(data[key], dict):
                         data[key] = default_value
-                return apply_embed_overrides(data)
+                return normalize_embed_configuration(apply_embed_overrides(data))
             except Exception as e:
                 print(f"Erreur chargement config_embeds.json local : {e}")
-    return apply_embed_overrides(DEFAULT_EMBED_DATA)
+    return normalize_embed_configuration(apply_embed_overrides(DEFAULT_EMBED_DATA))
+
+
+def get_emoji_catalog():
+    configured = load_embed_texts().get("emojis", {})
+    return configured if isinstance(configured, dict) else {}
+
+
+def get_product_emoji(product_key, catalog=None):
+    """Garde les emojis des menus et embeds synchronisés avec un seul chargement JSON."""
+    configured = catalog if isinstance(catalog, dict) else get_emoji_catalog()
+    if configured.get(product_key):
+        return str(configured[product_key])
+    return PRODUCT_CONFIG.get(product_key, {}).get("emoji", "🎁")
 
 
 def get_image_url(image_key: str, fallback_url: str = "") -> str:
@@ -2357,7 +2435,7 @@ async def create_product_ticket(interaction, product_key, amount):
         else:
             embed_key = "menu_ticket_embed"
         embed = build_json_embed(embed_key, {
-            "user": user.mention, "service": cfg["display"], "emoji": cfg["emoji"],
+            "user": user.mention, "service": cfg["display"], "emoji": get_product_emoji(product_key),
             "amount": amount, "paid": f"{paid_amount:g}", "drop": received_display, "balance": f"{remaining_balance:.2f}"
         })
         try:
@@ -2504,7 +2582,7 @@ async def create_valo_order(interaction, region_key, pack_key):
             return
         code_pending = (chr(96) * 3) + "\nEn attente...\n" + (chr(96) * 3)
         embed = build_json_embed("commande_vp_embed", {
-            "emoji": "<:vp:1519915966476320901>", "user": user.mention,
+            "emoji": get_product_emoji("VALORANT"), "user": user.mention,
             "region": f"{region_emoji} {region_label}", "pack": pack, "amount": price,
             "code": code_pending, "balance": f"{remaining_balance:.2f}"
         })
@@ -2837,40 +2915,6 @@ class CPPendingOrderView(discord.ui.View):
             return
         await interaction.response.send_modal(CPCodeDeliveryModal(interaction.message.id))
 
-    @discord.ui.button(
-        label="Annuler et rembourser",
-        emoji="↩️",
-        style=discord.ButtonStyle.danger,
-        custom_id="pinkgift_cp_cancel_pending",
-    )
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not can_manage_cp_order(interaction.user):
-            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        order = get_cp_order(message_id=interaction.message.id)
-        if not order or str(order.get("status") or "pending").lower() != "pending":
-            await interaction.followup.send("❌ Cette commande n'est plus en attente.", ephemeral=True)
-            return
-        lock = ORDER_LOCKS.setdefault((int(order["guild_id"]), int(order["user_id"])), asyncio.Lock())
-        async with lock:
-            order = get_cp_order(order_id=order["id"])
-            if not order or str(order.get("status") or "pending").lower() != "pending":
-                await interaction.followup.send("❌ Cette commande vient déjà d'être traitée.", ephemeral=True)
-                return
-            try:
-                new_balance = refund_pending_order(order, interaction.user.id)
-            except Exception as error:
-                print(f"Erreur remboursement CP #{order['id']}: {error}")
-                await interaction.followup.send("❌ Le remboursement a échoué ; la commande reste en attente.", ephemeral=True)
-                return
-            try:
-                await show_order_refund_on_discord(order, new_balance)
-            except Exception as error:
-                print(f"Erreur mise à jour message remboursement CP #{order['id']}: {error}")
-        await interaction.followup.send("✅ Commande annulée et client remboursé.", ephemeral=True)
-
-
 class CPPackSelect(discord.ui.Select):
     def __init__(self):
         prices = get_pricing_config()["cp"]
@@ -2974,15 +3018,13 @@ class ProductAmountView(discord.ui.View):
 
 class ProductServiceSelect(discord.ui.Select):
     def __init__(self):
-        # Ce menu doit pouvoir être construit instantanément au clic.
-        # Les emojis viennent de la configuration locale et ne déclenchent
-        # aucune requête Discord, SQLite ou Supabase.
+        emoji_catalog = get_emoji_catalog()
         options = [
             discord.SelectOption(
                 label=cfg["display"][:100],
                 value=key,
                 description="Sélectionner ce produit",
-                emoji=discord.PartialEmoji.from_str(cfg["emoji"]),
+                emoji=discord.PartialEmoji.from_str(get_product_emoji(key, emoji_catalog)),
             )
             for key, cfg in PRODUCT_CONFIG.items()
             if key != "VALORANT"
@@ -3265,39 +3307,6 @@ class CloseTicketView(discord.ui.View):
 class PendingOrderActionsView(CloseTicketView):
     def __init__(self, client_id: int = 0):
         super().__init__(client_id)
-
-    @discord.ui.button(
-        label="Annuler et rembourser",
-        emoji="↩️",
-        style=discord.ButtonStyle.danger,
-        custom_id="pinkgift_refund_pending_order",
-    )
-    async def refund(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not can_manage_cp_order(interaction.user):
-            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        order = get_order_record(message_id=interaction.message.id)
-        if not order or str(order.get("status") or "pending").lower() != "pending":
-            await interaction.followup.send("❌ Cette commande n'est plus en attente et ne peut pas être remboursée ici.", ephemeral=True)
-            return
-        lock = ORDER_LOCKS.setdefault((int(order["guild_id"]), int(order["user_id"])), asyncio.Lock())
-        async with lock:
-            order = get_order_record(order_id=order["id"])
-            if not order or str(order.get("status") or "pending").lower() != "pending":
-                await interaction.followup.send("❌ Cette commande vient déjà d'être traitée.", ephemeral=True)
-                return
-            try:
-                new_balance = refund_pending_order(order, interaction.user.id)
-            except Exception as error:
-                print(f"Erreur remboursement commande #{order['id']}: {error}")
-                await interaction.followup.send("❌ Le remboursement a échoué ; la commande reste en attente.", ephemeral=True)
-                return
-            try:
-                await show_order_refund_on_discord(order, new_balance)
-            except Exception as error:
-                print(f"Erreur mise à jour ticket remboursement commande #{order['id']}: {error}")
-        await interaction.followup.send("✅ Commande annulée et montant recrédité sur le solde du client.", ephemeral=True)
 
 
 class OpenTicketView(discord.ui.View):
@@ -4127,22 +4136,28 @@ def build_valo_embed():
         if "vp" in lowered and re.search(r"\d+(?:[.,]\d+)?\s*€", line):
             continue
         kept_lines.append(line)
-    description = "\n".join(kept_lines).strip()
+    description = re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()
     embed = build_json_embed("valo_embed", data_override=texts)
     embed.description = description or None
-    prices = get_pricing_config()["valorant"]
+    pricing = get_pricing_config()
+    prices = pricing["valorant"]
     field_name_template = texts.get("region_field_name_template", "{emoji} {region}")
-    pack_line_template = texts.get("pack_line_template", "<:vp:1519915966476320901> **{pack}** — {price} €")
+    pack_line_template = texts.get(
+        "pack_line_template",
+        "<:vp:1519915966476320901> **{pack}** — **{price} €** · origine ≈ ~~{official} €~~",
+    )
+    region_emojis = texts.get("region_emojis", {}) if isinstance(texts.get("region_emojis"), dict) else {}
     dynamic_inline = bool(texts.get("dynamic_fields_inline", False))
     for region_key, region in VALO_REGIONS.items():
         lines = [
             format_embed_text(pack_line_template, {
                 "region_key": region_key,
                 "region": region["label"],
-                "emoji": region["emoji"],
+                "emoji": region_emojis.get(region_key, region["emoji"]),
                 "pack_key": pack_key,
                 "pack": pack["label"],
                 "price": format_price(prices[region_key][pack_key]),
+                "official": format_price(pricing["valorant_original"][region_key][pack_key]),
             })
             for pack_key, pack in region["packs"].items()
         ]
@@ -4150,7 +4165,7 @@ def build_valo_embed():
             name=format_embed_text(field_name_template, {
                 "region_key": region_key,
                 "region": region["label"],
-                "emoji": region["emoji"],
+                "emoji": region_emojis.get(region_key, region["emoji"]),
             }),
             value="\n".join(lines),
             inline=dynamic_inline,
@@ -5061,21 +5076,25 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
         value: context.gift_cards.map(item => fillTokens(giftTemplate, item)).join("\n"), inline,
       });
       if (Array.isArray(context.uber_eats)) fields.push({
-        name: data.uber_eats_field_name || "🍔 Uber Eats",
+        name: data.uber_eats_field_name || "<:ubereats:1519907186636099604> Uber Eats",
         value: context.uber_eats.map(item => fillTokens(uberTemplate, item)).join("\n"), inline,
       });
       if (context.nitro) fields.push({
-        name: data.nitro_field_name || "💎 Discord Nitro",
+        name: data.nitro_field_name || "<:nitroboost:1524439577656561846> Discord Nitro",
         value: fillTokens(nitroTemplate, context.nitro), inline,
       });
     } else if (key === "valo_embed" && Array.isArray(context.regions)) {
       const nameTemplate = data.region_field_name_template || "{emoji} {region}";
-      const packTemplate = data.pack_line_template || "<:vp:1519915966476320901> **{pack}** — {price} €";
-      context.regions.forEach(region => fields.push({
-        name: fillTokens(nameTemplate, region),
-        value: (region.packs || []).map(pack => fillTokens(packTemplate, {...region, ...pack})).join("\n"),
+      const packTemplate = data.pack_line_template || "<:vp:1519915966476320901> **{pack}** — **{price} €** · origine ≈ ~~{official} €~~";
+      const regionEmojis = data.region_emojis && typeof data.region_emojis === "object" ? data.region_emojis : {};
+      context.regions.forEach(region => {
+        const regionValues = {...region, emoji: regionEmojis[region.region_key] || region.emoji};
+        fields.push({
+        name: fillTokens(nameTemplate, regionValues),
+        value: (region.packs || []).map(pack => fillTokens(packTemplate, {...regionValues, ...pack})).join("\n"),
         inline,
-      }));
+      });
+      });
     }
     return fields;
   };
@@ -5672,6 +5691,13 @@ body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}head
 </main></body></html>"""
 
 
+PANEL_PRICES_COSTS_TEMPLATE = PANEL_PRICES_COSTS_TEMPLATE.replace(
+    '<input type="number" name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>{{ item.region }} — {{ item.pack }} — coût d\'achat</span>',
+    '<input type="number" name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>{{ item.region }} — {{ item.pack }} — prix d\'origine</span><input type="number" name="valo_original_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.official }}" min="0.01" max="100000" step="0.01" required><small>Affiché barré dans l\'embed</small></label><label class="field"><span>{{ item.region }} — {{ item.pack }} — coût d\'achat</span>',
+    1,
+)
+
+
 def apply_panel_theme(template):
     themed = template.replace("</style>", PANEL_THEME_CSS + "</style>", 1)
     return themed.replace("</head>", PANEL_FAVICON + "</head>", 1)
@@ -6124,6 +6150,13 @@ def panel_prices():
                     }
                     for region_key, region in VALO_REGIONS.items()
                 },
+                "valorant_original": {
+                    region_key: {
+                        pack_key: panel_price_value(f"valo_original_{region_key}_{pack_key}")
+                        for pack_key in region["packs"]
+                    }
+                    for region_key, region in VALO_REGIONS.items()
+                },
             }
             purchase_costs = {
                 "gift_cards": {
@@ -6190,6 +6223,7 @@ def panel_prices():
                 "pack_key": pack_key,
                 "pack": pack["label"],
                 "price": format_price(pricing["valorant"][region_key][pack_key]),
+                "official": format_price(pricing["valorant_original"][region_key][pack_key]),
                 "cost": format_price(purchase_costs["valorant"][region_key][pack_key]),
             })
     return render_template_string(
@@ -6293,6 +6327,7 @@ def panel_embeds():
                             "pack_key": pack_key,
                             "pack": pack["label"],
                             "price": format_price(pricing["valorant"][region_key][pack_key]),
+                            "official": format_price(pricing["valorant_original"][region_key][pack_key]),
                         }
                         for pack_key, pack in region["packs"].items()
                     ],
@@ -6314,8 +6349,9 @@ def panel_embeds():
     except Exception as error:
         print(f"Erreur préparation aperçus dynamiques du panel : {error}")
     embed_help = {
+        "emojis": "Catalogue central des emojis custom. Toute modification est reprise par les menus et les embeds concernés sans redémarrage.",
         "tarifs_embed": "Les champs de prix sont entièrement modifiables. Variables : {amount}, {drop}, {price} et {pack_key}. Les montants restent synchronisés avec l'onglet Prix.",
-        "valo_embed": "Les régions et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key} et {price}.",
+        "valo_embed": "Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
         "cp_embed": "Le bloc Packs disponibles est entièrement modifiable. Variables : {points}, {price}, {official} et {pack_key}. Les prix restent synchronisés avec l'onglet CP.",
     }
     embeds = []
