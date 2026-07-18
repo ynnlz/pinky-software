@@ -4255,7 +4255,7 @@ body main { width: min(1680px, calc(100% - 28px)); max-width: 1680px !important;
 }
 """
 
-PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Modifie le JSON d'un embed puis clique sur Enregistrer. Pour uploader une image, choisis un fichier : le bot l'envoie dans le salon configuré par EMBED_UPLOAD_CHANNEL_ID et remplit automatiquement image_url.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
+PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">L'aperçu Discord se met à jour pendant que tu modifies le JSON. Si tu sélectionnes une image, elle apparaît immédiatement avant l'enregistrement. Clique sur Enregistrer uniquement quand le résultat te convient.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
 
 PANEL_EMBEDS_TEMPLATE = (
     PANEL_EMBEDS_TEMPLATE
@@ -4294,7 +4294,7 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   box-shadow: 0 18px 45px rgba(0,0,0,.28);
 }
 .discord-preview::before {
-  content: "Apercu Discord en direct";
+  content: "Aperçu Discord en direct · " attr(data-status);
   display: block;
   margin: 0 0 14px;
   color: #b5bac1;
@@ -4302,6 +4302,22 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   font-weight: 750;
   letter-spacing: .06em;
   text-transform: uppercase;
+}
+.discord-preview[data-state="valid"]::before { color: #5ed6a0; }
+.discord-preview[data-state="invalid"]::before { color: #ffc96b; }
+.preview-live-warning {
+  margin: 0 0 12px 52px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,201,107,.3);
+  border-radius: 6px;
+  color: #ffc96b;
+  background: rgba(255,201,107,.07);
+  font-size: 11px;
+}
+.discord-preview.preview-updated .discord-embed-card { animation: preview-pulse .24s ease-out; }
+@keyframes preview-pulse {
+  from { box-shadow: 0 0 0 2px rgba(247,103,174,.36); }
+  to { box-shadow: 0 0 0 0 rgba(247,103,174,0); }
 }
 .discord-message { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
 .discord-avatar {
@@ -4360,6 +4376,7 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   .discord-avatar { width: 32px; height: 32px; font-size: 12px; }
   .preview-fields { grid-template-columns: minmax(0, 1fr); }
   .preview-field, .preview-field.wide { grid-column: 1 / -1 !important; }
+  .preview-live-warning { margin-left: 41px; }
 }
 """
 
@@ -4367,6 +4384,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
 <script>
 (() => {
   const allForms = [...document.querySelectorAll(".embed-editor")];
+  const localImagePreviews = new WeakMap();
   const make = (tag, className, value) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -4442,7 +4460,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
   };
   const appendImage = (parent, className, url, alt) => {
     if (!url) return false;
-    if (!/^https?:\/\//i.test(url)) {
+    if (!/^(https?:\/\/|blob:)/i.test(url)) {
       parent.appendChild(make("div", "preview-media-error", `${alt} : l'URL n'est pas valide.`));
       return false;
     }
@@ -4469,7 +4487,9 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     const data = form && parseFormJson(form);
     return data && typeof data === "object" && !Array.isArray(data) ? data : {};
   };
-  const resolvedMainImage = data => {
+  const resolvedMainImage = (data, form) => {
+    const localPreview = localImagePreviews.get(form);
+    if (localPreview) return localPreview;
     const fallback = imageUrl(data.image_url || data.image);
     const key = typeof data.image_key === "string" ? data.image_key.trim() : "";
     return key ? imageUrl(sharedImages()[key]) || fallback : fallback;
@@ -4509,7 +4529,18 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     if (!textarea || !preview) return;
     const data = parseFormJson(form);
     if (!data || typeof data !== "object" || Array.isArray(data)) {
-      preview.replaceChildren(make("div", "preview-error", "JSON invalide : corrige la syntaxe pour retrouver l'aperçu."));
+      preview.dataset.state = "invalid";
+      preview.dataset.status = "JSON en cours";
+      if (preview.querySelector(".discord-message")) {
+        let warning = preview.querySelector(".preview-live-warning");
+        if (!warning) {
+          warning = make("div", "preview-live-warning");
+          preview.prepend(warning);
+        }
+        warning.textContent = "Le JSON est temporairement incomplet. Le dernier aperçu valide reste affiché.";
+      } else {
+        preview.replaceChildren(make("div", "preview-error", "JSON invalide : corrige la syntaxe pour retrouver l'aperçu."));
+      }
       return;
     }
     const message = make("div", "discord-message");
@@ -4553,7 +4584,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     }
     if (description) inner.appendChild(makeRich("div", "preview-description", description));
     renderFields(inner, data.fields, Boolean(thumbnail));
-    const mainImage = resolvedMainImage(data);
+    const mainImage = resolvedMainImage(data, form);
     appendImage(inner, "preview-image", mainImage, "Image de l'embed");
     const footer = textValue(data.footer?.text ?? data.footer);
     const footerIcon = imageUrl(data.footer?.icon_url || data.footer_icon_url);
@@ -4575,14 +4606,27 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     content.appendChild(card);
     message.appendChild(content);
     preview.replaceChildren(message);
+    preview.dataset.state = "valid";
+    preview.dataset.status = localImagePreviews.has(form) ? "image locale" : "à jour";
+    preview.classList.remove("preview-updated");
+    requestAnimationFrame(() => preview.classList.add("preview-updated"));
   };
   allForms.forEach(form => {
     const textarea = form.querySelector('textarea[name="embed_json"]');
+    const imageInput = form.querySelector('input[type="file"][name="image_file"]');
     render(form);
     if (textarea) textarea.addEventListener("input", () => {
       const key = form.querySelector('input[name="embed_key"]')?.value;
       if (key === "images") allForms.forEach(render);
       else render(form);
+    });
+    if (imageInput) imageInput.addEventListener("change", () => {
+      const previous = localImagePreviews.get(form);
+      if (previous) URL.revokeObjectURL(previous);
+      const file = imageInput.files?.[0];
+      if (file && file.type.startsWith("image/")) localImagePreviews.set(form, URL.createObjectURL(file));
+      else localImagePreviews.delete(form);
+      render(form);
     });
   });
 })();
