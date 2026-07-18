@@ -4144,6 +4144,365 @@ LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><
 PANEL_ACCESS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Accès panel</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}h1{margin:0;color:#ff8fc8;font-size:23px}main{padding:22px 5%}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630;vertical-align:top}th{color:#ff9dce}.muted{color:#aa98a4;font-size:12px}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:11px;min-width:260px}button{background:#e8509a;color:#fff;border:0;padding:12px 14px;cursor:pointer}a{color:#ff9dce}.ua{max-width:520px;word-break:break-word}</style></head><body><header><h1>PinkGift — Accès panel</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}{% if locked %}<form method="get"><h2>Accès protégé</h2><p class="muted">Entre la clé privée configurée dans PANEL_AUDIT_KEY.</p><input type="password" name="key" placeholder="Clé privée" required><button type="submit">Ouvrir</button></form>{% else %}<table><thead><tr><th>Heure</th><th>IP</th><th>Mode</th><th>Page</th><th>Méthode</th><th>User-agent</th></tr></thead><tbody>{% for log in logs %}<tr><td>{{ log.created_at }}</td><td>{{ log.ip }}</td><td>{{ log.device }}</td><td>{{ log.path }}</td><td>{{ log.method }}</td><td class="ua muted">{{ log.user_agent }}</td></tr>{% else %}<tr><td colspan="6">Aucun accès enregistré.</td></tr>{% endfor %}</tbody></table>{% endif %}</main></body></html>"""
 
 
+# Thème commun du panel. Les templates historiques gardent leur structure et
+# leurs formulaires, puis ces règles unifient toute l'interface en un seul
+# design responsive. Cela évite aussi de dupliquer les futures retouches CSS.
+PANEL_THEME_CSS = r"""
+:root {
+  color-scheme: dark;
+  --bg: #08090d;
+  --surface: rgba(18, 19, 27, .86);
+  --surface-strong: #151620;
+  --surface-soft: rgba(255, 255, 255, .035);
+  --border: rgba(255, 255, 255, .09);
+  --border-focus: rgba(247, 103, 174, .58);
+  --text: #f7f7fb;
+  --muted: #999aaa;
+  --pink: #f767ae;
+  --pink-strong: #e94698;
+  --purple: #8b6cff;
+  --green: #5ed6a0;
+  --amber: #ffc96b;
+  --danger: #ff6481;
+  --shadow: 0 24px 70px rgba(0, 0, 0, .32);
+}
+* { box-sizing: border-box; }
+html { min-height: 100%; background: var(--bg); }
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  background:
+    radial-gradient(900px 460px at 8% -8%, rgba(247, 103, 174, .16), transparent 62%),
+    radial-gradient(760px 420px at 100% 4%, rgba(139, 108, 255, .13), transparent 58%),
+    linear-gradient(180deg, #0b0c12 0%, var(--bg) 70%);
+  background-attachment: fixed;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .16;
+  background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 38px 38px;
+  mask-image: linear-gradient(to bottom, black, transparent 70%);
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  min-height: 72px;
+  padding: 14px clamp(18px, 4vw, 64px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(8, 9, 13, .78);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+header h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(18px, 2.1vw, 23px);
+  font-weight: 760;
+  letter-spacing: -.035em;
+}
+header h1::before {
+  content: "P";
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 12px;
+  color: white;
+  font-size: 17px;
+  font-weight: 850;
+  background: linear-gradient(145deg, var(--pink), var(--purple));
+  box-shadow: 0 10px 30px rgba(233, 70, 152, .3), inset 0 1px rgba(255,255,255,.24);
+}
+header > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: #e7e7ef !important;
+  text-decoration: none;
+  background: var(--surface-soft);
+  transition: .18s ease;
+}
+header > a:hover { border-color: rgba(247,103,174,.38); background: rgba(247,103,174,.1); color: white !important; }
+main {
+  position: relative;
+  z-index: 1;
+  width: min(1440px, calc(100% - 40px));
+  max-width: 1440px !important;
+  margin: 0 auto;
+  padding: 30px 0 64px !important;
+}
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 24px !important;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(18, 19, 27, .74);
+  box-shadow: 0 16px 50px rgba(0,0,0,.18);
+}
+.tab {
+  padding: 9px 13px !important;
+  border: 0 !important;
+  border-radius: 10px;
+  color: #b9bac8 !important;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: .18s ease;
+}
+.tab:hover { color: white !important; background: rgba(255,255,255,.055); }
+.tab.active {
+  color: white !important;
+  background: linear-gradient(135deg, var(--pink-strong), #c64ee7) !important;
+  box-shadow: 0 8px 24px rgba(233, 70, 152, .24);
+}
+h2 {
+  margin: 30px 0 14px;
+  color: #f0f0f6;
+  font-size: 18px;
+  line-height: 1.3;
+  letter-spacing: -.025em;
+}
+p { color: #c2c2cd; }
+a { color: #ff8bc2; text-underline-offset: 3px; }
+.muted { color: var(--muted) !important; font-size: 13px !important; }
+.notice {
+  margin: 0 0 20px !important;
+  padding: 13px 15px !important;
+  border: 1px solid rgba(247, 103, 174, .2) !important;
+  border-left: 3px solid var(--pink) !important;
+  border-radius: 12px;
+  color: #f5dbe8;
+  background: rgba(247, 103, 174, .08) !important;
+  box-shadow: 0 12px 35px rgba(0,0,0,.12);
+}
+.card, details, .cost-form {
+  border: 1px solid var(--border) !important;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(24,25,35,.95), rgba(15,16,23,.95)) !important;
+  box-shadow: 0 16px 50px rgba(0,0,0,.18);
+}
+.card { padding: 20px !important; }
+.cards { gap: 14px !important; }
+.cards .card { position: relative; overflow: hidden; }
+.cards .card::after {
+  content: "";
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  right: -42px;
+  bottom: -50px;
+  border-radius: 50%;
+  background: rgba(247,103,174,.09);
+  filter: blur(2px);
+}
+.card span { color: var(--muted) !important; font-size: 12px !important; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
+.card strong { color: white; letter-spacing: -.04em; }
+details { padding: 0 !important; overflow: hidden; }
+summary {
+  padding: 16px 18px;
+  color: #efc2d9 !important;
+  cursor: pointer;
+  list-style-position: inside;
+  user-select: none;
+}
+details[open] summary { border-bottom: 1px solid var(--border); background: rgba(247,103,174,.045); }
+details .grid, details form { padding: 18px; margin-top: 0 !important; }
+.grid { gap: 14px !important; }
+.field { gap: 7px !important; }
+.field span, .toolbar label, .cost-form label { color: #d6d6df !important; font-size: 13px; font-weight: 650 !important; }
+input, select, textarea {
+  min-height: 42px;
+  padding: 10px 12px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px;
+  outline: none;
+  color: var(--text) !important;
+  background: rgba(4, 5, 9, .58) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+input::placeholder, textarea::placeholder { color: #6f7080; }
+input:hover, select:hover, textarea:hover { border-color: rgba(255,255,255,.16) !important; }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--border-focus) !important;
+  background: rgba(8, 9, 14, .9) !important;
+  box-shadow: 0 0 0 4px rgba(247,103,174,.09);
+}
+input[type="checkbox"] { min-width: 16px !important; min-height: 16px; width: 16px; height: 16px; padding: 0 !important; accent-color: var(--pink); }
+input[type="file"] { padding: 8px !important; }
+textarea { min-height: 300px !important; font-family: "SFMono-Regular", Consolas, monospace !important; line-height: 1.55; }
+button {
+  min-height: 40px;
+  padding: 9px 14px !important;
+  border: 0 !important;
+  border-radius: 10px;
+  color: white !important;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 720 !important;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--pink-strong), #c64ee7) !important;
+  box-shadow: 0 8px 22px rgba(233,70,152,.18);
+  transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+}
+button:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 11px 28px rgba(233,70,152,.26); }
+button:active { transform: translateY(0); }
+button.delete, .delete { background: linear-gradient(135deg, #ce3d5e, #a8294d) !important; box-shadow: 0 8px 22px rgba(206,61,94,.16); }
+.filters, .toolbar {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(18,19,27,.72);
+}
+.filters label { color: #bfc0cb !important; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+table {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border) !important;
+  border-collapse: separate !important;
+  border-spacing: 0;
+  border-radius: 16px;
+  background: rgba(16,17,24,.84) !important;
+  box-shadow: 0 18px 55px rgba(0,0,0,.2);
+}
+thead { background: rgba(255,255,255,.035); }
+th {
+  padding: 13px 14px !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: #b5b6c3 !important;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .065em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+td {
+  padding: 13px 14px !important;
+  border-bottom: 1px solid rgba(255,255,255,.055) !important;
+  color: #dddde6;
+  vertical-align: middle !important;
+}
+tbody tr { transition: background .15s ease; }
+tbody tr:hover { background: rgba(255,255,255,.025); }
+tbody tr:last-child td { border-bottom: 0 !important; }
+td.done, .positive { color: var(--green) !important; font-weight: 700; }
+td.pending { color: var(--amber) !important; font-weight: 700; }
+.negative { color: var(--danger) !important; }
+.inline-form { gap: 8px !important; }
+.cost-form { padding: 18px !important; }
+main > p.muted {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border-left: 3px solid rgba(139,108,255,.7);
+  border-radius: 0 12px 12px 0;
+  background: rgba(139,108,255,.065);
+}
+body > form {
+  position: relative;
+  width: min(410px, calc(100vw - 32px)) !important;
+  padding: 34px !important;
+  overflow: hidden;
+  border: 1px solid var(--border) !important;
+  border-radius: 22px;
+  background: linear-gradient(150deg, rgba(24,25,35,.96), rgba(12,13,19,.97)) !important;
+  box-shadow: var(--shadow);
+}
+body > form::before {
+  content: "P";
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 18px;
+  border-radius: 16px;
+  color: white;
+  font-size: 23px;
+  font-weight: 850;
+  background: linear-gradient(145deg, var(--pink), var(--purple));
+  box-shadow: 0 14px 38px rgba(233,70,152,.3);
+}
+body > form h1 { margin: 0 0 20px; color: white !important; font-size: 28px; letter-spacing: -.045em; }
+body > form input, body > form button { width: 100%; margin-top: 11px; }
+body > form button { min-height: 45px; margin-top: 14px; }
+@media (max-width: 800px) {
+  header { position: relative; min-height: 64px; padding: 12px 16px; }
+  header h1::before { width: 34px; height: 34px; flex-basis: 34px; border-radius: 10px; }
+  header > a { min-height: 34px; padding: 7px 10px; font-size: 12px; }
+  main { width: min(100% - 24px, 1440px); padding-top: 18px !important; }
+  nav { flex-wrap: nowrap; overflow-x: auto; padding: 6px; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; }
+  .filters, .toolbar, .cost-form { align-items: stretch !important; }
+  .filters label { width: 100%; }
+  input, select { min-width: 0 !important; width: 100%; }
+  table { display: block !important; overflow-x: auto; border-radius: 13px; }
+  thead { display: table-header-group !important; }
+  tbody { display: table-row-group !important; }
+  tr { display: table-row !important; padding: 0 !important; }
+  th, td { display: table-cell !important; min-width: 118px; white-space: nowrap; }
+  td form { white-space: normal; }
+  .grid { grid-template-columns: 1fr !important; }
+  .card { padding: 17px !important; }
+  body > form { padding: 28px 24px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+}
+"""
+
+PANEL_FAVICON = (
+    '<link rel="icon" href="data:image/svg+xml,'
+    '<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22>'
+    '<defs><linearGradient id=%22g%22 x2=%221%22 y2=%221%22>'
+    '<stop stop-color=%22%23f767ae%22/><stop offset=%221%22 stop-color=%22%238b6cff%22/>'
+    '</linearGradient></defs><rect width=%2264%22 height=%2264%22 rx=%2218%22 fill=%22url(%23g)%22/>'
+    '<path d=%22M21 48V16h14c9 0 14 5 14 13S43 42 34 42h-5v6zm8-14h5c4 0 7-2 7-5s-3-5-7-5h-5z%22 fill=%22white%22/>'
+    '</svg>">'
+)
+
+
+def apply_panel_theme(template):
+    themed = template.replace("</style>", PANEL_THEME_CSS + "</style>", 1)
+    return themed.replace("</head>", PANEL_FAVICON + "</head>", 1)
+
+
+PANEL_TEMPLATE = apply_panel_theme(PANEL_TEMPLATE)
+PANEL_STOCK_TEMPLATE = apply_panel_theme(PANEL_STOCK_TEMPLATE)
+PANEL_PRICES_TEMPLATE = apply_panel_theme(PANEL_PRICES_TEMPLATE)
+PANEL_FINANCES_TEMPLATE = apply_panel_theme(PANEL_FINANCES_TEMPLATE)
+PANEL_PRICES_COSTS_TEMPLATE = apply_panel_theme(PANEL_PRICES_COSTS_TEMPLATE)
+PANEL_FINANCES_PRODUCT_TEMPLATE = apply_panel_theme(PANEL_FINANCES_PRODUCT_TEMPLATE)
+PANEL_FINANCES_NITRO_TEMPLATE = apply_panel_theme(PANEL_FINANCES_NITRO_TEMPLATE)
+PANEL_REFERRALS_TEMPLATE = apply_panel_theme(PANEL_REFERRALS_TEMPLATE)
+PANEL_REFERRALS_PROFIT_TEMPLATE = apply_panel_theme(PANEL_REFERRALS_PROFIT_TEMPLATE)
+PANEL_EMBEDS_TEMPLATE = apply_panel_theme(PANEL_EMBEDS_TEMPLATE)
+LOGIN_TEMPLATE = apply_panel_theme(LOGIN_TEMPLATE)
+PANEL_ACCESS_TEMPLATE = apply_panel_theme(PANEL_ACCESS_TEMPLATE)
+
+
 @app.before_request
 def track_panel_access():
     log_panel_access()
@@ -5041,3 +5400,4 @@ if __name__ == "__main__":
     # boutons inactifs après un redémarrage du service.
     start_discord_background()
     run_web()
+
