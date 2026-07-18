@@ -276,7 +276,7 @@
     "fields": [
       {
         "name": "🎫 Panneaux publics",
-        "value": "!tarifs — cartes cadeaux et commande automatique\n!valo — Valorant Points par région\n!solde — consultation et recharge du solde\n!paiements — moyens de paiement",
+        "value": "!tarifs — cartes cadeaux et commande automatique\n!valo — Valorant Points par région\n!cp — COD Points avec livraison automatique\n!solde — consultation et recharge du solde\n!paiements — moyens de paiement",
         "inline": false
       },
       {
@@ -467,5 +467,56 @@
       203
     ],
     "footer": "PinkGift — Invitations"
+  },
+  "cp_embed": {
+    "title": "🪙 CALL OF DUTY POINTS — PINKGIFT",
+    "description": [
+      "Commande tes **COD Points** directement avec ton solde PinkGift.",
+      "",
+      "✅ Livraison automatique dans un ticket privé",
+      "⚡ Débit uniquement si le pack est disponible",
+      "💳 Recharge ton solde avec le panneau `/solde`"
+    ],
+    "color_rgb": [
+      255,
+      103,
+      174
+    ],
+    "footer": "PinkGift — COD Points"
+  },
+  "cp_delivery_embed": {
+    "title": "✅ COD Points livrés automatiquement",
+    "description": [
+      "Merci pour ta commande {user} !",
+      "Ton code est disponible ci-dessous. Conserve-le jusqu'à son activation."
+    ],
+    "fields": [
+      {
+        "name": "Pack",
+        "value": "**{points} CP**",
+        "inline": true
+      },
+      {
+        "name": "Prix débité",
+        "value": "**{paid} €**",
+        "inline": true
+      },
+      {
+        "name": "Solde restant",
+        "value": "**{balance} €**",
+        "inline": true
+      },
+      {
+        "name": "Code COD Points",
+        "value": "{code}",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      46,
+      204,
+      113
+    ],
+    "footer": "PinkGift — Livraison CP automatique"
   }
 }
