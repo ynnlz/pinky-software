@@ -4137,7 +4137,311 @@ PANEL_REFERRALS_PROFIT_TEMPLATE = (
     .replace('colspan="6">Aucune commission enregistrée.', 'colspan="8">Aucune commission enregistrée.')
 )
 
+PANEL_REFERRALS_PROFIT_TEMPLATE = (
+    PANEL_REFERRALS_PROFIT_TEMPLATE
+    .replace(
+        '<table><thead><tr><th>Code / Parrain</th>',
+        '<table class="referral-summary"><thead><tr><th>Code / Parrain</th>',
+        1,
+    )
+    .replace(
+        '<table><thead><tr><th>Date</th>',
+        '<table class="referral-history"><thead><tr><th>Date</th>',
+        1,
+    )
+)
+
+PANEL_REFERRALS_LAYOUT_CSS = r"""
+body { overflow-x: clip; }
+body main { width: min(1680px, calc(100% - 28px)); max-width: 1680px !important; }
+.referral-summary, .referral-history { table-layout: fixed; }
+.referral-summary th, .referral-summary td,
+.referral-history th, .referral-history td {
+  min-width: 0 !important;
+  padding: 11px 9px !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+.referral-summary th { font-size: 10px; letter-spacing: .035em; }
+.referral-summary th:nth-child(1) { width: 13%; }
+.referral-summary th:nth-child(n+2):nth-child(-n+9) { width: 6.75%; }
+.referral-summary th:nth-child(10) { width: 33%; }
+.referral-summary .inline-form {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  margin: 0 0 8px;
+}
+.referral-summary .inline-form input,
+.referral-summary .inline-form button { width: 100%; min-width: 0 !important; }
+.referral-summary .inline-form label { grid-column: 1 / -1; }
+.referral-summary .inline-form button { min-height: 36px; padding: 7px 9px !important; }
+.referral-history th:nth-child(1) { width: 16%; }
+.referral-history th:nth-child(3) { width: 17%; }
+.referral-history th:nth-child(4) { width: 19%; }
+
+@media (max-width: 1250px) {
+  .referral-summary, .referral-history {
+    display: block !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+  }
+  .referral-summary thead, .referral-history thead { display: none !important; }
+  .referral-summary tbody, .referral-history tbody { display: grid !important; gap: 14px; }
+  .referral-summary tr, .referral-history tr {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 6px 14px !important;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: rgba(16, 17, 24, .88);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, .18);
+  }
+  .referral-summary td, .referral-history td {
+    display: grid !important;
+    grid-template-columns: minmax(115px, .85fr) minmax(0, 1.15fr);
+    align-items: center;
+    gap: 10px;
+    min-width: 0 !important;
+    padding: 10px 4px !important;
+    border-bottom: 1px solid rgba(255,255,255,.055) !important;
+  }
+  .referral-summary td:nth-child(odd), .referral-history td:nth-child(odd) { padding-right: 14px !important; }
+  .referral-summary td:nth-child(even), .referral-history td:nth-child(even) { padding-left: 14px !important; }
+  .referral-summary td::before, .referral-history td::before {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+  }
+  .referral-summary td:nth-child(1)::before { content: "Code / Parrain"; }
+  .referral-summary td:nth-child(2)::before { content: "Achats"; }
+  .referral-summary td:nth-child(3)::before { content: "Solde credite"; }
+  .referral-summary td:nth-child(4)::before { content: "Solde restant"; }
+  .referral-summary td:nth-child(5)::before { content: "Solde utilise"; }
+  .referral-summary td:nth-child(6)::before { content: "Benefice genere"; }
+  .referral-summary td:nth-child(7)::before { content: "Commission"; }
+  .referral-summary td:nth-child(8)::before { content: "Deja verse"; }
+  .referral-summary td:nth-child(9)::before { content: "A verser"; }
+  .referral-summary td:nth-child(10)::before { content: "Configuration"; }
+  .referral-history td:nth-child(1)::before { content: "Date"; }
+  .referral-history td:nth-child(2)::before { content: "Code"; }
+  .referral-history td:nth-child(3)::before { content: "Client"; }
+  .referral-history td:nth-child(4)::before { content: "Produit"; }
+  .referral-history td:nth-child(5)::before { content: "Solde utilise"; }
+  .referral-history td:nth-child(6)::before { content: "Benefice attribue"; }
+  .referral-history td:nth-child(7)::before { content: "Taux"; }
+  .referral-history td:nth-child(8)::before { content: "Commission"; }
+  .referral-summary td:nth-child(10) { grid-column: 1 / -1; }
+  .referral-summary td:nth-child(10),
+  .referral-summary tr > td:only-child,
+  .referral-history tr > td:only-child { padding-left: 4px !important; padding-right: 4px !important; }
+}
+
+@media (max-width: 720px) {
+  body main { width: min(100% - 20px, 1680px); }
+  .referral-summary tr, .referral-history tr { grid-template-columns: minmax(0, 1fr); padding: 5px 12px !important; }
+  .referral-summary td, .referral-history td {
+    grid-template-columns: minmax(105px, .8fr) minmax(0, 1.2fr);
+    padding: 9px 2px !important;
+  }
+  .referral-summary td:nth-child(n), .referral-history td:nth-child(n) { padding-left: 2px !important; padding-right: 2px !important; }
+  .referral-summary td:nth-child(10) { grid-column: auto; }
+}
+"""
+
 PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Modifie le JSON d'un embed puis clique sur Enregistrer. Pour uploader une image, choisis un fichier : le bot l'envoie dans le salon configuré par EMBED_UPLOAD_CHANNEL_ID et remplit automatiquement image_url.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
+
+PANEL_EMBEDS_TEMPLATE = (
+    PANEL_EMBEDS_TEMPLATE
+    .replace(
+        '<form method="post" enctype="multipart/form-data">',
+        '<form class="embed-editor" method="post" enctype="multipart/form-data">',
+        1,
+    )
+    .replace(
+        '<textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button>',
+        '<div class="embed-editor-grid"><div class="embed-controls"><textarea name="embed_json">{{ item.json }}</textarea><div class="embed-actions"><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></div></div><aside class="discord-preview" aria-label="Aperçu Discord" aria-live="polite"></aside></div>',
+        1,
+    )
+)
+
+PANEL_EMBEDS_PREVIEW_CSS = r"""
+.embed-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr);
+  gap: 20px;
+  align-items: start;
+}
+.embed-controls { min-width: 0; }
+.embed-controls textarea { width: 100%; min-height: 440px !important; resize: vertical; }
+.embed-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+.embed-actions input { flex: 1 1 280px; margin: 0 !important; }
+.embed-actions button { flex: 0 0 auto; margin: 0 !important; }
+.discord-preview {
+  position: sticky;
+  top: 92px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  background: #313338;
+  box-shadow: 0 18px 45px rgba(0,0,0,.28);
+}
+.discord-preview::before {
+  content: "Apercu Discord en direct";
+  display: block;
+  margin: 0 0 14px;
+  color: #b5bac1;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.discord-message { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
+.discord-avatar {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: white;
+  font-weight: 850;
+  background: linear-gradient(145deg, var(--pink), var(--purple));
+}
+.discord-message-content { min-width: 0; }
+.discord-author { margin-bottom: 5px; color: #f2f3f5; font-size: 15px; font-weight: 650; }
+.discord-bot-tag { margin-left: 6px; padding: 1px 4px; border-radius: 3px; color: white; font-size: 9px; background: #5865f2; vertical-align: 2px; }
+.discord-embed-card {
+  max-width: 520px;
+  overflow: hidden;
+  border-left: 4px solid var(--pink);
+  border-radius: 4px;
+  color: #dbdee1;
+  background: #2b2d31;
+}
+.discord-embed-inner { padding: 13px 16px 14px; }
+.preview-author { margin-bottom: 8px; color: #f2f3f5; font-size: 13px; font-weight: 650; }
+.preview-title { margin-bottom: 8px; color: #f2f3f5; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.preview-description { color: #dbdee1; font-size: 14px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+.preview-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 14px; }
+.preview-field { min-width: 0; }
+.preview-field.wide { grid-column: 1 / -1; }
+.preview-field-name { color: #f2f3f5; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.preview-field-value { margin-top: 2px; color: #dbdee1; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.preview-thumbnail { float: right; width: 80px; max-height: 80px; margin: 0 0 10px 14px; border-radius: 4px; object-fit: cover; }
+.preview-image { display: block; width: 100%; max-height: 320px; margin-top: 14px; border-radius: 4px; object-fit: contain; background: rgba(0,0,0,.12); }
+.preview-footer { margin-top: 13px; color: #b5bac1; font-size: 11px; overflow-wrap: anywhere; }
+.preview-empty, .preview-error { padding: 18px; border: 1px dashed rgba(255,255,255,.12); border-radius: 10px; color: #b5bac1; text-align: center; }
+.preview-error { color: #ff9aaa; border-color: rgba(255,100,129,.28); background: rgba(255,100,129,.06); }
+@media (max-width: 950px) {
+  .embed-editor-grid { grid-template-columns: minmax(0, 1fr); }
+  .discord-preview { position: static; }
+  .embed-controls textarea { min-height: 340px !important; }
+}
+@media (max-width: 560px) {
+  .discord-preview { padding: 13px; }
+  .discord-message { grid-template-columns: 32px minmax(0, 1fr); gap: 9px; }
+  .discord-avatar { width: 32px; height: 32px; font-size: 12px; }
+  .preview-fields { grid-template-columns: minmax(0, 1fr); }
+  .preview-field { grid-column: 1 / -1; }
+}
+"""
+
+PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
+<script>
+(() => {
+  const make = (tag, className, value) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (value !== undefined && value !== null && value !== "") node.textContent = String(value);
+    return node;
+  };
+  const imageUrl = value => {
+    if (typeof value === "string") return value;
+    if (value && typeof value.url === "string") return value.url;
+    return "";
+  };
+  const textValue = value => {
+    if (typeof value === "string" || typeof value === "number") return String(value);
+    return value && (value.text || value.name) ? String(value.text || value.name) : "";
+  };
+  const safeColor = value => {
+    if (Number.isFinite(value)) return `#${Math.max(0, Math.min(0xffffff, value)).toString(16).padStart(6, "0")}`;
+    if (typeof value === "string" && /^#?[0-9a-f]{6}$/i.test(value)) return value.startsWith("#") ? value : `#${value}`;
+    return "#f767ae";
+  };
+  const appendImage = (parent, className, url, alt) => {
+    if (!/^https?:\/\//i.test(url || "")) return;
+    const img = make("img", className);
+    img.src = url;
+    img.alt = alt;
+    img.loading = "lazy";
+    img.addEventListener("error", () => img.remove());
+    parent.appendChild(img);
+  };
+  const render = form => {
+    const textarea = form.querySelector('textarea[name="embed_json"]');
+    const preview = form.querySelector(".discord-preview");
+    if (!textarea || !preview) return;
+    let data;
+    try {
+      data = JSON.parse(textarea.value || "{}");
+    } catch (error) {
+      preview.replaceChildren(make("div", "preview-error", "JSON invalide : corrige la syntaxe pour retrouver l'aperçu."));
+      return;
+    }
+    const message = make("div", "discord-message");
+    message.appendChild(make("div", "discord-avatar", "P"));
+    const content = make("div", "discord-message-content");
+    const authorLine = make("div", "discord-author", "PinkGift");
+    authorLine.appendChild(make("span", "discord-bot-tag", "BOT"));
+    content.appendChild(authorLine);
+    const card = make("article", "discord-embed-card");
+    card.style.borderLeftColor = safeColor(data.color);
+    const inner = make("div", "discord-embed-inner");
+    const thumbnail = imageUrl(data.thumbnail_url || data.thumbnail);
+    appendImage(inner, "preview-thumbnail", thumbnail, "Miniature de l'embed");
+    const author = textValue(data.author);
+    const title = textValue(data.title);
+    const description = textValue(data.description);
+    if (author) inner.appendChild(make("div", "preview-author", author));
+    if (title) inner.appendChild(make("div", "preview-title", title));
+    if (description) inner.appendChild(make("div", "preview-description", description));
+    if (Array.isArray(data.fields) && data.fields.length) {
+      const fields = make("div", "preview-fields");
+      data.fields.forEach(field => {
+        const fieldNode = make("div", `preview-field${field && field.inline === false ? " wide" : ""}`);
+        fieldNode.appendChild(make("div", "preview-field-name", textValue(field && field.name) || "Champ"));
+        fieldNode.appendChild(make("div", "preview-field-value", textValue(field && field.value) || "—"));
+        fields.appendChild(fieldNode);
+      });
+      inner.appendChild(fields);
+    }
+    appendImage(inner, "preview-image", imageUrl(data.image_url || data.image), "Image de l'embed");
+    const footer = textValue(data.footer);
+    if (footer) inner.appendChild(make("div", "preview-footer", footer));
+    if (!author && !title && !description && !(Array.isArray(data.fields) && data.fields.length) && !thumbnail && !imageUrl(data.image_url || data.image) && !footer) {
+      inner.appendChild(make("div", "preview-empty", "Cet embed ne contient encore aucun élément visible."));
+    }
+    card.appendChild(inner);
+    content.appendChild(card);
+    message.appendChild(content);
+    preview.replaceChildren(message);
+  };
+  document.querySelectorAll(".embed-editor").forEach(form => {
+    const textarea = form.querySelector('textarea[name="embed_json"]');
+    render(form);
+    if (textarea) textarea.addEventListener("input", () => render(form));
+  });
+})();
+</script>
+"""
 
 LOGIN_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift</title><style>body{background:#0e0d11;color:#fff;font-family:Arial;display:grid;place-items:center;height:100vh;margin:0}form{background:#19151b;padding:28px;border:1px solid #4a3040;width:min(340px,80vw)}h1{color:#ff8fc8}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:10px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d}button{background:#e8509a;color:#fff;border:0}</style></head><body><form method="post"><h1>PinkGift Staff</h1><input type="password" name="password" placeholder="Mot de passe" required><button>Connexion</button></form></body></html>"""
 
@@ -4497,8 +4801,14 @@ PANEL_PRICES_COSTS_TEMPLATE = apply_panel_theme(PANEL_PRICES_COSTS_TEMPLATE)
 PANEL_FINANCES_PRODUCT_TEMPLATE = apply_panel_theme(PANEL_FINANCES_PRODUCT_TEMPLATE)
 PANEL_FINANCES_NITRO_TEMPLATE = apply_panel_theme(PANEL_FINANCES_NITRO_TEMPLATE)
 PANEL_REFERRALS_TEMPLATE = apply_panel_theme(PANEL_REFERRALS_TEMPLATE)
-PANEL_REFERRALS_PROFIT_TEMPLATE = apply_panel_theme(PANEL_REFERRALS_PROFIT_TEMPLATE)
-PANEL_EMBEDS_TEMPLATE = apply_panel_theme(PANEL_EMBEDS_TEMPLATE)
+PANEL_REFERRALS_PROFIT_TEMPLATE = apply_panel_theme(PANEL_REFERRALS_PROFIT_TEMPLATE).replace(
+    "</style>", PANEL_REFERRALS_LAYOUT_CSS + "</style>", 1
+)
+PANEL_EMBEDS_TEMPLATE = (
+    apply_panel_theme(PANEL_EMBEDS_TEMPLATE)
+    .replace("</style>", PANEL_EMBEDS_PREVIEW_CSS + "</style>", 1)
+    .replace("</body>", PANEL_EMBEDS_PREVIEW_SCRIPT + "</body>", 1)
+)
 LOGIN_TEMPLATE = apply_panel_theme(LOGIN_TEMPLATE)
 PANEL_ACCESS_TEMPLATE = apply_panel_theme(PANEL_ACCESS_TEMPLATE)
 
