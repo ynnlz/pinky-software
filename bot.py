@@ -4452,6 +4452,83 @@ def public_embed_builders():
     ]
 
 
+DESKTOP_PUBLISHABLE_EMBEDS = {
+    "tarifs_embed": {"label": "Tarifs & cartes cadeaux", "category": "Boutique"},
+    "valo_embed": {"label": "Valorant Points", "category": "Boutique"},
+    "cp_embed": {"label": "Call of Duty Points", "category": "Boutique"},
+    "balance_embed": {"label": "Solde & paiements", "category": "Boutique"},
+    "parrainages_embed": {"label": "Programme de parrainage", "category": "Communauté"},
+    "rules_embed": {"label": "Règlement", "category": "Informations"},
+    "faq_embed": {"label": "FAQ", "category": "Informations"},
+    "commandes_embed": {"label": "Commandes du staff", "category": "Staff"},
+    "classement_embed": {"label": "Classement clients", "category": "Communauté"},
+}
+
+
+def build_desktop_embed_only(embed_key):
+    if embed_key == "tarifs_embed":
+        return build_tarifs_embed()
+    if embed_key == "valo_embed":
+        return build_valo_embed()
+    if embed_key == "cp_embed":
+        return build_cp_embed()
+    if embed_key == "balance_embed":
+        return build_json_embed("balance_embed")
+    if embed_key == "parrainages_embed":
+        return build_json_embed("parrainages_embed")
+    if embed_key == "rules_embed":
+        return build_json_embed("rules_embed")
+    if embed_key == "faq_embed":
+        return build_json_embed("faq_embed")
+    if embed_key == "commandes_embed":
+        return build_json_embed("commandes_embed")
+    if embed_key == "classement_embed":
+        return build_leaderboard_embed()
+    raise ValueError("Cet embed ne peut pas être publié depuis l'application")
+
+
+def build_desktop_publish_payload(embed_key):
+    """Construit le même panneau que les commandes Discord, boutons compris."""
+    embed = build_desktop_embed_only(embed_key)
+    view_factories = {
+        "tarifs_embed": OrderLauncherView,
+        "valo_embed": ValoOrderLauncherView,
+        "cp_embed": CPOrderLauncherView,
+        "balance_embed": BalanceView,
+    }
+    view_factory = view_factories.get(embed_key)
+    return embed, view_factory() if view_factory else None
+
+
+async def publish_embed_from_desktop(guild_id, channel_id, embed_key, mention_everyone=False):
+    guild = bot.get_guild(int(guild_id))
+    if guild is None:
+        raise ValueError("Serveur Discord introuvable")
+    channel = guild.get_channel(int(channel_id))
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(int(channel_id))
+        except (discord.NotFound, discord.Forbidden):
+            raise ValueError("Salon Discord introuvable")
+    if getattr(channel, "guild", None) is None or channel.guild.id != guild.id:
+        raise ValueError("Ce salon n'appartient pas au serveur sélectionné")
+    me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+    if me is None:
+        raise RuntimeError("Le bot n'est pas prêt")
+    permissions = channel.permissions_for(me)
+    if not permissions.view_channel or not permissions.send_messages or not permissions.embed_links:
+        raise PermissionError("Le bot n'a pas la permission d'envoyer des embeds dans ce salon")
+    embed, view = build_desktop_publish_payload(embed_key)
+    content = "||@everyone||" if mention_everyone else None
+    message = await channel.send(content=content, embed=embed, view=view)
+    return {
+        "message_id": str(message.id),
+        "channel_id": str(channel.id),
+        "channel_name": channel.name,
+        "jump_url": message.jump_url,
+    }
+
+
 async def repair_public_launcher_views():
     """Réattache les boutons actuels aux anciens panneaux publics du bot."""
     repaired = 0
@@ -4940,6 +5017,25 @@ def panel_required(view):
         session["panel_last_activity_at"] = now
         if not session.get("csrf"):
             session["csrf"] = secrets.token_urlsafe(24)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def desktop_api_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if request.headers.get("X-PinkGift-Desktop") != "1":
+            return {"ok": False, "error": "Client non autorisé"}, 403
+        now = time.time()
+        try:
+            last_activity = float(session.get("panel_last_activity_at", session.get("panel_login_at", 0)))
+        except (TypeError, ValueError):
+            last_activity = 0
+        valid_token = PANEL_PASSWORD and secrets.compare_digest(session.get("panel_auth", ""), panel_auth_token())
+        if not valid_token or now - last_activity >= PANEL_IDLE_TIMEOUT_SECONDS:
+            session.clear()
+            return {"ok": False, "error": "Session expirée. Reconnecte-toi."}, 401
+        session["panel_last_activity_at"] = now
         return view(*args, **kwargs)
     return wrapped
 
@@ -6041,7 +6137,7 @@ def track_panel_access():
 
 @app.after_request
 def secure_panel_response(response):
-    if request.path.startswith("/panel"):
+    if request.path.startswith("/panel") or request.path.startswith("/api/desktop"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
         response.headers["Pragma"] = "no-cache"
     return response
@@ -6069,6 +6165,136 @@ def panel_logout():
 @panel_required
 def panel_heartbeat():
     return "", 204
+
+
+@app.route("/api/desktop/login", methods=["POST"])
+def desktop_api_login():
+    if request.headers.get("X-PinkGift-Desktop") != "1":
+        return {"ok": False, "error": "Client non autorisé"}, 403
+    payload = request.get_json(silent=True) or {}
+    password = str(payload.get("password", ""))
+    if not PANEL_PASSWORD or not secrets.compare_digest(password, PANEL_PASSWORD):
+        time.sleep(0.35)
+        return {"ok": False, "error": "Mot de passe incorrect"}, 401
+    session.clear()
+    session["panel_auth"] = panel_auth_token()
+    session["panel_login_at"] = time.time()
+    session["panel_last_activity_at"] = session["panel_login_at"]
+    return {
+        "ok": True,
+        "service": "PinkGift",
+        "discord_ready": bool(bot.is_ready()),
+        "expires_after_inactive_minutes": PANEL_IDLE_TIMEOUT_SECONDS // 60,
+    }
+
+
+@app.route("/api/desktop/logout", methods=["POST"])
+@desktop_api_required
+def desktop_api_logout():
+    session.clear()
+    return {"ok": True}
+
+
+@app.route("/api/desktop/status")
+@desktop_api_required
+def desktop_api_status():
+    return {
+        "ok": True,
+        "discord_ready": bool(bot.is_ready()),
+        "discord_state": "connecté" if bot.is_ready() else DISCORD_STATE,
+        "guild_count": len(bot.guilds),
+    }
+
+
+@app.route("/api/desktop/guilds")
+@desktop_api_required
+def desktop_api_guilds():
+    guilds = [
+        {"id": str(guild.id), "name": guild.name, "member_count": int(guild.member_count or 0)}
+        for guild in sorted(bot.guilds, key=lambda item: item.name.lower())
+    ]
+    return {"ok": True, "guilds": guilds}
+
+
+@app.route("/api/desktop/guilds/<int:guild_id>/channels")
+@desktop_api_required
+def desktop_api_channels(guild_id):
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return {"ok": False, "error": "Serveur Discord introuvable"}, 404
+    me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+    channels = []
+    if me is not None:
+        for channel in sorted(guild.text_channels, key=lambda item: (item.position, item.id)):
+            permissions = channel.permissions_for(me)
+            if permissions.view_channel and permissions.send_messages and permissions.embed_links:
+                channels.append({
+                    "id": str(channel.id),
+                    "name": channel.name,
+                    "category": channel.category.name if channel.category else "Sans catégorie",
+                    "position": channel.position,
+                })
+    return {"ok": True, "guild_id": str(guild.id), "channels": channels}
+
+
+@app.route("/api/desktop/embeds")
+@desktop_api_required
+def desktop_api_embeds():
+    embeds = []
+    for embed_key, metadata in DESKTOP_PUBLISHABLE_EMBEDS.items():
+        preview = {}
+        try:
+            built = build_desktop_embed_only(embed_key)
+            raw = built.to_dict()
+            preview = {
+                "title": raw.get("title", ""),
+                "description": raw.get("description", ""),
+                "color": raw.get("color", 16761035),
+                "fields": raw.get("fields", []),
+                "footer": (raw.get("footer") or {}).get("text", ""),
+                "image_url": (raw.get("image") or {}).get("url", ""),
+                "thumbnail_url": (raw.get("thumbnail") or {}).get("url", ""),
+            }
+        except Exception as error:
+            print(f"Aperçu desktop indisponible pour {embed_key}: {error}")
+        embeds.append({"key": embed_key, **metadata, "preview": preview})
+    return {"ok": True, "embeds": embeds}
+
+
+@app.route("/api/desktop/publish", methods=["POST"])
+@desktop_api_required
+def desktop_api_publish():
+    if request.headers.get("X-PinkGift-Desktop") != "1":
+        return {"ok": False, "error": "Client non autorisé"}, 403
+    payload = request.get_json(silent=True) or {}
+    embed_key = str(payload.get("embed_key", "")).strip()
+    if embed_key not in DESKTOP_PUBLISHABLE_EMBEDS:
+        return {"ok": False, "error": "Embed non autorisé"}, 400
+    try:
+        guild_id = int(payload.get("guild_id"))
+        channel_id = int(payload.get("channel_id"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Serveur ou salon invalide"}, 400
+    if BOT_LOOP is None or not bot.is_ready():
+        return {"ok": False, "error": "Le bot Discord n'est pas encore connecté"}, 503
+    try:
+        result = asyncio.run_coroutine_threadsafe(
+            publish_embed_from_desktop(
+                guild_id,
+                channel_id,
+                embed_key,
+                bool(payload.get("mention_everyone", False)),
+            ),
+            BOT_LOOP,
+        ).result(timeout=30)
+        return {"ok": True, "published": result}
+    except PermissionError as error:
+        return {"ok": False, "error": str(error)}, 403
+    except (ValueError, discord.NotFound) as error:
+        return {"ok": False, "error": str(error)}, 404
+    except Exception as error:
+        print(f"Publication desktop impossible: {error}")
+        return {"ok": False, "error": "Publication impossible. Vérifie les permissions du bot."}, 500
 
 
 def panel_filter_redirect():
