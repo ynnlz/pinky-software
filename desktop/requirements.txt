@@ -1,4 +1,0 @@
-customtkinter==5.2.2
-Pillow>=10,<12
-requests>=2.32,<3
-pyinstaller>=6.11,<7
