@@ -4981,7 +4981,7 @@ body main { width: min(1680px, calc(100% - 28px)); max-width: 1680px !important;
 }
 """
 
-PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">L'aperçu Discord se met à jour pendant que tu modifies le JSON. Si tu sélectionnes une image, elle apparaît immédiatement avant l'enregistrement. Clique sur Enregistrer uniquement quand le résultat te convient.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
+PANEL_EMBEDS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Embeds</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%}h1{color:#ff8fc8}details{background:#171419;border:1px solid #332630;margin-bottom:14px;padding:12px}summary{cursor:pointer;color:#ff9dce;font-weight:bold}textarea{box-sizing:border-box;width:100%;min-height:260px;background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-family:Consolas,monospace}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:9px;margin-top:8px}button{background:#e8509a;border:0;cursor:pointer}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Embeds</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Seuls les panneaux actuellement utilisés sont affichés : /solde, /tarifs, /valo et /cp. Les embeds techniques des commandes automatiques restent gérés par le bot. L'aperçu Discord se met à jour pendant tes modifications.</p>{% for item in embeds %}<details><summary>{{ item.key }}</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="embed_key" value="{{ item.key }}"><textarea name="embed_json">{{ item.json }}</textarea><br><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></form></details>{% endfor %}</main></body></html>"""
 
 PANEL_EMBEDS_TEMPLATE = (
     PANEL_EMBEDS_TEMPLATE
@@ -6412,6 +6412,15 @@ def panel_stock():
     return render_template_string(PANEL_STOCK_TEMPLATE, products=products, valorant=valorant, ok_emoji=STOCK_OK_EMOJI, ko_emoji=STOCK_KO_EMOJI)
 
 
+PANEL_EDITABLE_EMBED_KEYS = (
+    "emojis",
+    "balance_embed",
+    "tarifs_embed",
+    "valo_embed",
+    "cp_embed",
+)
+
+
 @app.route("/panel/embeds", methods=["GET", "POST"])
 @panel_required
 def panel_embeds():
@@ -6421,6 +6430,8 @@ def panel_embeds():
             return redirect(url_for("panel_embeds"))
         embed_key = request.form.get("embed_key", "").strip()
         try:
+            if embed_key not in PANEL_EDITABLE_EMBED_KEYS:
+                raise ValueError("Cet embed interne est géré automatiquement par le bot")
             embed_data = json.loads(request.form.get("embed_json", "{}"))
             if not isinstance(embed_data, dict):
                 raise ValueError("Le contenu doit être un objet JSON")
@@ -6501,7 +6512,9 @@ def panel_embeds():
         "cp_embed": "Le bloc Packs disponibles est entièrement modifiable. Variables : {points}, {price}, {official} et {pack_key}. Les prix restent synchronisés avec l'onglet CP.",
     }
     embeds = []
-    for key in sorted(k for k, value in data.items() if isinstance(value, dict)):
+    for key in PANEL_EDITABLE_EMBED_KEYS:
+        if not isinstance(data.get(key), dict):
+            continue
         embeds.append({
             "key": key,
             "json": json.dumps(data[key], ensure_ascii=False, indent=2),
