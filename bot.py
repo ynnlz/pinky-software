@@ -86,6 +86,7 @@ AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:151758229
 VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 REFERRAL_TRACKING_CHANNEL_ID = 1525601870561935391
 MEMBER_ACTIVITY_CHANNEL_ID = 1525601870561935391
+MIN_INVITE_ACCOUNT_AGE_DAYS = 30
 STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
 STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
 
@@ -492,6 +493,40 @@ def invite_setting_key(guild_id: int) -> str:
     return f"invite_tracking:{int(guild_id)}"
 
 
+def discord_account_created_ts(user_id: int) -> float:
+    """Retrouve la date de création publique contenue dans l'identifiant Discord."""
+    try:
+        return (((int(user_id) >> 22) + 1420070400000) / 1000)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def invite_account_age_days(member: discord.Member, reference_ts=None) -> int:
+    reference_ts = float(reference_ts or time.time())
+    created_ts = member.created_at.timestamp() if getattr(member, "created_at", None) else discord_account_created_ts(member.id)
+    return max(0, int((reference_ts - created_ts) // 86400)) if created_ts > 0 else 0
+
+
+def tracked_invite_is_eligible(member_id, member_data, min_age_days=MIN_INVITE_ACCOUNT_AGE_DAYS) -> bool:
+    if not isinstance(member_data, dict) or member_data.get("eligible") is False:
+        return False
+    try:
+        joined_ts = float(member_data.get("first_joined_ts") or member_data.get("joined_ts") or 0)
+        created_ts = float(member_data.get("account_created_ts") or 0)
+    except (TypeError, ValueError):
+        return False
+    if created_ts <= 0:
+        created_ts = discord_account_created_ts(member_id)
+    if joined_ts <= 0:
+        try:
+            joined_ts = datetime.datetime.fromisoformat(
+                str(member_data.get("joined_at") or "").replace("Z", "+00:00")
+            ).timestamp()
+        except (TypeError, ValueError):
+            return False
+    return created_ts > 0 and joined_ts - created_ts >= max(1, int(min_age_days)) * 86400
+
+
 def get_invite_tracking_data(guild_id: int) -> dict:
     data = get_panel_setting(invite_setting_key(guild_id), {}) or {}
     if not isinstance(data, dict):
@@ -507,6 +542,49 @@ def get_invite_tracking_data(guild_id: int) -> dict:
 
 def save_invite_tracking_data(guild_id: int, data: dict) -> None:
     set_panel_setting(invite_setting_key(guild_id), data)
+
+
+def reset_invite_tracking_data(guild_id: int, inviter_id=None) -> dict:
+    data = get_invite_tracking_data(guild_id)
+    target_id = int(inviter_id) if inviter_id is not None else None
+    previous_total = 0
+    previous_active = 0
+    affected_members = 0
+
+    if target_id is None:
+        for stats in data["inviters"].values():
+            if not isinstance(stats, dict):
+                continue
+            previous_total += max(0, int(stats.get("total", 0) or 0))
+            previous_active += max(0, int(stats.get("active", 0) or 0))
+        data["inviters"] = {}
+    else:
+        stats = data["inviters"].pop(str(target_id), {})
+        if isinstance(stats, dict):
+            previous_total = max(0, int(stats.get("total", 0) or 0))
+            previous_active = max(0, int(stats.get("active", 0) or 0))
+
+    reset_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    for member_data in data["members"].values():
+        if not isinstance(member_data, dict):
+            continue
+        try:
+            member_inviter_id = int(member_data.get("inviter_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if target_id is not None and member_inviter_id != target_id:
+            continue
+        if member_data.get("counted", True):
+            affected_members += 1
+        member_data["counted"] = False
+        member_data["reset_at"] = reset_at
+
+    save_invite_tracking_data(guild_id, data)
+    return {
+        "previous_total": previous_total,
+        "previous_active": previous_active,
+        "affected_members": affected_members,
+    }
 
 
 def invite_user_stats(guild_id: int, user_id: int) -> dict:
@@ -634,12 +712,47 @@ async def register_invited_member(member: discord.Member) -> dict:
         if isinstance(previous_member_data, dict) and previous_member_data.get("active"):
             return dict(previous_member_data)
 
+        now_ts = time.time()
+        account_created_ts = member.created_at.timestamp()
+        account_age_days = invite_account_age_days(member, now_ts)
+
+        # Un compte déjà vu ne crée jamais une nouvelle invitation totale.
+        # S'il revient après être parti, on restaure seulement son état actif,
+        # sauf si un reset l'a explicitement marqué comme non comptabilisé.
+        if isinstance(previous_member_data, dict):
+            member_data = dict(previous_member_data)
+            original_inviter_id = int(member_data.get("inviter_id") or inviter_id)
+            counted = bool(member_data.get("counted", True))
+            if counted:
+                inviter_key = str(original_inviter_id)
+                inviter_stats = data["inviters"].get(inviter_key, {})
+                if not isinstance(inviter_stats, dict):
+                    inviter_stats = {}
+                inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0))
+                inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0)) + 1
+                inviter_stats["left"] = max(0, int(inviter_stats.get("left", 0) or 0) - 1)
+                data["inviters"][inviter_key] = inviter_stats
+            member_data.update({
+                "active": True,
+                "last_joined_at": utc_now().isoformat(),
+                "last_joined_ts": now_ts,
+                "last_invite_code": str(used_invite.get("code", "")),
+                "last_inviter_id": int(inviter_id),
+                "account_created_ts": float(member_data.get("account_created_ts") or account_created_ts),
+                "account_age_days_at_first_join": int(member_data.get("account_age_days_at_first_join", account_age_days)),
+            })
+            data["members"][member_key] = member_data
+            save_invite_tracking_data(member.guild.id, data)
+            return dict(member_data)
+
         inviter_key = str(inviter_id)
         inviter_stats = data["inviters"].get(inviter_key, {})
         if not isinstance(inviter_stats, dict):
             inviter_stats = {}
-        inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0)) + 1
-        inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0)) + 1
+        eligible = account_age_days >= MIN_INVITE_ACCOUNT_AGE_DAYS
+        if eligible:
+            inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0)) + 1
+            inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0)) + 1
         inviter_stats["left"] = max(0, int(inviter_stats.get("left", 0) or 0))
         data["inviters"][inviter_key] = inviter_stats
         member_data = {
@@ -647,7 +760,13 @@ async def register_invited_member(member: discord.Member) -> dict:
             "invite_code": str(used_invite.get("code", "")),
             "active": True,
             "joined_at": utc_now().isoformat(),
-            "joined_ts": time.time(),
+            "joined_ts": now_ts,
+            "first_joined_ts": now_ts,
+            "account_created_ts": account_created_ts,
+            "account_age_days_at_first_join": account_age_days,
+            "eligible": eligible,
+            "counted": eligible,
+            "rejection_reason": "Compte Discord trop récent" if not eligible else "",
         }
         data["members"][member_key] = member_data
         save_invite_tracking_data(member.guild.id, data)
@@ -665,7 +784,7 @@ async def register_departed_member(member: discord.Member) -> dict:
         if not isinstance(member_data, dict) or not member_data.get("active"):
             return dict(member_data) if isinstance(member_data, dict) else {}
         inviter_id = member_data.get("inviter_id")
-        if inviter_id:
+        if inviter_id and member_data.get("counted", True):
             inviter_key = str(inviter_id)
             inviter_stats = data["inviters"].get(inviter_key, {})
             if not isinstance(inviter_stats, dict):
@@ -688,6 +807,11 @@ async def send_member_activity_log(member: discord.Member, joined: bool, invite_
     inviter_id = invite_data.get("inviter_id")
     invite_code = str(invite_data.get("invite_code") or "").strip()
     inviter_text = f"<@{int(inviter_id)}> (`{int(inviter_id)}`)" if inviter_id else "Inviteur non détecté"
+    if inviter_id:
+        counted = bool(invite_data.get("counted", True))
+        count_status = "✅ Oui" if counted else f"❌ Non — {invite_data.get('rejection_reason') or 'déjà vu ou compteur réinitialisé'}"
+    else:
+        count_status = "⚠️ Non vérifiable"
     try:
         channel = member.guild.get_channel(MEMBER_ACTIVITY_CHANNEL_ID) or bot.get_channel(MEMBER_ACTIVITY_CHANNEL_ID)
         if channel is None:
@@ -702,6 +826,7 @@ async def send_member_activity_log(member: discord.Member, joined: bool, invite_
         embed.add_field(name="Membre", value=f"{member.mention} (`{member.id}`)", inline=False)
         embed.add_field(name="Invité par", value=inviter_text, inline=True)
         embed.add_field(name="Invitation", value=f"`{invite_code}`" if invite_code else "Non détectée", inline=True)
+        embed.add_field(name="Invitation comptabilisée", value=count_status, inline=False)
         embed.add_field(name="Membres sur le serveur", value=f"**{member.guild.member_count or 0}**", inline=True)
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text="PinkGift — Suivi des arrivées et départs")
@@ -1648,7 +1773,7 @@ DEFAULT_EMBED_DATA.update({
             },
             {
                 "name": "🎉 Giveaways",
-                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] : crée un giveaway ; seules les nouvelles invitations obtenues pendant sa durée comptent.\n!reroll <ID ou lien> : tire un nouveau gagnant éligible.",
+                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] : crée un giveaway ; seules les nouvelles invitations actives de comptes âgés d'au moins 30 jours comptent.\n!reroll <ID ou lien> : tire un nouveau gagnant éligible.\n!reset_invitations [membre] confirmation:Oui : remet les invitations à zéro.",
                 "inline": False
             },
             {
@@ -3498,13 +3623,16 @@ def giveaway_new_active_invites(guild_id, inviter_id, data):
             started_ts = started_at.timestamp()
         except (TypeError, ValueError):
             started_ts = 0
-    if started_ts <= 0:
-        return invite_user_stats(guild_id, inviter_id)["active"]
-
     active_new_invites = 0
     members = get_invite_tracking_data(guild_id)["members"]
-    for member_data in members.values():
-        if not isinstance(member_data, dict) or not member_data.get("active"):
+    min_account_age_days = max(1, int(data.get("min_invite_account_age_days", MIN_INVITE_ACCOUNT_AGE_DAYS) or MIN_INVITE_ACCOUNT_AGE_DAYS))
+    for invited_member_id, member_data in members.items():
+        if (
+            not isinstance(member_data, dict)
+            or not member_data.get("active")
+            or not member_data.get("counted", True)
+            or not tracked_invite_is_eligible(invited_member_id, member_data, min_account_age_days)
+        ):
             continue
         try:
             if int(member_data.get("inviter_id") or 0) != int(inviter_id):
@@ -3530,7 +3658,7 @@ def giveaway_requirement_failures(guild, member, data):
         new_active_invites = giveaway_new_active_invites(guild.id, member.id, data)
         if new_active_invites < min_invites:
             failures.append(
-                f"**{min_invites} nouvelle(s) invitation(s) active(s)** requise(s) depuis le début du giveaway, "
+                f"**{min_invites} nouvelle(s) invitation(s) active(s) et valide(s)** requise(s) depuis le début du giveaway, "
                 f"tu en as **{new_active_invites}**"
             )
     if data.get("require_server_tag") and not member_has_server_tag(member, guild.id):
@@ -3561,7 +3689,8 @@ def giveaway_conditions_text(min_invites=0, require_server_tag=False):
     min_invites = max(0, int(min_invites or 0))
     if min_invites:
         conditions.append(
-            f"• Obtenir au moins **{min_invites} nouvelle(s) invitation(s) active(s)** pendant ce giveaway"
+            f"• Obtenir au moins **{min_invites} nouvelle(s) invitation(s) active(s)** pendant ce giveaway\n"
+            f"• Les comptes invités doivent avoir au moins **{MIN_INVITE_ACCOUNT_AGE_DAYS} jours** et ne sont comptés qu'une fois"
         )
     if require_server_tag:
         conditions.append("• Afficher le **tag de ce serveur** sur son profil Discord")
@@ -4635,6 +4764,38 @@ async def cmd_invites(ctx, member: discord.Member = None):
 @commands.guild_only()
 async def cmd_classement_invites(ctx):
     await ctx.send(embed=build_invite_leaderboard_embed(ctx.guild))
+
+
+@bot.hybrid_command(name="reset_invitations", description="Réinitialiser les compteurs d'invitations")
+@discord.app_commands.default_permissions(manage_guild=True)
+@discord.app_commands.describe(
+    member="Membre à réinitialiser, laisse vide pour tout le serveur",
+    confirmation="Confirmer définitivement la remise à zéro",
+)
+@commands.guild_only()
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_reset_invitations(ctx, member: discord.Member = None, confirmation: bool = False):
+    target_text = member.mention if member else "**tout le serveur**"
+    if not confirmation:
+        await ctx.send(
+            f"⚠️ La remise à zéro de {target_text} est définitive. "
+            "Relance la commande avec `confirmation:Oui` pour confirmer.",
+            ephemeral=True,
+        )
+        return
+
+    lock = INVITE_TRACKING_LOCKS.setdefault(ctx.guild.id, asyncio.Lock())
+    async with lock:
+        result = reset_invite_tracking_data(ctx.guild.id, member.id if member else None)
+        await refresh_invite_cache(ctx.guild)
+
+    await ctx.send(
+        f"✅ Invitations réinitialisées pour {target_text}. "
+        f"**{result['previous_total']}** invitation(s) totale(s) et "
+        f"**{result['previous_active']}** active(s) ont été retirées.\n"
+        f"Les **{result['affected_members']}** comptes déjà enregistrés ne pourront pas être recomptés en quittant puis revenant.",
+        ephemeral=True,
+    )
 
 
 @bot.hybrid_command(name="solde", description="Publier le panneau de consultation et recharge du solde")
@@ -6741,6 +6902,7 @@ async def cmd_giveaway(
         "image_url": image_url,
         "end_ts": end_ts,
         "min_invites": invitations,
+        "min_invite_account_age_days": MIN_INVITE_ACCOUNT_AGE_DAYS,
         "require_server_tag": tag_serveur,
         "participants": [],
         "ended": False,
