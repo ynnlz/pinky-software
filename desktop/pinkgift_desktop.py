@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+import re
 import sys
 import threading
 import copy
@@ -28,6 +29,36 @@ PURPLE = "#8b66f6"
 PURPLE_HOVER = "#7653df"
 GREEN = "#49d6a0"
 RED = "#f05d78"
+FONT_TEXT = "Segoe UI Variable Text"
+FONT_DISPLAY = "Bahnschrift"
+FONT_MONO = "Cascadia Mono"
+CUSTOM_EMOJI_RE = re.compile(r"<(a?):([A-Za-z0-9_]+):(\d+)>")
+NAV_EMOJIS = {
+    "dashboard": "<:verify:1525796690899108000>",
+    "orders": "<:cp:1528128623117205624>",
+    "clients": "<:nitroboost:1524439577656561846>",
+    "finances": "<:paysafecard:1519906750571085995>",
+    "referrals": "<:waylaylove:1517582297736413284>",
+    "prices": "<:apple:1519906800411869204>",
+    "stock": "<:steam:1519907154545610873>",
+    "embed_editor": "<:vp:1519915966476320901>",
+    "embeds": "<:cp:1528128623117205624>",
+    "config": "<:questionmark:1525869342506614784>",
+}
+
+
+def ui_font(size=12, weight="normal", underline=False, overstrike=False):
+    return ctk.CTkFont(
+        family=FONT_TEXT,
+        size=size,
+        weight=weight,
+        underline=underline,
+        overstrike=overstrike,
+    )
+
+
+def display_font(size=12, weight="bold"):
+    return ctk.CTkFont(family=FONT_DISPLAY, size=size, weight=weight)
 
 
 def resource_path(*parts):
@@ -165,7 +196,8 @@ class PinkGiftTool(ctk.CTk):
         self.embed_by_label = {}
         self.active_nav = None
         self.nav_buttons = {}
-        self.logo_image = self._load_logo((46, 46))
+        self.logo_image = self._load_logo((44, 44))
+        self.logo_large = self._load_logo((92, 92))
 
         self._show_login()
 
@@ -204,26 +236,26 @@ class PinkGiftTool(ctk.CTk):
         shell.grid_propagate(False)
         shell.grid_columnconfigure(0, weight=1)
 
-        if self.logo_image:
-            ctk.CTkLabel(shell, text="", image=self.logo_image).grid(row=0, column=0, pady=(35, 10))
+        if self.logo_large:
+            ctk.CTkLabel(shell, text="", image=self.logo_large).grid(row=0, column=0, pady=(30, 8))
         else:
-            ctk.CTkLabel(shell, text="P", font=ctk.CTkFont(size=54, weight="bold"), text_color=PINK).grid(row=0, column=0, pady=(40, 10))
-        ctk.CTkLabel(shell, text="PINKGIFT CONTROL CENTER", font=ctk.CTkFont(size=9, weight="bold"), text_color=PINK).grid(row=1, column=0)
-        ctk.CTkLabel(shell, text="Connexion administrateur", font=ctk.CTkFont(size=24, weight="bold"), text_color=TEXT).grid(row=2, column=0, pady=(5, 4))
-        ctk.CTkLabel(shell, text="Gère la boutique et Discord depuis une seule application.", font=ctk.CTkFont(size=11), text_color=MUTED).grid(row=3, column=0, pady=(0, 26))
+            ctk.CTkLabel(shell, text="P", font=ui_font(size=54, weight="bold"), text_color=PINK).grid(row=0, column=0, pady=(40, 10))
+        ctk.CTkLabel(shell, text="PINKGIFT CONTROL CENTER", font=ui_font(size=9, weight="bold"), text_color=PINK).grid(row=1, column=0)
+        ctk.CTkLabel(shell, text="Connexion administrateur", font=display_font(size=24), text_color=TEXT).grid(row=2, column=0, pady=(5, 4))
+        ctk.CTkLabel(shell, text="Gère la boutique et Discord depuis une seule application.", font=ui_font(size=11), text_color=MUTED).grid(row=3, column=0, pady=(0, 26))
 
         form = ctk.CTkFrame(shell, fg_color="transparent")
         form.grid(row=4, column=0, padx=38, sticky="ew")
         form.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(form, text="ADRESSE DU PANEL", anchor="w", font=ctk.CTkFont(size=11, weight="bold"), text_color=MUTED).grid(row=0, column=0, sticky="ew", pady=(0, 7))
+        ctk.CTkLabel(form, text="ADRESSE DU PANEL", anchor="w", font=ui_font(size=11, weight="bold"), text_color=MUTED).grid(row=0, column=0, sticky="ew", pady=(0, 7))
         self.url_entry = ctk.CTkEntry(form, height=42, corner_radius=8, fg_color="#090c12", border_color=BORDER, text_color=TEXT)
         self.url_entry.grid(row=1, column=0, sticky="ew")
         self.url_entry.insert(0, settings.get("panel_url", DEFAULT_PANEL_URL))
-        ctk.CTkLabel(form, text="MOT DE PASSE", anchor="w", font=ctk.CTkFont(size=11, weight="bold"), text_color=MUTED).grid(row=2, column=0, sticky="ew", pady=(20, 7))
+        ctk.CTkLabel(form, text="MOT DE PASSE", anchor="w", font=ui_font(size=11, weight="bold"), text_color=MUTED).grid(row=2, column=0, sticky="ew", pady=(20, 7))
         self.password_entry = ctk.CTkEntry(form, height=42, corner_radius=8, show="●", fg_color="#090c12", border_color=BORDER, text_color=TEXT)
         self.password_entry.grid(row=3, column=0, sticky="ew")
         self.password_entry.bind("<Return>", lambda _event: self._login())
-        self.login_button = ctk.CTkButton(form, text="Accéder au panel", height=43, corner_radius=8, fg_color=PURPLE, hover_color=PURPLE_HOVER, font=ctk.CTkFont(size=12, weight="bold"), command=self._login)
+        self.login_button = ctk.CTkButton(form, text="Accéder au panel", height=43, corner_radius=8, fg_color=PURPLE, hover_color=PURPLE_HOVER, font=ui_font(size=12, weight="bold"), command=self._login)
         self.login_button.grid(row=4, column=0, sticky="ew", pady=(25, 0))
         self.login_status = ctk.CTkLabel(form, text="", text_color=MUTED)
         self.login_status.grid(row=5, column=0, pady=12)
@@ -268,31 +300,31 @@ class PinkGiftTool(ctk.CTk):
             ctk.CTkLabel(brand, text="", image=self.logo_image).pack(side="left")
         brand_copy = ctk.CTkFrame(brand, fg_color="transparent")
         brand_copy.pack(side="left", padx=10)
-        ctk.CTkLabel(brand_copy, text="PinkGift", anchor="w", font=ctk.CTkFont(size=19, weight="bold"), text_color=TEXT).pack(fill="x")
-        ctk.CTkLabel(brand_copy, text="CONTROL CENTER", anchor="w", font=ctk.CTkFont(size=8, weight="bold"), text_color=PINK).pack(fill="x")
+        ctk.CTkLabel(brand_copy, text="PinkGift", anchor="w", font=display_font(size=19), text_color=TEXT).pack(fill="x")
+        ctk.CTkLabel(brand_copy, text="CONTROL CENTER", anchor="w", font=ui_font(size=8, weight="bold"), text_color=PINK).pack(fill="x")
 
         self._section_label(sidebar, 1, "ESPACE DE TRAVAIL")
-        self._nav_button(sidebar, 2, "dashboard", "⌂", "Vue d’ensemble", self._show_dashboard)
+        self._nav_button(sidebar, 2, "dashboard", "Vue d’ensemble", self._show_dashboard)
         self._section_label(sidebar, 3, "GESTION")
-        self._nav_button(sidebar, 4, "orders", "≡", "Commandes", self._show_orders)
-        self._nav_button(sidebar, 5, "clients", "♙", "Clients", self._show_clients)
-        self._nav_button(sidebar, 6, "finances", "↗", "Statistiques", self._show_finances)
-        self._nav_button(sidebar, 7, "referrals", "◇", "Parrainages", self._show_referrals)
+        self._nav_button(sidebar, 4, "orders", "Commandes", self._show_orders)
+        self._nav_button(sidebar, 5, "clients", "Clients", self._show_clients)
+        self._nav_button(sidebar, 6, "finances", "Statistiques", self._show_finances)
+        self._nav_button(sidebar, 7, "referrals", "Parrainages", self._show_referrals)
         self._section_label(sidebar, 8, "CATALOGUE")
-        self._nav_button(sidebar, 9, "prices", "€", "Prix & coûts", self._show_prices)
-        self._nav_button(sidebar, 10, "stock", "▦", "Disponibilités", self._show_stock)
+        self._nav_button(sidebar, 9, "prices", "Prix & coûts", self._show_prices)
+        self._nav_button(sidebar, 10, "stock", "Disponibilités", self._show_stock)
         self._section_label(sidebar, 11, "DISCORD")
-        self._nav_button(sidebar, 12, "embed_editor", "✎", "Éditeur d’embeds", self._show_embed_editor)
-        self._nav_button(sidebar, 13, "embeds", "↥", "Publication", self._show_embeds)
+        self._nav_button(sidebar, 12, "embed_editor", "Éditeur d’embeds", self._show_embed_editor)
+        self._nav_button(sidebar, 13, "embeds", "Publication", self._show_embeds)
         self._section_label(sidebar, 14, "APPLICATION")
-        self._nav_button(sidebar, 15, "config", "⚙", "Configuration", self._show_config)
+        self._nav_button(sidebar, 15, "config", "Configuration", self._show_config)
 
         connection_card = ctk.CTkFrame(sidebar, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=10)
         connection_card.grid(row=19, column=0, sticky="ew", padx=12, pady=(0, 9))
-        ctk.CTkLabel(connection_card, text="SERVICE DISCORD", anchor="w", text_color="#606a7d", font=ctk.CTkFont(size=8, weight="bold")).pack(fill="x", padx=12, pady=(10, 2))
-        self.connection_label = ctk.CTkLabel(connection_card, text="● Connexion…", anchor="w", text_color=MUTED, font=ctk.CTkFont(size=11, weight="bold"))
+        ctk.CTkLabel(connection_card, text="SERVICE DISCORD", anchor="w", text_color="#606a7d", font=ui_font(size=8, weight="bold")).pack(fill="x", padx=12, pady=(10, 2))
+        self.connection_label = ctk.CTkLabel(connection_card, text="● Connexion…", anchor="w", text_color=MUTED, font=ui_font(size=11, weight="bold"))
         self.connection_label.pack(fill="x", padx=12, pady=(0, 10))
-        ctk.CTkButton(sidebar, text="Fermer l’application", height=35, corner_radius=8, fg_color="#24151d", hover_color="#351a26", text_color="#ff7893", font=ctk.CTkFont(size=11, weight="bold"), command=self.destroy).grid(row=20, column=0, sticky="ew", padx=12, pady=(0, 12))
+        ctk.CTkButton(sidebar, text="Fermer l’application", height=35, corner_radius=8, fg_color="#24151d", hover_color="#351a26", text_color="#ff7893", font=ui_font(size=11, weight="bold"), command=self.destroy).grid(row=20, column=0, sticky="ew", padx=12, pady=(0, 12))
 
         self.content = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         self.content.grid(row=0, column=1, sticky="nsew")
@@ -304,12 +336,12 @@ class PinkGiftTool(ctk.CTk):
         topbar.grid_propagate(False)
         title_box = ctk.CTkFrame(topbar, fg_color="transparent")
         title_box.pack(side="left", padx=25, pady=10)
-        ctk.CTkLabel(title_box, text="PINKGIFT  /", font=ctk.CTkFont(size=9, weight="bold"), text_color="#626b7e").pack(side="left", padx=(0, 7))
-        self.page_title = ctk.CTkLabel(title_box, text="Vue d’ensemble", font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT)
+        ctk.CTkLabel(title_box, text="PINKGIFT  /", font=ui_font(size=9, weight="bold"), text_color="#626b7e").pack(side="left", padx=(0, 7))
+        self.page_title = ctk.CTkLabel(title_box, text="Vue d’ensemble", font=ui_font(size=14, weight="bold"), text_color=TEXT)
         self.page_title.pack(side="left")
         status_pill = ctk.CTkFrame(topbar, fg_color="#111c19", border_color="#1f4b3e", border_width=1, corner_radius=12)
         status_pill.pack(side="right", padx=25, pady=14)
-        self.top_status = ctk.CTkLabel(status_pill, text="● CONNEXION", text_color=MUTED, font=ctk.CTkFont(size=9, weight="bold"))
+        self.top_status = ctk.CTkLabel(status_pill, text="● CONNEXION", text_color=MUTED, font=ui_font(size=9, weight="bold"))
         self.top_status.pack(padx=12, pady=6)
 
         self.page = ctk.CTkFrame(self.content, fg_color=BG, corner_radius=0)
@@ -317,11 +349,12 @@ class PinkGiftTool(ctk.CTk):
         self._show_dashboard()
 
     def _section_label(self, parent, row, text):
-        ctk.CTkLabel(parent, text=text, anchor="w", font=ctk.CTkFont(size=8, weight="bold"), text_color="#596276").grid(row=row, column=0, sticky="ew", padx=17, pady=(9, 4))
+        ctk.CTkLabel(parent, text=text, anchor="w", font=ui_font(size=8, weight="bold"), text_color="#596276").grid(row=row, column=0, sticky="ew", padx=17, pady=(9, 4))
 
-    def _nav_button(self, parent, row, key, icon, label, command):
-        button = ctk.CTkButton(parent, text=f"{icon}     {label}", anchor="w", height=35, corner_radius=8, fg_color="transparent", hover_color="#161b26", text_color="#a0a8ba", font=ctk.CTkFont(size=11, weight="bold"), command=command)
+    def _nav_button(self, parent, row, key, label, command):
+        button = ctk.CTkButton(parent, text=f"  {label}", anchor="w", height=37, corner_radius=8, fg_color="transparent", hover_color="#161b26", text_color="#a0a8ba", font=ui_font(size=11, weight="bold"), compound="left", command=command)
         button.grid(row=row, column=0, sticky="ew", padx=9, pady=1)
+        self._load_button_emoji(button, NAV_EMOJIS.get(key, ""), 19)
         self.nav_buttons[key] = button
 
     def _select_nav(self, key, title):
@@ -357,15 +390,15 @@ class PinkGiftTool(ctk.CTk):
         hero.pack(fill="x", pady=(0, 16))
         hero_copy = ctk.CTkFrame(hero, fg_color="transparent")
         hero_copy.pack(side="left", fill="both", expand=True, padx=24, pady=22)
-        ctk.CTkLabel(hero_copy, text="PINKGIFT  ·  CENTRE DE CONTRÔLE", anchor="w", text_color="#b79cff", font=ctk.CTkFont(size=9, weight="bold")).pack(fill="x")
-        ctk.CTkLabel(hero_copy, text="Toute ta boutique, au même endroit.", anchor="w", text_color=TEXT, font=ctk.CTkFont(size=24, weight="bold")).pack(fill="x", pady=(6, 4))
-        ctk.CTkLabel(hero_copy, text="Commandes, prix, bénéfices et publications Discord synchronisés en direct.", anchor="w", text_color=MUTED, font=ctk.CTkFont(size=12)).pack(fill="x")
+        ctk.CTkLabel(hero_copy, text="PINKGIFT  ·  CENTRE DE CONTRÔLE", anchor="w", text_color="#b79cff", font=ui_font(size=9, weight="bold")).pack(fill="x")
+        ctk.CTkLabel(hero_copy, text="Toute ta boutique, au même endroit.", anchor="w", text_color=TEXT, font=display_font(size=25),).pack(fill="x", pady=(6, 4))
+        ctk.CTkLabel(hero_copy, text="Commandes, prix, bénéfices et publications Discord synchronisés en direct.", anchor="w", text_color=MUTED, font=ui_font(size=12)).pack(fill="x")
         hero_actions = ctk.CTkFrame(hero_copy, fg_color="transparent")
         hero_actions.pack(fill="x", pady=(17, 0))
-        ctk.CTkButton(hero_actions, text="Gérer les commandes", width=155, height=36, corner_radius=8, fg_color=PURPLE, hover_color=PURPLE_HOVER, font=ctk.CTkFont(size=11, weight="bold"), command=self._show_orders).pack(side="left")
-        ctk.CTkButton(hero_actions, text="Publier un embed", width=145, height=36, corner_radius=8, fg_color=CARD_ALT, hover_color="#202636", border_color="#30384a", border_width=1, font=ctk.CTkFont(size=11, weight="bold"), command=self._show_embeds).pack(side="left", padx=8)
-        if self.logo_image:
-            ctk.CTkLabel(hero, text="", image=self.logo_image).pack(side="right", padx=35)
+        ctk.CTkButton(hero_actions, text="Gérer les commandes", width=155, height=36, corner_radius=8, fg_color=PURPLE, hover_color=PURPLE_HOVER, font=ui_font(size=11, weight="bold"), command=self._show_orders).pack(side="left")
+        ctk.CTkButton(hero_actions, text="Publier un embed", width=145, height=36, corner_radius=8, fg_color=CARD_ALT, hover_color="#202636", border_color="#30384a", border_width=1, font=ui_font(size=11, weight="bold"), command=self._show_embeds).pack(side="left", padx=8)
+        if self.logo_large:
+            ctk.CTkLabel(hero, text="", image=self.logo_large).pack(side="right", padx=35)
 
         stats = ctk.CTkFrame(body, fg_color="transparent")
         stats.pack(fill="x")
@@ -377,8 +410,8 @@ class PinkGiftTool(ctk.CTk):
         ]:
             card = self._card(stats)
             card.pack(side="left", fill="x", expand=True, padx=(0, 12))
-            ctk.CTkLabel(card, text=title, anchor="w", text_color="#6f788c", font=ctk.CTkFont(size=9, weight="bold")).pack(fill="x", padx=17, pady=(15, 5))
-            ctk.CTkLabel(card, text=value, anchor="w", text_color=color, font=ctk.CTkFont(size=24, weight="bold")).pack(fill="x", padx=17, pady=(0, 15))
+            ctk.CTkLabel(card, text=title, anchor="w", text_color="#6f788c", font=ui_font(size=9, weight="bold")).pack(fill="x", padx=17, pady=(15, 5))
+            ctk.CTkLabel(card, text=value, anchor="w", text_color=color, font=display_font(size=24)).pack(fill="x", padx=17, pady=(0, 15))
 
         shortcuts = ctk.CTkFrame(body, fg_color="transparent")
         shortcuts.pack(fill="x", pady=(16, 0))
@@ -388,9 +421,25 @@ class PinkGiftTool(ctk.CTk):
         ]:
             quick = self._card(shortcuts)
             quick.pack(side="left", fill="both", expand=True, padx=(0, 12))
-            ctk.CTkLabel(quick, text=title, anchor="w", text_color=TEXT, font=ctk.CTkFont(size=15, weight="bold")).pack(fill="x", padx=18, pady=(16, 4))
-            ctk.CTkLabel(quick, text=subtitle, anchor="w", text_color=MUTED, font=ctk.CTkFont(size=11)).pack(fill="x", padx=18)
+            ctk.CTkLabel(quick, text=title, anchor="w", text_color=TEXT, font=ui_font(size=15, weight="bold")).pack(fill="x", padx=18, pady=(16, 4))
+            ctk.CTkLabel(quick, text=subtitle, anchor="w", text_color=MUTED, font=ui_font(size=11)).pack(fill="x", padx=18)
             ctk.CTkButton(quick, text=button, width=135, height=32, corner_radius=7, fg_color=CARD_ALT, hover_color="#222838", command=command).pack(anchor="w", padx=18, pady=15)
+
+        products = self.panel_data.get("catalog", {}).get("products", [])
+        if products:
+            brands = self._card(body)
+            brands.pack(fill="x", pady=(16, 0))
+            ctk.CTkLabel(brands, text="MARQUES SYNCHRONISÉES", anchor="w", text_color="#737d91", font=ui_font(size=9, weight="bold")).pack(fill="x", padx=18, pady=(14, 8))
+            brand_grid = ctk.CTkFrame(brands, fg_color="transparent")
+            brand_grid.pack(fill="x", padx=14, pady=(0, 14))
+            for index, product in enumerate(products[:14]):
+                badge = ctk.CTkFrame(brand_grid, fg_color="#0b0e14", border_color=BORDER, border_width=1, corner_radius=9)
+                badge.grid(row=index // 7, column=index % 7, sticky="ew", padx=4, pady=4)
+                brand_grid.grid_columnconfigure(index % 7, weight=1)
+                emoji_box = ctk.CTkFrame(badge, fg_color="transparent")
+                emoji_box.pack(pady=(8, 2))
+                self._rich_text(emoji_box, product.get("emoji", "🎁"), size=18, wraplength=30)
+                ctk.CTkLabel(badge, text=product.get("label", "Produit")[:13], text_color="#aeb5c3", font=ui_font(size=8, weight="bold")).pack(padx=7, pady=(0, 8))
 
     def _refresh_panel(self, callback=None):
         self.top_status.configure(text="SYNCHRONISATION…", text_color=MUTED)
@@ -408,12 +457,12 @@ class PinkGiftTool(ctk.CTk):
         line.pack(fill="x", pady=(0, 18))
         texts = ctk.CTkFrame(line, fg_color="transparent")
         texts.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(texts, text="ESPACE PINKGIFT", anchor="w", font=ctk.CTkFont(size=8, weight="bold"), text_color="#7965b5").pack(fill="x")
-        ctk.CTkLabel(texts, text=title, anchor="w", font=ctk.CTkFont(size=21, weight="bold"), text_color=TEXT).pack(fill="x", pady=(3, 0))
+        ctk.CTkLabel(texts, text="ESPACE PINKGIFT", anchor="w", font=ui_font(size=8, weight="bold"), text_color="#7965b5").pack(fill="x")
+        ctk.CTkLabel(texts, text=title, anchor="w", font=display_font(size=22), text_color=TEXT).pack(fill="x", pady=(3, 0))
         if subtitle:
-            ctk.CTkLabel(texts, text=subtitle, anchor="w", text_color=MUTED, font=ctk.CTkFont(size=11)).pack(fill="x", pady=(4, 0))
+            ctk.CTkLabel(texts, text=subtitle, anchor="w", text_color=MUTED, font=ui_font(size=11)).pack(fill="x", pady=(4, 0))
         if refresh:
-            ctk.CTkButton(line, text="↻  Actualiser", width=105, height=34, corner_radius=8, fg_color=CARD_ALT, hover_color="#242b3a", border_color=BORDER, border_width=1, font=ctk.CTkFont(size=10, weight="bold"), command=refresh).pack(side="right")
+            ctk.CTkButton(line, text="↻  Actualiser", width=105, height=34, corner_radius=8, fg_color=CARD_ALT, hover_color="#242b3a", border_color=BORDER, border_width=1, font=ui_font(size=10, weight="bold"), command=refresh).pack(side="right")
 
     def _show_orders(self):
         self._select_nav("orders", "Commandes")
@@ -451,11 +500,11 @@ class PinkGiftTool(ctk.CTk):
             info.pack(side="left", fill="x", expand=True, padx=15, pady=12)
             status = str(order.get("status") or "pending").lower()
             status_text = "EN ATTENTE" if status == "pending" else status.upper()
-            ctk.CTkLabel(info, text=f"#{order['id']}  ·  {order.get('service') or 'Produit'}", anchor="w", text_color=TEXT, font=ctk.CTkFont(size=14, weight="bold")).pack(fill="x")
-            ctk.CTkLabel(info, text=f"@{order.get('user_name') or order.get('user_id')}  ·  payé {float(order.get('paid') or 0):.2f} €  ·  {order.get('created_at') or ''}", anchor="w", text_color=MUTED, font=ctk.CTkFont(size=11)).pack(fill="x", pady=(4, 0))
+            ctk.CTkLabel(info, text=f"#{order['id']}  ·  {order.get('service') or 'Produit'}", anchor="w", text_color=TEXT, font=ui_font(size=14, weight="bold")).pack(fill="x")
+            ctk.CTkLabel(info, text=f"@{order.get('user_name') or order.get('user_id')}  ·  payé {float(order.get('paid') or 0):.2f} €  ·  {order.get('created_at') or ''}", anchor="w", text_color=MUTED, font=ui_font(size=11)).pack(fill="x", pady=(4, 0))
             actions = ctk.CTkFrame(card, fg_color="transparent")
             actions.pack(side="right", padx=12)
-            ctk.CTkLabel(actions, text=status_text, text_color="#ffd27b" if status == "pending" else GREEN, font=ctk.CTkFont(size=10, weight="bold")).pack(pady=(0, 5))
+            ctk.CTkLabel(actions, text=status_text, text_color="#ffd27b" if status == "pending" else GREEN, font=ui_font(size=10, weight="bold")).pack(pady=(0, 5))
             if status == "pending":
                 ctk.CTkButton(actions, text="Livrer", width=82, height=28, fg_color=PURPLE, command=lambda item=order: self._order_action(item, "deliver")).pack(side="left", padx=3)
                 ctk.CTkButton(actions, text="Rembourser", width=92, height=28, fg_color="#9d294b", command=lambda item=order: self._order_action(item, "refund")).pack(side="left", padx=3)
@@ -491,10 +540,10 @@ class PinkGiftTool(ctk.CTk):
         for index, client in enumerate(self.panel_data.get("clients", []), 1):
             row = self._card(table)
             row.pack(fill="x", pady=4)
-            ctk.CTkLabel(row, text=f"#{index}", width=45, text_color=PURPLE, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(12, 0), pady=12)
-            ctk.CTkLabel(row, text=f"@{client.get('user_name')}", anchor="w", text_color=TEXT, font=ctk.CTkFont(weight="bold")).pack(side="left", fill="x", expand=True, padx=12)
+            ctk.CTkLabel(row, text=f"#{index}", width=45, text_color=PURPLE, font=ui_font(weight="bold")).pack(side="left", padx=(12, 0), pady=12)
+            ctk.CTkLabel(row, text=f"@{client.get('user_name')}", anchor="w", text_color=TEXT, font=ui_font(weight="bold")).pack(side="left", fill="x", expand=True, padx=12)
             ctk.CTkLabel(row, text=f"{client.get('order_count', 0)} commandes", text_color=MUTED).pack(side="left", padx=16)
-            ctk.CTkLabel(row, text=f"{float(client.get('total_spent') or 0):.2f} €", text_color=GREEN, font=ctk.CTkFont(size=15, weight="bold")).pack(side="right", padx=16)
+            ctk.CTkLabel(row, text=f"{float(client.get('total_spent') or 0):.2f} €", text_color=GREEN, font=ui_font(size=15, weight="bold")).pack(side="right", padx=16)
 
     def _show_finances(self):
         self._select_nav("finances", "Statistiques")
@@ -514,16 +563,16 @@ class PinkGiftTool(ctk.CTk):
         for label, key, color in [("CHIFFRE D’AFFAIRES", "revenue", TEXT), ("COÛTS", "costs", RED), ("BÉNÉFICE", "profit", GREEN), ("COMMANDES", "orders", PURPLE)]:
             card = self._card(cards)
             card.pack(side="left", fill="x", expand=True, padx=(0, 10))
-            ctk.CTkLabel(card, text=label, text_color=MUTED, font=ctk.CTkFont(size=10, weight="bold")).pack(anchor="w", padx=15, pady=(14, 5))
+            ctk.CTkLabel(card, text=label, text_color=MUTED, font=ui_font(size=10, weight="bold")).pack(anchor="w", padx=15, pady=(14, 5))
             suffix = "" if key == "orders" else " €"
-            ctk.CTkLabel(card, text=f"{stats.get(key, 0):.2f}{suffix}" if key != "orders" else str(stats.get(key, 0)), text_color=color, font=ctk.CTkFont(size=23, weight="bold")).pack(anchor="w", padx=15, pady=(0, 14))
-        ctk.CTkLabel(body, text="Détail par produit", anchor="w", text_color=TEXT, font=ctk.CTkFont(size=17, weight="bold")).pack(fill="x", pady=(24, 8))
+            ctk.CTkLabel(card, text=f"{stats.get(key, 0):.2f}{suffix}" if key != "orders" else str(stats.get(key, 0)), text_color=color, font=display_font(size=23)).pack(anchor="w", padx=15, pady=(0, 14))
+        ctk.CTkLabel(body, text="Détail par produit", anchor="w", text_color=TEXT, font=ui_font(size=17, weight="bold")).pack(fill="x", pady=(24, 8))
         for item in stats.get("breakdown", []):
             row = self._card(body)
             row.pack(fill="x", pady=3)
             ctk.CTkLabel(row, text=item.get("service", "Produit"), anchor="w", text_color=TEXT).pack(side="left", fill="x", expand=True, padx=14, pady=10)
             ctk.CTkLabel(row, text=f"CA {float(item.get('revenue') or 0):.2f} €", text_color=MUTED).pack(side="left", padx=14)
-            ctk.CTkLabel(row, text=f"+{float(item.get('profit') or 0):.2f} €", text_color=GREEN, font=ctk.CTkFont(weight="bold")).pack(side="right", padx=14)
+            ctk.CTkLabel(row, text=f"+{float(item.get('profit') or 0):.2f} €", text_color=GREEN, font=ui_font(weight="bold")).pack(side="right", padx=14)
 
     def _load_finance_month(self):
         month = self.finance_month_entry.get().strip()
@@ -548,7 +597,7 @@ class PinkGiftTool(ctk.CTk):
             box = ctk.CTkFrame(grid, fg_color="transparent")
             box.grid(row=0, column=col, sticky="ew", padx=4)
             grid.grid_columnconfigure(col, weight=2 if key in ("sponsor_name", "sponsor_id") else 1)
-            ctk.CTkLabel(box, text=label.upper(), anchor="w", text_color=MUTED, font=ctk.CTkFont(size=9, weight="bold")).pack(fill="x")
+            ctk.CTkLabel(box, text=label.upper(), anchor="w", text_color=MUTED, font=ui_font(size=9, weight="bold")).pack(fill="x")
             entry = ctk.CTkEntry(box, height=36, fg_color=BG, border_color=BORDER)
             entry.pack(fill="x", pady=(5, 0))
             self.ref_entries[key] = entry
@@ -560,19 +609,19 @@ class PinkGiftTool(ctk.CTk):
             row = self._card(body)
             row.pack(fill="x", pady=4)
             info = f"{item.get('sponsor_name')} · {item.get('percentage', 0):g}% · {item.get('uses', 0)} ventes"
-            ctk.CTkLabel(row, text=item.get("code", ""), width=120, text_color=PINK, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=14, pady=12)
+            ctk.CTkLabel(row, text=item.get("code", ""), width=120, text_color=PINK, font=ui_font(weight="bold")).pack(side="left", padx=14, pady=12)
             ctk.CTkLabel(row, text=info, anchor="w", text_color=TEXT).pack(side="left", fill="x", expand=True)
-            ctk.CTkLabel(row, text=f"À verser {float(item.get('due') or 0):.2f} €", text_color=GREEN, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=12)
+            ctk.CTkLabel(row, text=f"À verser {float(item.get('due') or 0):.2f} €", text_color=GREEN, font=ui_font(weight="bold")).pack(side="left", padx=12)
             ctk.CTkButton(row, text="Modifier", width=75, height=28, fg_color=CARD_ALT, command=lambda data=item: self._edit_referral(data)).pack(side="left", padx=3)
             ctk.CTkButton(row, text="Supprimer", width=80, height=28, fg_color="#72263d", command=lambda data=item: self._delete_referral(data)).pack(side="right", padx=10)
-        ctk.CTkLabel(body, text="Historique récent des commissions", anchor="w", text_color=TEXT, font=ctk.CTkFont(size=17, weight="bold")).pack(fill="x", pady=(22, 8))
+        ctk.CTkLabel(body, text="Historique récent des commissions", anchor="w", text_color=TEXT, font=ui_font(size=17, weight="bold")).pack(fill="x", pady=(22, 8))
         events = self.panel_data.get("referral_events", [])
         for event in events[:100]:
             row = self._card(body)
             row.pack(fill="x", pady=3)
-            ctk.CTkLabel(row, text=event.get("code", ""), width=110, text_color=PINK, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=14, pady=10)
+            ctk.CTkLabel(row, text=event.get("code", ""), width=110, text_color=PINK, font=ui_font(weight="bold")).pack(side="left", padx=14, pady=10)
             ctk.CTkLabel(row, text=f"Client {event.get('user_id', '')} · {event.get('created_at', '')}", anchor="w", text_color=MUTED).pack(side="left", fill="x", expand=True)
-            ctk.CTkLabel(row, text=f"{float(event.get('commission') or 0):.2f} €", text_color=GREEN, font=ctk.CTkFont(weight="bold")).pack(side="right", padx=14)
+            ctk.CTkLabel(row, text=f"{float(event.get('commission') or 0):.2f} €", text_color=GREEN, font=ui_font(weight="bold")).pack(side="right", padx=14)
         if not events:
             ctk.CTkLabel(body, text="Aucune commission enregistrée.", text_color=MUTED).pack(anchor="w", pady=12)
 
@@ -618,12 +667,14 @@ class PinkGiftTool(ctk.CTk):
         costs = self.panel_data.get("purchase_costs", {})
 
         def section(title):
-            ctk.CTkLabel(scroll, text=title, anchor="w", text_color=PINK, font=ctk.CTkFont(size=16, weight="bold")).pack(fill="x", pady=(16, 6))
+            ctk.CTkLabel(scroll, text=title, anchor="w", text_color=PINK, font=ui_font(size=16, weight="bold")).pack(fill="x", pady=(16, 6))
 
         def row(label, sale_path=None, cost_path=None, official_path=None):
             line = self._card(scroll)
             line.pack(fill="x", pady=3)
-            ctk.CTkLabel(line, text=label, anchor="w", width=330, text_color=TEXT).pack(side="left", fill="x", expand=True, padx=14, pady=9)
+            label_box = ctk.CTkFrame(line, fg_color="transparent", width=330)
+            label_box.pack(side="left", fill="x", expand=True, padx=14, pady=9)
+            self._rich_text(label_box, label, size=11, weight="bold", color=TEXT, wraplength=320)
             for kind, path, source, caption in [
                 ("pricing", sale_path, pricing, "Vente"),
                 ("cost", cost_path, costs, "Coût"),
@@ -632,7 +683,7 @@ class PinkGiftTool(ctk.CTk):
                 if path:
                     box = ctk.CTkFrame(line, fg_color="transparent")
                     box.pack(side="left", padx=5)
-                    ctk.CTkLabel(box, text=caption, text_color=MUTED, font=ctk.CTkFont(size=9)).pack(side="left", padx=4)
+                    ctk.CTkLabel(box, text=caption, text_color=MUTED, font=ui_font(size=9)).pack(side="left", padx=4)
                     entry = ctk.CTkEntry(box, width=90, height=30, fg_color=BG, border_color=BORDER)
                     entry.pack(side="left")
                     entry.insert(0, str(self._nested_get(source, path, 0)))
@@ -660,7 +711,7 @@ class PinkGiftTool(ctk.CTk):
             if product["key"] in ("UBEREATS", "DISCORD_NITRO"):
                 continue
             for amount in self.panel_data.get("catalog", {}).get("gift_card_amounts", []):
-                row(f"{product['label']} · {amount} €", None, ("gift_cards", product["key"], str(amount)))
+                row(f"{product['emoji']} {product['label']} · {amount} €", None, ("gift_cards", product["key"], str(amount)))
         ctk.CTkButton(scroll, text="Enregistrer tous les prix et coûts", height=44, fg_color=PURPLE, hover_color="#7447dc", command=self._save_prices).pack(fill="x", pady=20)
 
     def _save_prices(self):
@@ -692,7 +743,7 @@ class PinkGiftTool(ctk.CTk):
         for product in self.panel_data.get("catalog", {}).get("products", []):
             available = stock.get("products", {}).get(product["key"], True)
             self._stock_row(scroll, f"{product['emoji']} {product['label']}", "product", product["key"], available)
-        ctk.CTkLabel(scroll, text="VALORANT POINTS", anchor="w", text_color=PINK, font=ctk.CTkFont(size=15, weight="bold")).pack(fill="x", pady=(18, 6))
+        ctk.CTkLabel(scroll, text="VALORANT POINTS", anchor="w", text_color=PINK, font=ui_font(size=15, weight="bold")).pack(fill="x", pady=(18, 6))
         for item in self.panel_data.get("catalog", {}).get("valorant", []):
             available = stock.get("valorant", {}).get(item["region_key"], {}).get(item["pack_key"], True)
             self._stock_row(scroll, f"{item['region']} · {item['pack']}", "valorant", item["pack_key"], available, item["region_key"])
@@ -700,7 +751,9 @@ class PinkGiftTool(ctk.CTk):
     def _stock_row(self, parent, label, kind, key, available, region=""):
         row = self._card(parent)
         row.pack(fill="x", pady=3)
-        ctk.CTkLabel(row, text=label, anchor="w", text_color=TEXT).pack(side="left", fill="x", expand=True, padx=14, pady=10)
+        label_box = ctk.CTkFrame(row, fg_color="transparent")
+        label_box.pack(side="left", fill="x", expand=True, padx=14, pady=9)
+        self._rich_text(label_box, label, size=11, weight="bold", color=TEXT, wraplength=420)
         switch = ctk.CTkSwitch(row, text="Disponible", progress_color=GREEN)
         switch.pack(side="right", padx=14)
         switch.select() if available else switch.deselect()
@@ -719,7 +772,10 @@ class PinkGiftTool(ctk.CTk):
         content.grid_columnconfigure(0, weight=1)
         content.grid_columnconfigure(1, weight=1)
         content.grid_rowconfigure(1, weight=1)
-        self.embed_editor_by_label = {f"{item.get('label')}  ·  {item['key']}": item for item in self.all_embed_items}
+        self.embed_editor_by_label = {
+            f"{self._clean_discord_markdown(CUSTOM_EMOJI_RE.sub('', str(item.get('label') or item['key']))).strip()}  ·  {item['key']}": item
+            for item in self.all_embed_items
+        }
         values = list(self.embed_editor_by_label) or ["Chargement…"]
         self.embed_editor_combo = ctk.CTkComboBox(content, values=values, state="readonly", height=38, corner_radius=8, fg_color=CARD, border_color=BORDER, button_color=PURPLE, button_hover_color=PURPLE_HOVER, command=self._select_embed_editor)
         self.embed_editor_combo.grid(row=0, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
@@ -732,15 +788,15 @@ class PinkGiftTool(ctk.CTk):
         source_panel.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         source_panel.grid_columnconfigure(0, weight=1)
         source_panel.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(source_panel, text="CONTENU DE L’EMBED", anchor="w", text_color="#737d91", font=ctk.CTkFont(size=9, weight="bold")).grid(row=0, column=0, sticky="ew", padx=15, pady=(13, 8))
-        self.embed_json_editor = ctk.CTkTextbox(source_panel, fg_color="#090c12", border_color=BORDER, border_width=1, corner_radius=8, text_color="#e5e7ef", font=("Consolas", 11), wrap="none")
+        ctk.CTkLabel(source_panel, text="CONTENU DE L’EMBED", anchor="w", text_color="#737d91", font=ui_font(size=9, weight="bold")).grid(row=0, column=0, sticky="ew", padx=15, pady=(13, 8))
+        self.embed_json_editor = ctk.CTkTextbox(source_panel, fg_color="#090c12", border_color=BORDER, border_width=1, corner_radius=8, text_color="#e5e7ef", font=(FONT_MONO, 11), wrap="none")
         self.embed_json_editor.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.embed_json_editor.bind("<KeyRelease>", self._schedule_embed_live_preview)
         preview_panel = self._card(content)
         preview_panel.grid(row=1, column=1, sticky="nsew")
         preview_panel.grid_columnconfigure(0, weight=1)
         preview_panel.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(preview_panel, text="APERÇU DISCORD EN DIRECT", anchor="w", text_color="#737d91", font=ctk.CTkFont(size=9, weight="bold")).grid(row=0, column=0, sticky="ew", padx=15, pady=(13, 8))
+        ctk.CTkLabel(preview_panel, text="APERÇU DISCORD EN DIRECT", anchor="w", text_color="#737d91", font=ui_font(size=9, weight="bold")).grid(row=0, column=0, sticky="ew", padx=15, pady=(13, 8))
         self.embed_visual = ctk.CTkScrollableFrame(preview_panel, fg_color="#0b0d11", border_color=BORDER, border_width=1, corner_radius=8)
         self.embed_visual.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         if self.all_embed_items:
@@ -786,6 +842,103 @@ class PinkGiftTool(ctk.CTk):
         except (TypeError, ValueError, IndexError):
             return 16761035
 
+    @staticmethod
+    def _clean_discord_markdown(value):
+        text = str(value or "")
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+        text = text.replace("**", "").replace("__", "").replace("~~", "").replace("`", "")
+        return text
+
+    @staticmethod
+    def _markdown_chunks(value):
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", str(value or ""))
+        pattern = re.compile(r"(\*\*.*?\*\*|__.*?__|~~.*?~~|`.*?`)")
+        chunks = []
+        for part in pattern.split(text):
+            if not part:
+                continue
+            style = "normal"
+            content = part
+            if part.startswith("**") and part.endswith("**"):
+                style, content = "bold", part[2:-2]
+            elif part.startswith("__") and part.endswith("__"):
+                style, content = "bold", part[2:-2]
+            elif part.startswith("~~") and part.endswith("~~"):
+                style, content = "strike", part[2:-2]
+            elif part.startswith("`") and part.endswith("`"):
+                style, content = "code", part[1:-1]
+            if content:
+                chunks.append((content, style))
+        return chunks
+
+    def _pack_markdown_line(self, parent, value, size, weight, color, wraplength):
+        chunks = self._markdown_chunks(value)
+        for index, (content, style) in enumerate(chunks):
+            is_last = index == len(chunks) - 1
+            if style == "code":
+                font = ctk.CTkFont(family=FONT_MONO, size=max(9, size - 1))
+            else:
+                font = ui_font(
+                    size=size,
+                    weight="bold" if style == "bold" else weight,
+                    overstrike=style == "strike",
+                )
+            ctk.CTkLabel(
+                parent,
+                text=content,
+                anchor="w",
+                justify="left",
+                text_color=color,
+                font=font,
+                wraplength=wraplength if is_last else 0,
+            ).pack(side="left", fill="x" if is_last else "none", expand=is_last)
+
+    @staticmethod
+    def _custom_emoji_url(animated, emoji_id):
+        extension = "gif" if animated else "png"
+        return f"https://cdn.discordapp.com/emojis/{emoji_id}.{extension}?size=64&quality=lossless"
+
+    def _rich_text(self, parent, value, size=12, weight="normal", color="#dbdee1", wraplength=430, pady=0):
+        """Affiche le texte Discord et remplace chaque balise <:emoji:id> par sa vraie image."""
+        lines = str(value or "").splitlines() or [""]
+        for line_index, raw_line in enumerate(lines):
+            if not raw_line:
+                spacer = ctk.CTkFrame(parent, fg_color="transparent", height=max(4, size // 2))
+                spacer.pack(fill="x")
+                spacer.pack_propagate(False)
+                continue
+            line = ctk.CTkFrame(parent, fg_color="transparent")
+            line.pack(fill="x", pady=(pady if line_index == 0 else 1, 0))
+            matches = list(CUSTOM_EMOJI_RE.finditer(raw_line))
+            if not matches:
+                self._pack_markdown_line(line, raw_line, size, weight, color, wraplength)
+                continue
+            cursor = 0
+            for match in matches:
+                prefix = self._clean_discord_markdown(raw_line[cursor:match.start()])
+                if prefix:
+                    self._pack_markdown_line(line, raw_line[cursor:match.start()], size, weight, color, 0)
+                emoji_size = max(18, size + 7)
+                emoji = ctk.CTkLabel(line, text="", width=emoji_size, height=emoji_size)
+                emoji.pack(side="left", padx=(1, 4))
+                self._load_preview_image(
+                    emoji,
+                    self._custom_emoji_url(bool(match.group(1)), match.group(3)),
+                    emoji_size,
+                    emoji_size,
+                )
+                cursor = match.end()
+            suffix = self._clean_discord_markdown(raw_line[cursor:])
+            if suffix:
+                self._pack_markdown_line(
+                    line,
+                    raw_line[cursor:],
+                    size,
+                    weight,
+                    color,
+                    max(100, wraplength - 30 * len(matches)),
+                )
+
     def _render_discord_preview(self, parent, preview):
         for child in parent.winfo_children():
             child.destroy()
@@ -806,9 +959,9 @@ class PinkGiftTool(ctk.CTk):
             thumbnail.pack(side="right", anchor="ne", padx=(12, 0))
             self._load_preview_image(thumbnail, thumbnail_url, 82, 82)
         if preview.get("title"):
-            ctk.CTkLabel(text_column, text=str(preview["title"]), anchor="w", justify="left", text_color="#f2f3f5", font=ctk.CTkFont(size=15, weight="bold"), wraplength=340 if thumbnail_url else 430).pack(fill="x", pady=(0, 7))
+            self._rich_text(text_column, preview["title"], size=15, weight="bold", color="#f2f3f5", wraplength=340 if thumbnail_url else 430)
         if preview.get("description"):
-            ctk.CTkLabel(text_column, text=str(preview["description"]), anchor="w", justify="left", text_color="#dbdee1", font=ctk.CTkFont(size=12), wraplength=340 if thumbnail_url else 430).pack(fill="x")
+            self._rich_text(text_column, preview["description"], size=12, color="#dbdee1", wraplength=340 if thumbnail_url else 430, pady=7 if preview.get("title") else 0)
         fields = preview.get("fields", [])
         if fields:
             field_grid = ctk.CTkFrame(inside, fg_color="transparent")
@@ -829,8 +982,8 @@ class PinkGiftTool(ctk.CTk):
                     padx=(0, 10),
                     pady=(10, 0),
                 )
-                ctk.CTkLabel(field_box, text=str(field.get("name", "")), anchor="w", justify="left", text_color="#f2f3f5", font=ctk.CTkFont(size=12, weight="bold"), wraplength=135 if inline else 430).pack(fill="x")
-                ctk.CTkLabel(field_box, text=str(field.get("value", "")), anchor="w", justify="left", text_color="#dbdee1", font=ctk.CTkFont(size=11), wraplength=135 if inline else 430).pack(fill="x", pady=(2, 0))
+                self._rich_text(field_box, field.get("name", ""), size=12, weight="bold", color="#f2f3f5", wraplength=135 if inline else 430)
+                self._rich_text(field_box, field.get("value", ""), size=11, color="#dbdee1", wraplength=135 if inline else 430, pady=2)
                 if inline:
                     field_grid.grid_columnconfigure(column_index, weight=1)
                     column_index += 1
@@ -844,7 +997,9 @@ class PinkGiftTool(ctk.CTk):
             image_label.pack(fill="x", pady=(12, 0))
             self._load_preview_image(image_label, str(preview["image_url"]), 430, 260)
         if preview.get("footer"):
-            ctk.CTkLabel(inside, text=str(preview["footer"]), anchor="w", text_color="#b5bac1", font=ctk.CTkFont(size=10), wraplength=430).pack(fill="x", pady=(12, 0))
+            footer_box = ctk.CTkFrame(inside, fg_color="transparent")
+            footer_box.pack(fill="x", pady=(11, 0))
+            self._rich_text(footer_box, preview["footer"], size=10, color="#b5bac1", wraplength=430)
 
     def _load_preview_image(self, label, url, max_width, max_height):
         def apply_image(pil_image):
@@ -871,6 +1026,39 @@ class PinkGiftTool(ctk.CTk):
                 self.after(0, lambda: apply_image(image))
             except Exception:
                 self.after(0, lambda: label.winfo_exists() and label.configure(text="Image indisponible", text_color=RED))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _load_button_emoji(self, button, markup, size=19):
+        match = CUSTOM_EMOJI_RE.fullmatch(str(markup or "").strip())
+        if not match:
+            return
+        url = self._custom_emoji_url(bool(match.group(1)), match.group(3))
+
+        def apply_image(pil_image):
+            try:
+                if not button.winfo_exists():
+                    return
+                rendered = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(size, size))
+                button._pinkgift_image = rendered
+                button.configure(image=rendered)
+            except Exception:
+                return
+
+        cached = self.preview_image_cache.get(url)
+        if cached is not None:
+            apply_image(cached)
+            return
+
+        def worker():
+            try:
+                response = requests.get(url, timeout=8, headers={"User-Agent": "PinkGiftTool/1.0"})
+                response.raise_for_status()
+                image = Image.open(BytesIO(response.content)).convert("RGBA")
+                self.preview_image_cache[url] = image
+                self.after(0, lambda: apply_image(image))
+            except Exception:
+                return
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -924,9 +1112,9 @@ class PinkGiftTool(ctk.CTk):
 
         heading = ctk.CTkFrame(wrapper, fg_color="transparent")
         heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 16))
-        ctk.CTkLabel(heading, text="DISCORD  ·  PUBLICATION", anchor="w", font=ctk.CTkFont(size=8, weight="bold"), text_color="#7965b5").pack(fill="x")
-        ctk.CTkLabel(heading, text="Publier un panneau", anchor="w", font=ctk.CTkFont(size=21, weight="bold"), text_color=TEXT).pack(fill="x", pady=(3, 0))
-        ctk.CTkLabel(heading, text="Choisis la destination et vérifie le rendu exact avant l’envoi.", anchor="w", font=ctk.CTkFont(size=11), text_color=MUTED).pack(fill="x", pady=(4, 0))
+        ctk.CTkLabel(heading, text="DISCORD  ·  PUBLICATION", anchor="w", font=ui_font(size=8, weight="bold"), text_color="#7965b5").pack(fill="x")
+        ctk.CTkLabel(heading, text="Publier un panneau", anchor="w", font=display_font(size=22), text_color=TEXT).pack(fill="x", pady=(3, 0))
+        ctk.CTkLabel(heading, text="Choisis la destination et vérifie le rendu exact avant l’envoi.", anchor="w", font=ui_font(size=11), text_color=MUTED).pack(fill="x", pady=(4, 0))
         form = self._card(wrapper)
         form.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
         form.grid_columnconfigure(0, weight=1)
@@ -953,12 +1141,12 @@ class PinkGiftTool(ctk.CTk):
         mention_box = ctk.CTkFrame(form, fg_color=CARD_ALT, corner_radius=8)
         mention_box.grid(row=6, column=0, sticky="ew", padx=20, pady=20)
         mention_box.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(mention_box, text="Mentionner @everyone", anchor="w", text_color=TEXT, font=ctk.CTkFont(size=13, weight="bold")).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 2))
-        ctk.CTkLabel(mention_box, text="Désactivé par défaut pour éviter les pings accidentels.", anchor="w", text_color=MUTED, font=ctk.CTkFont(size=11)).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+        ctk.CTkLabel(mention_box, text="Mentionner @everyone", anchor="w", text_color=TEXT, font=ui_font(size=13, weight="bold")).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 2))
+        ctk.CTkLabel(mention_box, text="Désactivé par défaut pour éviter les pings accidentels.", anchor="w", text_color=MUTED, font=ui_font(size=11)).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
         self.mention_switch = ctk.CTkSwitch(mention_box, text="", progress_color=PINK)
         self.mention_switch.grid(row=0, column=1, rowspan=2, padx=14)
 
-        self.publish_button = ctk.CTkButton(form, text="Publier dans le salon", height=44, corner_radius=8, fg_color=PURPLE, hover_color=PURPLE_HOVER, font=ctk.CTkFont(size=12, weight="bold"), command=self._publish)
+        self.publish_button = ctk.CTkButton(form, text="Publier dans le salon", height=44, corner_radius=8, fg_color=PURPLE, hover_color=PURPLE_HOVER, font=ui_font(size=12, weight="bold"), command=self._publish)
         self.publish_button.grid(row=7, column=0, sticky="ew", padx=20, pady=(0, 12))
         self.publish_status = ctk.CTkLabel(form, text="", text_color=MUTED, wraplength=460)
         self.publish_status.grid(row=8, column=0, sticky="ew", padx=20, pady=(0, 15))
@@ -967,7 +1155,7 @@ class PinkGiftTool(ctk.CTk):
         preview.grid(row=1, column=1, sticky="nsew")
         preview.grid_columnconfigure(0, weight=1)
         preview.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(preview, text="APERÇU DE L’EMBED", anchor="w", text_color=MUTED, font=ctk.CTkFont(size=10, weight="bold")).grid(row=0, column=0, sticky="ew", padx=18, pady=(17, 8))
+        ctk.CTkLabel(preview, text="APERÇU DE L’EMBED", anchor="w", text_color=MUTED, font=ui_font(size=10, weight="bold")).grid(row=0, column=0, sticky="ew", padx=18, pady=(17, 8))
         self.publish_preview_visual = ctk.CTkScrollableFrame(
             preview,
             fg_color="#0b0d11",
@@ -982,7 +1170,7 @@ class PinkGiftTool(ctk.CTk):
             self._embed_changed(self.embed_combo.get())
 
     def _field_label(self, parent, text, row):
-        ctk.CTkLabel(parent, text=text, anchor="w", text_color=MUTED, font=ctk.CTkFont(size=10, weight="bold")).grid(row=row, column=0, sticky="ew", padx=20, pady=(18 if row == 0 else 15, 7))
+        ctk.CTkLabel(parent, text=text, anchor="w", text_color=MUTED, font=ui_font(size=10, weight="bold")).grid(row=row, column=0, sticky="ew", padx=20, pady=(18 if row == 0 else 15, 7))
 
     def _guild_changed(self, label):
         guild = self.guild_by_label.get(label)
@@ -1039,9 +1227,9 @@ class PinkGiftTool(ctk.CTk):
         body.pack(fill="both", expand=True, padx=24, pady=22)
         card = self._card(body)
         card.pack(fill="x")
-        ctk.CTkLabel(card, text="Connexion au panel", anchor="w", font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT).pack(fill="x", padx=20, pady=(18, 6))
+        ctk.CTkLabel(card, text="Connexion au panel", anchor="w", font=ui_font(size=18, weight="bold"), text_color=TEXT).pack(fill="x", padx=20, pady=(18, 6))
         ctk.CTkLabel(card, text=self.api.base_url, anchor="w", text_color=MUTED).pack(fill="x", padx=20)
-        ctk.CTkLabel(card, text="Le mot de passe n’est jamais enregistré sur l’ordinateur.", anchor="w", text_color=GREEN, font=ctk.CTkFont(size=12)).pack(fill="x", padx=20, pady=(7, 0))
+        ctk.CTkLabel(card, text="Le mot de passe n’est jamais enregistré sur l’ordinateur.", anchor="w", text_color=GREEN, font=ui_font(size=12)).pack(fill="x", padx=20, pady=(7, 0))
         ctk.CTkButton(card, text="Changer de connexion", width=190, height=40, fg_color="#32223f", hover_color="#443052", command=self._show_login).pack(anchor="w", padx=20, pady=18)
 
 
