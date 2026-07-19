@@ -2668,8 +2668,23 @@ def valo_pack_is_available(region_key, pack_key):
     return get_stock_config()["valorant"].get(region_key, {}).get(str(pack_key), True)
 
 
+def safe_component_emoji(value, fallback="🎁"):
+    """N'envoie jamais à Discord un emoji custom supprimé ou inaccessible au bot."""
+    try:
+        parsed = discord.PartialEmoji.from_str(str(value or ""))
+    except (TypeError, ValueError):
+        return fallback
+    if parsed.id is None:
+        return parsed if parsed.name else fallback
+    cached = bot.get_emoji(parsed.id)
+    return cached if cached is not None else fallback
+
+
 def stock_partial_emoji(available):
-    return discord.PartialEmoji.from_str(STOCK_OK_EMOJI if available else STOCK_KO_EMOJI)
+    return safe_component_emoji(
+        STOCK_OK_EMOJI if available else STOCK_KO_EMOJI,
+        "✅" if available else "❌",
+    )
 
 
 def stock_label(available):
@@ -2832,7 +2847,7 @@ class ValoOrderLauncherView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Commander des VP", emoji="<:vp:1519915966476320901>", style=discord.ButtonStyle.success, custom_id="pinkgift_start_valo_order")
+    @discord.ui.button(label="Commander des VP", emoji="🎮", style=discord.ButtonStyle.success, custom_id="pinkgift_start_valo_order")
     async def start_valo_order(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Répond immédiatement à Discord avant toute lecture de stock.
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -3091,7 +3106,7 @@ class CPPackSelect(discord.ui.Select):
             options.append(discord.SelectOption(
                 label=f"{points_label} CP — {format_price(prices[pack_key])} €",
                 value=pack_key,
-                emoji="<:cp:1528128623117205624>",
+                emoji=safe_component_emoji("<:cp:1528128623117205624>", "🪙"),
                 description="Commandé à la demande",
             ))
         super().__init__(placeholder="Choisis ton pack de COD Points", options=options, custom_id="pinkgift_cp_pack")
@@ -3153,7 +3168,7 @@ class NitroOrderView(discord.ui.View):
 
     @discord.ui.button(
         label="Commander Discord Nitro — 8 €",
-        emoji="<:nitroboost:1524439577656561846>",
+        emoji="💎",
         style=discord.ButtonStyle.success
     )
     async def confirm_nitro(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3191,7 +3206,10 @@ class ProductServiceSelect(discord.ui.Select):
                 label=cfg["display"][:100],
                 value=key,
                 description="Sélectionner ce produit",
-                emoji=discord.PartialEmoji.from_str(get_product_emoji(key, emoji_catalog)),
+                emoji=safe_component_emoji(
+                    get_product_emoji(key, emoji_catalog),
+                    cfg.get("emoji_ch", "🎁"),
+                ),
             )
             for key, cfg in PRODUCT_CONFIG.items()
             if key != "VALORANT"
@@ -3391,11 +3409,11 @@ class ReferralChoiceView(discord.ui.View):
         await interaction.response.send_message("❌ Ce choix ne t'appartient pas.", ephemeral=True)
         return False
 
-    @discord.ui.button(label="Oui, j'ai un code", emoji="<:verify:1525796690899108000>", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Oui, j'ai un code", emoji="✅", style=discord.ButtonStyle.success)
     async def yes_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ReferralCodeModal(self.user_id))
 
-    @discord.ui.button(label="Non", emoji="<:crossmark:1525798036276514887>", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Non", emoji="❌", style=discord.ButtonStyle.secondary)
     async def no_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True, thinking=True)
         await create_balance_recharge_ticket(interaction)
@@ -6356,6 +6374,339 @@ def panel_valorant_pack(order):
         if number_match:
             return f"{number_match.group(0)} VP"
     return "Pack inconnu"
+
+
+def desktop_money_value(value, field, allow_zero=False):
+    try:
+        amount = round(float(str(value).replace(",", ".")), 2)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Valeur invalide pour {field}") from error
+    minimum = 0 if allow_zero else 0.01
+    if not minimum <= amount <= 100000:
+        raise ValueError(f"{field} doit être compris entre {minimum:g} et 100 000 €")
+    return amount
+
+
+def desktop_load_orders(limit=1000):
+    orders = load_orders_for_stats(limit=limit)
+    result = []
+    for raw in orders:
+        order = dict(raw)
+        order["id"] = int(order.get("id") or 0)
+        order["guild_id"] = str(order.get("guild_id") or "")
+        order["channel_id"] = str(order.get("channel_id") or "")
+        order["message_id"] = str(order.get("message_id") or "")
+        order["user_id"] = str(order.get("user_id") or "")
+        order["region"] = panel_valorant_region(order)
+        order["pack"] = panel_valorant_pack(order)
+        order["amount_label"] = panel_amount_label(order)
+        result.append(order)
+    return sorted(result, key=panel_order_sort_key)
+
+
+def desktop_embed_preview(embed_key, embed_data=None):
+    if embed_key in DESKTOP_PUBLISHABLE_EMBEDS:
+        built = build_desktop_embed_only(embed_key)
+    else:
+        built = build_json_embed(embed_key, data_override=embed_data)
+    raw = built.to_dict()
+    return {
+        "title": raw.get("title", ""),
+        "description": raw.get("description", ""),
+        "color": raw.get("color", 16761035),
+        "fields": raw.get("fields", []),
+        "footer": (raw.get("footer") or {}).get("text", ""),
+        "image_url": (raw.get("image") or {}).get("url", ""),
+        "thumbnail_url": (raw.get("thumbnail") or {}).get("url", ""),
+    }
+
+
+@app.route("/api/desktop/panel/snapshot")
+@desktop_api_required
+def desktop_api_panel_snapshot():
+    orders = desktop_load_orders()
+    clients_by_id = {}
+    for order in orders:
+        user_id = order.get("user_id", "")
+        client = clients_by_id.setdefault(user_id, {
+            "user_id": user_id,
+            "user_name": order.get("user_name") or user_id,
+            "order_count": 0,
+            "total_spent": 0.0,
+        })
+        client["order_count"] += 1
+        client["total_spent"] = round(client["total_spent"] + float(order.get("paid") or 0), 2)
+        if order.get("user_name"):
+            client["user_name"] = order["user_name"]
+    month_key = normalize_finance_month(request.args.get("month"))
+    finances = calculate_month_finances(
+        orders,
+        month_key,
+        purchase_cost_snapshots=load_order_purchase_costs(),
+        purchase_costs=get_purchase_cost_config(),
+    )
+    ledgers = load_referral_ledgers()
+    referrals = build_referral_summaries(get_referral_codes(), ledgers)
+    return {
+        "ok": True,
+        "orders": orders,
+        "clients": sorted(clients_by_id.values(), key=lambda item: item["total_spent"], reverse=True),
+        "finances": finances,
+        "finance_month_label": finance_month_label(month_key),
+        "referrals": referrals,
+        "referral_events": load_referral_events(ledgers)[:200],
+        "pricing": get_pricing_config(),
+        "purchase_costs": get_purchase_cost_config(),
+        "stock": get_stock_config(),
+        "catalog": {
+            "products": [
+                {"key": key, "label": cfg["display"], "emoji": cfg.get("emoji_ch", "🎁")}
+                for key, cfg in PRODUCT_CONFIG.items() if key != "VALORANT"
+            ],
+            "gift_card_amounts": list(GIFT_CARD_AMOUNTS),
+            "uber_eats": [{"key": key, **value} for key, value in UBEREATS_PACKS.items()],
+            "cp": [{"key": key, **value} for key, value in CP_PACKS.items()],
+            "valorant": [
+                {
+                    "region_key": region_key,
+                    "region": region["label"],
+                    "pack_key": pack_key,
+                    "pack": pack["label"],
+                }
+                for region_key, region in VALO_REGIONS.items()
+                for pack_key, pack in region["packs"].items()
+            ],
+        },
+    }
+
+
+@app.route("/api/desktop/panel/orders/<int:order_id>", methods=["POST"])
+@desktop_api_required
+def desktop_api_order_action(order_id):
+    payload = request.get_json(silent=True) or {}
+    action = str(payload.get("action", "")).strip().lower()
+    order = get_order_record(order_id=order_id)
+    if not order:
+        return {"ok": False, "error": "Commande introuvable"}, 404
+    status = str(order.get("status") or "pending").lower()
+    try:
+        if action == "refund":
+            if status != "pending":
+                raise ValueError("Seule une commande en attente peut être remboursée")
+            new_balance = refund_pending_order(order, bot.user.id if bot.user else 0)
+            if BOT_LOOP is not None:
+                asyncio.run_coroutine_threadsafe(show_order_refund_on_discord(order, new_balance), BOT_LOOP).result(timeout=25)
+            return {"ok": True, "message": f"Commande #{order_id} remboursée", "balance": new_balance}
+        if action == "deliver":
+            code = str(payload.get("code", "")).strip()
+            if status != "pending" or not code:
+                raise ValueError("Commande ou code invalide")
+            if BOT_LOOP is None:
+                raise RuntimeError("Le bot Discord n'est pas prêt")
+            if str(order.get("service") or "").upper().startswith("COD POINTS"):
+                code = normalize_cp_code(code)
+                mark_order_status(order_id, "delivering")
+                try:
+                    asyncio.run_coroutine_threadsafe(deliver_cp_order_to_discord(order, code), BOT_LOOP).result(timeout=25)
+                except Exception:
+                    mark_order_status(order_id, "pending")
+                    raise
+            else:
+                asyncio.run_coroutine_threadsafe(deliver_order_from_panel(order, code), BOT_LOOP).result(timeout=25)
+                if USE_SUPABASE:
+                    supabase_request("PATCH", f"orders?id=eq.{order_id}", {"code": code, "status": "done", "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+                else:
+                    with db_connect() as db:
+                        db.execute("UPDATE orders SET code=?, status='done', updated_at=CURRENT_TIMESTAMP WHERE id=?", (code, order_id))
+            return {"ok": True, "message": f"Commande #{order_id} livrée"}
+        if action == "delete":
+            if status == "pending":
+                raise ValueError("Rembourse la commande en attente avant de la supprimer")
+            if USE_SUPABASE:
+                deleted = supabase_request("DELETE", f"orders?id=eq.{order_id}", prefer="return=representation")
+                if not deleted:
+                    raise RuntimeError("Suppression refusée par Supabase")
+            else:
+                with db_connect() as db:
+                    cursor = db.execute("DELETE FROM orders WHERE id=?", (order_id,))
+                    if cursor.rowcount == 0:
+                        raise ValueError("Commande introuvable")
+            referral = remove_referral_purchase(order["guild_id"], order["user_id"], order["message_id"])
+            return {"ok": True, "message": f"Commande #{order_id} supprimée", "removed_commission": referral.get("commission", 0)}
+        raise ValueError("Action inconnue")
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}, 400
+    except Exception as error:
+        print(f"Action desktop commande #{order_id} impossible: {error}")
+        return {"ok": False, "error": str(error)}, 500
+
+
+@app.route("/api/desktop/panel/stock", methods=["POST"])
+@desktop_api_required
+def desktop_api_stock_update():
+    payload = request.get_json(silent=True) or {}
+    try:
+        set_stock_available(
+            str(payload.get("kind", "")),
+            str(payload.get("key", "")),
+            bool(payload.get("available")),
+            str(payload.get("region") or "") or None,
+        )
+        return {"ok": True, "stock": get_stock_config()}
+    except Exception as error:
+        return {"ok": False, "error": str(error)}, 400
+
+
+@app.route("/api/desktop/panel/prices", methods=["POST"])
+@desktop_api_required
+def desktop_api_prices_update():
+    payload = request.get_json(silent=True) or {}
+    pricing_payload = payload.get("pricing") or {}
+    costs_payload = payload.get("purchase_costs") or {}
+    pricing = get_pricing_config()
+    costs = get_purchase_cost_config()
+    try:
+        for amount in GIFT_CARD_AMOUNTS:
+            key = str(amount)
+            pricing["gift_cards"][key] = desktop_money_value(pricing_payload.get("gift_cards", {}).get(key, pricing["gift_cards"][key]), f"Carte {amount} €")
+        for pack_key in UBEREATS_PACKS:
+            pricing["uber_eats"][pack_key] = desktop_money_value(pricing_payload.get("uber_eats", {}).get(pack_key, pricing["uber_eats"][pack_key]), f"Uber Eats {pack_key}")
+            costs["uber_eats"][pack_key] = desktop_money_value(costs_payload.get("uber_eats", {}).get(pack_key, costs["uber_eats"][pack_key]), f"Coût Uber Eats {pack_key}", True)
+        pricing["discord_nitro"] = desktop_money_value(pricing_payload.get("discord_nitro", pricing["discord_nitro"]), "Discord Nitro")
+        costs["discord_nitro"] = desktop_money_value(costs_payload.get("discord_nitro", costs["discord_nitro"]), "Coût Discord Nitro", True)
+        for product_key in regular_gift_product_keys():
+            for amount in GIFT_CARD_AMOUNTS:
+                key = str(amount)
+                costs["gift_cards"][product_key][key] = desktop_money_value(
+                    costs_payload.get("gift_cards", {}).get(product_key, {}).get(key, costs["gift_cards"][product_key][key]),
+                    f"Coût {product_key} {amount} €",
+                    True,
+                )
+        for pack_key in CP_PACKS:
+            pricing["cp"][pack_key] = desktop_money_value(pricing_payload.get("cp", {}).get(pack_key, pricing["cp"][pack_key]), f"CP {pack_key}")
+            costs["cp"][pack_key] = desktop_money_value(costs_payload.get("cp", {}).get(pack_key, costs["cp"][pack_key]), f"Coût CP {pack_key}", True)
+        for region_key, region in VALO_REGIONS.items():
+            for pack_key in region["packs"]:
+                pricing["valorant"][region_key][pack_key] = desktop_money_value(pricing_payload.get("valorant", {}).get(region_key, {}).get(pack_key, pricing["valorant"][region_key][pack_key]), f"VP {region_key} {pack_key}")
+                pricing["valorant_original"][region_key][pack_key] = desktop_money_value(pricing_payload.get("valorant_original", {}).get(region_key, {}).get(pack_key, pricing["valorant_original"][region_key][pack_key]), f"Prix officiel VP {region_key} {pack_key}")
+                costs["valorant"][region_key][pack_key] = desktop_money_value(costs_payload.get("valorant", {}).get(region_key, {}).get(pack_key, costs["valorant"][region_key][pack_key]), f"Coût VP {region_key} {pack_key}", True)
+        set_panel_setting("pricing", pricing)
+        set_panel_setting("purchase_costs", costs)
+        if BOT_LOOP is not None:
+            asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
+        return {"ok": True, "pricing": pricing, "purchase_costs": costs}
+    except Exception as error:
+        return {"ok": False, "error": str(error)}, 400
+
+
+@app.route("/api/desktop/panel/referrals", methods=["POST"])
+@desktop_api_required
+def desktop_api_referrals_update():
+    payload = request.get_json(silent=True) or {}
+    action = str(payload.get("action", "save")).lower()
+    code = normalize_referral_code(payload.get("code"))
+    if len(code) < 3:
+        return {"ok": False, "error": "Le code doit contenir au moins 3 caractères"}, 400
+    codes = get_referral_codes()
+    try:
+        if action == "delete":
+            purge = purge_referral_code_data(code)
+            notifications = purge.pop("notification_messages", [])
+            codes.pop(code, None)
+            save_referral_codes(codes)
+            if notifications and BOT_LOOP is not None:
+                asyncio.run_coroutine_threadsafe(delete_referral_tracking_notifications(notifications), BOT_LOOP)
+            return {"ok": True, "message": f"Code {code} supprimé définitivement", "purge": purge}
+        sponsor_name = str(payload.get("sponsor_name", "")).strip()[:80]
+        sponsor_id = re.sub(r"\D", "", str(payload.get("sponsor_id", "")))[:25]
+        if not sponsor_name:
+            raise ValueError("Le nom du parrain est obligatoire")
+        if sponsor_id and not re.fullmatch(r"\d{15,25}", sponsor_id):
+            raise ValueError("L'ID Discord du parrain est invalide")
+        percentage = valid_referral_percentage(payload.get("percentage"), -1)
+        if percentage < 0:
+            raise ValueError("Pourcentage invalide")
+        paid = desktop_money_value(payload.get("paid", 0), "Déjà versé", True)
+        previous = codes.get(code, {})
+        codes[code] = {
+            "code": code,
+            "sponsor_name": sponsor_name,
+            "sponsor_id": sponsor_id,
+            "percentage": percentage,
+            "paid": paid,
+            "active": bool(payload.get("active", True)),
+            "created_at": previous.get("created_at") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        save_referral_codes(codes)
+        return {"ok": True, "message": f"Code {code} enregistré"}
+    except Exception as error:
+        return {"ok": False, "error": str(error)}, 400
+
+
+@app.route("/api/desktop/panel/embeds")
+@desktop_api_required
+def desktop_api_all_embeds():
+    data = load_embed_texts()
+    result = []
+    for key in sorted(key for key, value in data.items() if isinstance(value, dict) and key not in PANEL_HIDDEN_EMBED_KEYS and key != "emojis"):
+        try:
+            preview = desktop_embed_preview(key, data[key])
+        except Exception as error:
+            preview = {"title": data[key].get("title", key), "description": f"Aperçu indisponible : {error}", "fields": []}
+        result.append({
+            "key": key,
+            "label": data[key].get("title") or key,
+            "data": data[key],
+            "preview": preview,
+            "publishable": key in DESKTOP_PUBLISHABLE_EMBEDS,
+        })
+    return {"ok": True, "embeds": result}
+
+
+@app.route("/api/desktop/panel/embeds/<embed_key>", methods=["POST"])
+@desktop_api_required
+def desktop_api_embed_update(embed_key):
+    payload = request.get_json(silent=True) or {}
+    embed_data = payload.get("data")
+    current = load_embed_texts()
+    if embed_key in PANEL_HIDDEN_EMBED_KEYS or not isinstance(current.get(embed_key), dict):
+        return {"ok": False, "error": "Embed inconnu ou non modifiable"}, 404
+    if not isinstance(embed_data, dict):
+        return {"ok": False, "error": "Le contenu de l'embed doit être un objet JSON"}, 400
+    try:
+        desktop_embed_preview(embed_key, embed_data)
+        overrides = get_panel_setting("embed_overrides", {}) or {}
+        if not isinstance(overrides, dict):
+            overrides = {}
+        overrides[embed_key] = embed_data
+        set_panel_setting("embed_overrides", overrides)
+        return {"ok": True, "preview": desktop_embed_preview(embed_key, embed_data)}
+    except Exception as error:
+        return {"ok": False, "error": str(error)}, 400
+
+
+@app.route("/api/desktop/panel/images", methods=["POST"])
+@desktop_api_required
+def desktop_api_image_upload():
+    image_file = request.files.get("image")
+    if not image_file or not image_file.filename:
+        return {"ok": False, "error": "Aucune image sélectionnée"}, 400
+    if not str(image_file.mimetype or "").startswith("image/"):
+        return {"ok": False, "error": "Le fichier sélectionné n'est pas une image"}, 400
+    content = image_file.read(8 * 1024 * 1024 + 1)
+    if len(content) > 8 * 1024 * 1024:
+        return {"ok": False, "error": "L'image dépasse la limite de 8 Mo"}, 400
+    if BOT_LOOP is None or not bot.is_ready():
+        return {"ok": False, "error": "Le bot Discord n'est pas encore connecté"}, 503
+    try:
+        image_url = asyncio.run_coroutine_threadsafe(
+            upload_panel_image_to_discord(image_file.filename, content),
+            BOT_LOOP,
+        ).result(timeout=30)
+        return {"ok": True, "image_url": image_url}
+    except Exception as error:
+        print(f"Upload image desktop impossible : {error}")
+        return {"ok": False, "error": str(error)}, 500
 
 
 @app.route("/panel/acces")
