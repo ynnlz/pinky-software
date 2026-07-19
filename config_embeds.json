@@ -325,7 +325,7 @@
       },
       {
         "name": "🎁 Commandes et livraisons",
-        "value": "Les commandes sont créées depuis les menus et débitées automatiquement.\nLes codes cadeaux et suppressions sont gérés depuis le panneau web.\n!giveaway durée nom [invitations] [tag_serveur] — créer un giveaway avec conditions\n!reroll ID_ou_lien — tirer un nouveau gagnant éligible\n!config_compteurs #salon-avis — configurer le compteur d'avis vérifiés",
+        "value": "Les commandes sont créées depuis les menus et débitées automatiquement.\nLes codes cadeaux et suppressions sont gérés depuis le panneau web.\n!giveaway durée nom [invitations] [tag_serveur] — seules les nouvelles invitations obtenues pendant le giveaway comptent\n!reroll ID_ou_lien — tirer un nouveau gagnant éligible\n!config_compteurs #salon-avis — configurer le compteur d'avis vérifiés",
         "inline": false
       },
       {
