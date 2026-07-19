@@ -1,0 +1,49 @@
+name: Construire PinkGift Tool Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "static/discord_icon.gif"
+      - ".github/workflows/build-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: desktop/requirements.txt
+
+      - name: Installer les dépendances
+        run: python -m pip install -r desktop/requirements.txt
+
+      - name: Construire le fichier EXE
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name PinkGift-Tool
+          --add-data "static/discord_icon.gif;static"
+          --collect-all customtkinter
+          desktop/pinkgift_desktop.py
+
+      - name: Publier le fichier téléchargeable
+        uses: actions/upload-artifact@v4
+        with:
+          name: PinkGift-Tool-Windows
+          path: dist/PinkGift-Tool.exe
+          if-no-files-found: error
