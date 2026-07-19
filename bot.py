@@ -4624,6 +4624,9 @@ def panel_auth_token():
     return hashlib.sha256(("pinkgift-panel:" + PANEL_PASSWORD).encode("utf-8")).hexdigest()
 
 
+PANEL_IDLE_TIMEOUT_SECONDS = 30 * 60
+
+
 def panel_client_ip():
     forwarded = request.headers.get("X-Forwarded-For", "")
     if forwarded:
@@ -4652,7 +4655,7 @@ def panel_logged_path():
 
 
 def log_panel_access():
-    if not request.path.startswith("/panel"):
+    if not request.path.startswith("/panel") or request.path == "/panel/heartbeat":
         return
     user_agent = request.headers.get("User-Agent", "")[:500]
     values = {
@@ -4687,11 +4690,16 @@ def panel_audit_allowed():
 def panel_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        login_time = session.get("panel_login_at", 0)
+        now = time.time()
+        try:
+            last_activity = float(session.get("panel_last_activity_at", session.get("panel_login_at", 0)))
+        except (TypeError, ValueError):
+            last_activity = 0
         valid_token = PANEL_PASSWORD and secrets.compare_digest(session.get("panel_auth", ""), panel_auth_token())
-        if not valid_token or time.time() - login_time > 1800:
+        if not valid_token or now - last_activity >= PANEL_IDLE_TIMEOUT_SECONDS:
             session.clear()
             return redirect(url_for("panel_login"))
+        session["panel_last_activity_at"] = now
         if not session.get("csrf"):
             session["csrf"] = secrets.token_urlsafe(24)
         return view(*args, **kwargs)
@@ -5705,9 +5713,56 @@ PANEL_PRICES_COSTS_TEMPLATE = PANEL_PRICES_COSTS_TEMPLATE.replace(
 )
 
 
-def apply_panel_theme(template):
+PANEL_SESSION_SCRIPT = r"""
+<script>
+(() => {
+  const idleLimit = 30 * 60 * 1000;
+  const heartbeatDelay = 60 * 1000;
+  const heartbeatUrl = "{{ url_for('panel_heartbeat') }}";
+  const logoutUrl = "{{ url_for('panel_logout') }}";
+  let idleTimer;
+  let lastHeartbeat = Date.now();
+
+  const logout = () => { window.location.assign(logoutUrl); };
+  const heartbeat = async () => {
+    try {
+      const response = await fetch(heartbeatUrl, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "X-Panel-Heartbeat": "1" }
+      });
+      if (response.redirected || response.status === 401) logout();
+    } catch (_) {
+      // Une coupure réseau temporaire ne doit pas effacer la session locale.
+    }
+  };
+  const noteActivity = () => {
+    const now = Date.now();
+    window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(logout, idleLimit);
+    if (now - lastHeartbeat >= heartbeatDelay) {
+      lastHeartbeat = now;
+      heartbeat();
+    }
+  };
+
+  ["pointerdown", "keydown", "input", "change", "scroll", "touchstart"].forEach((eventName) => {
+    window.addEventListener(eventName, noteActivity, { passive: true });
+  });
+  window.addEventListener("focus", noteActivity);
+  noteActivity();
+})();
+</script>
+"""
+
+
+def apply_panel_theme(template, include_session_timeout=True):
     themed = template.replace("</style>", PANEL_THEME_CSS + "</style>", 1)
-    return themed.replace("</head>", PANEL_FAVICON + "</head>", 1)
+    themed = themed.replace("</head>", PANEL_FAVICON + "</head>", 1)
+    if include_session_timeout:
+        themed = themed.replace("</body>", PANEL_SESSION_SCRIPT + "</body>", 1)
+    return themed
 
 
 PANEL_TEMPLATE = apply_panel_theme(PANEL_TEMPLATE).replace(
@@ -5737,7 +5792,7 @@ PANEL_EMBEDS_TEMPLATE = (
     .replace("</style>", PANEL_EMBEDS_PREVIEW_CSS + "</style>", 1)
     .replace("</body>", PANEL_EMBEDS_PREVIEW_SCRIPT + "</body>", 1)
 )
-LOGIN_TEMPLATE = apply_panel_theme(LOGIN_TEMPLATE)
+LOGIN_TEMPLATE = apply_panel_theme(LOGIN_TEMPLATE, include_session_timeout=False)
 PANEL_ACCESS_TEMPLATE = apply_panel_theme(PANEL_ACCESS_TEMPLATE)
 
 
@@ -5760,6 +5815,7 @@ def panel_login():
         session.clear()
         session["panel_auth"] = panel_auth_token()
         session["panel_login_at"] = time.time()
+        session["panel_last_activity_at"] = session["panel_login_at"]
         session["csrf"] = secrets.token_urlsafe(24)
         return redirect(url_for("panel_orders"))
     return render_template_string(LOGIN_TEMPLATE)
@@ -5769,6 +5825,12 @@ def panel_login():
 def panel_logout():
     session.clear()
     return redirect(url_for("panel_login"))
+
+
+@app.route("/panel/heartbeat")
+@panel_required
+def panel_heartbeat():
+    return "", 204
 
 
 def panel_filter_redirect():
