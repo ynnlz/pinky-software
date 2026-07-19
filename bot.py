@@ -6425,6 +6425,7 @@ def desktop_embed_preview(embed_key, embed_data=None):
 @desktop_api_required
 def desktop_api_panel_snapshot():
     orders = desktop_load_orders()
+    emoji_catalog = get_emoji_catalog()
     clients_by_id = {}
     for order in orders:
         user_id = order.get("user_id", "")
@@ -6460,7 +6461,7 @@ def desktop_api_panel_snapshot():
         "stock": get_stock_config(),
         "catalog": {
             "products": [
-                {"key": key, "label": cfg["display"], "emoji": cfg.get("emoji_ch", "🎁")}
+                {"key": key, "label": cfg["display"], "emoji": get_product_emoji(key, emoji_catalog)}
                 for key, cfg in PRODUCT_CONFIG.items() if key != "VALORANT"
             ],
             "gift_card_amounts": list(GIFT_CARD_AMOUNTS),
