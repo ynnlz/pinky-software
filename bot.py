@@ -1,3 +1,66 @@
+def panel_filter_redirect():
+    return redirect(url_for(
+        "panel_orders",
+        tab=request.form.get("return_tab", "orders"),
+        service=request.form.get("return_service", ""),
+        amount=request.form.get("return_amount", ""),
+        region=request.form.get("return_region", ""),
+        pack=request.form.get("return_pack", "")
+    ))
+
+
+def panel_order_id(order):
+    try:
+        return int(order.get("id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def panel_order_sort_key(order):
+    status = str(order.get("status") or "pending").lower()
+    delivered = status in ("done", "livre", "livré", "delivered")
+    order_id = panel_order_id(order)
+    return (1 if delivered else 0, -order_id if delivered else order_id)
+
+
+def panel_amount_label(order):
+    amount = order.get("amount")
+    try:
+        return f"{float(amount):g} €"
+    except (TypeError, ValueError):
+        return f"{amount} €" if amount not in (None, "") else "Montant inconnu"
+
+
+def panel_amount_sort_key(label):
+    match = re.search(r"\d+(?:[.,]\d+)?", str(label))
+    return float(match.group(0).replace(",", ".")) if match else 999999
+
+
+def panel_valorant_region(order):
+    service = str(order.get("service") or "")
+    if not service.lower().startswith("valorant"):
+        return ""
+    details = service[len("Valorant"):].strip()
+    for region in VALO_REGIONS.values():
+        label = region.get("label", "")
+        if label and details.lower().startswith(label.lower()):
+            return label
+    return details.split()[0] if details else "Région inconnue"
+
+
+def panel_valorant_pack(order):
+    received_label = str(order.get("received_label") or "").strip()
+    if received_label:
+        return received_label
+    service = str(order.get("service") or "")
+    match = re.search(r"(\d+\s*VP)", service, re.IGNORECASE)
+    if match:
+        number_match = re.search(r"\d+", match.group(1))
+        if number_match:
+            return f"{number_match.group(0)} VP"
+    return "Pack inconnu"
+
+
 import discord
 from discord.ext import commands
 from flask import Flask, request, session, redirect, url_for, render_template_string, flash
