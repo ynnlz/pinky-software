@@ -85,6 +85,7 @@ AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:1517582297736413284>")
 VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 REFERRAL_TRACKING_CHANNEL_ID = 1525601870561935391
+MEMBER_ACTIVITY_CHANNEL_ID = 1525601870561935391
 STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
 STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
 
@@ -610,15 +611,18 @@ async def detect_used_invite(guild: discord.Guild):
         return None
 
 
-async def register_invited_member(member: discord.Member) -> None:
+async def register_invited_member(member: discord.Member) -> dict:
     if member.bot:
-        return
+        return {}
     used_invite = await detect_used_invite(member.guild)
     if not used_invite:
-        return
+        return {}
     inviter_id = used_invite.get("inviter_id")
     if not inviter_id or int(inviter_id) == member.id:
-        return
+        return {
+            "inviter_id": None,
+            "invite_code": str(used_invite.get("code", "")),
+        }
 
     lock = INVITE_TRACKING_LOCKS.setdefault(member.guild.id, asyncio.Lock())
     async with lock:
@@ -628,7 +632,7 @@ async def register_invited_member(member: discord.Member) -> None:
 
         # Évite un double comptage si Discord renvoie deux événements proches.
         if isinstance(previous_member_data, dict) and previous_member_data.get("active"):
-            return
+            return dict(previous_member_data)
 
         inviter_key = str(inviter_id)
         inviter_stats = data["inviters"].get(inviter_key, {})
@@ -638,41 +642,72 @@ async def register_invited_member(member: discord.Member) -> None:
         inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0)) + 1
         inviter_stats["left"] = max(0, int(inviter_stats.get("left", 0) or 0))
         data["inviters"][inviter_key] = inviter_stats
-        data["members"][member_key] = {
+        member_data = {
             "inviter_id": int(inviter_id),
             "invite_code": str(used_invite.get("code", "")),
             "active": True,
             "joined_at": utc_now().isoformat(),
+            "joined_ts": time.time(),
         }
+        data["members"][member_key] = member_data
         save_invite_tracking_data(member.guild.id, data)
+        return dict(member_data)
 
 
-async def register_departed_member(member: discord.Member) -> None:
+async def register_departed_member(member: discord.Member) -> dict:
     if member.bot:
-        return
+        return {}
     lock = INVITE_TRACKING_LOCKS.setdefault(member.guild.id, asyncio.Lock())
     async with lock:
         data = get_invite_tracking_data(member.guild.id)
         member_key = str(member.id)
         member_data = data["members"].get(member_key)
         if not isinstance(member_data, dict) or not member_data.get("active"):
-            return
+            return dict(member_data) if isinstance(member_data, dict) else {}
         inviter_id = member_data.get("inviter_id")
-        if not inviter_id:
-            return
-
-        inviter_key = str(inviter_id)
-        inviter_stats = data["inviters"].get(inviter_key, {})
-        if not isinstance(inviter_stats, dict):
-            inviter_stats = {}
-        inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0))
-        inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0) - 1)
-        inviter_stats["left"] = max(0, int(inviter_stats.get("left", 0) or 0)) + 1
-        data["inviters"][inviter_key] = inviter_stats
+        if inviter_id:
+            inviter_key = str(inviter_id)
+            inviter_stats = data["inviters"].get(inviter_key, {})
+            if not isinstance(inviter_stats, dict):
+                inviter_stats = {}
+            inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0))
+            inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0) - 1)
+            inviter_stats["left"] = max(0, int(inviter_stats.get("left", 0) or 0)) + 1
+            data["inviters"][inviter_key] = inviter_stats
         member_data["active"] = False
         member_data["left_at"] = utc_now().isoformat()
         data["members"][member_key] = member_data
         save_invite_tracking_data(member.guild.id, data)
+        return dict(member_data)
+
+
+async def send_member_activity_log(member: discord.Member, joined: bool, invite_data=None) -> None:
+    if member.bot:
+        return
+    invite_data = invite_data if isinstance(invite_data, dict) else {}
+    inviter_id = invite_data.get("inviter_id")
+    invite_code = str(invite_data.get("invite_code") or "").strip()
+    inviter_text = f"<@{int(inviter_id)}> (`{int(inviter_id)}`)" if inviter_id else "Inviteur non détecté"
+    try:
+        channel = member.guild.get_channel(MEMBER_ACTIVITY_CHANNEL_ID) or bot.get_channel(MEMBER_ACTIVITY_CHANNEL_ID)
+        if channel is None:
+            channel = await bot.fetch_channel(MEMBER_ACTIVITY_CHANNEL_ID)
+        if not hasattr(channel, "send"):
+            raise RuntimeError("Le salon de suivi des membres n'accepte pas les messages")
+        embed = discord.Embed(
+            title="📥 Membre arrivé" if joined else "📤 Membre parti",
+            color=discord.Color.from_rgb(74, 222, 128) if joined else discord.Color.from_rgb(248, 113, 113),
+            timestamp=utc_now(),
+        )
+        embed.add_field(name="Membre", value=f"{member.mention} (`{member.id}`)", inline=False)
+        embed.add_field(name="Invité par", value=inviter_text, inline=True)
+        embed.add_field(name="Invitation", value=f"`{invite_code}`" if invite_code else "Non détectée", inline=True)
+        embed.add_field(name="Membres sur le serveur", value=f"**{member.guild.member_count or 0}**", inline=True)
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_footer(text="PinkGift — Suivi des arrivées et départs")
+        await channel.send(embed=embed)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError) as error:
+        print(f"Erreur journal arrivée/départ pour {member.id}: {error}")
 
 
 def build_invite_leaderboard_embed(guild: discord.Guild) -> discord.Embed:
@@ -1613,7 +1648,7 @@ DEFAULT_EMBED_DATA.update({
             },
             {
                 "name": "🎉 Giveaways",
-                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] : crée un giveaway avec conditions.\n!reroll <ID ou lien> : tire un nouveau gagnant éligible.",
+                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] : crée un giveaway ; seules les nouvelles invitations obtenues pendant sa durée comptent.\n!reroll <ID ou lien> : tire un nouveau gagnant éligible.",
                 "inline": False
             },
             {
@@ -3452,14 +3487,52 @@ def member_has_server_tag(member, guild_id):
         return False
 
 
+def giveaway_new_active_invites(guild_id, inviter_id, data):
+    try:
+        started_ts = float(data.get("invite_requirement_started_ts", 0) or 0)
+    except (TypeError, ValueError):
+        started_ts = 0
+    if started_ts <= 0:
+        try:
+            started_at = datetime.datetime.fromisoformat(str(data.get("created_at") or "").replace("Z", "+00:00"))
+            started_ts = started_at.timestamp()
+        except (TypeError, ValueError):
+            started_ts = 0
+    if started_ts <= 0:
+        return invite_user_stats(guild_id, inviter_id)["active"]
+
+    active_new_invites = 0
+    members = get_invite_tracking_data(guild_id)["members"]
+    for member_data in members.values():
+        if not isinstance(member_data, dict) or not member_data.get("active"):
+            continue
+        try:
+            if int(member_data.get("inviter_id") or 0) != int(inviter_id):
+                continue
+            joined_ts = float(member_data.get("joined_ts", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if joined_ts <= 0:
+            try:
+                joined_at = datetime.datetime.fromisoformat(str(member_data.get("joined_at") or "").replace("Z", "+00:00"))
+                joined_ts = joined_at.timestamp()
+            except (TypeError, ValueError):
+                continue
+        if joined_ts >= started_ts:
+            active_new_invites += 1
+    return active_new_invites
+
+
 def giveaway_requirement_failures(guild, member, data):
     failures = []
     min_invites = max(0, int(data.get("min_invites", 0) or 0))
     if min_invites:
-        stats = invite_user_stats(guild.id, member.id)
-        active_invites = max(0, int(stats.get("active", 0) or 0))
-        if active_invites < min_invites:
-            failures.append(f"**{min_invites} invitation(s) active(s)** requise(s), tu en as **{active_invites}**")
+        new_active_invites = giveaway_new_active_invites(guild.id, member.id, data)
+        if new_active_invites < min_invites:
+            failures.append(
+                f"**{min_invites} nouvelle(s) invitation(s) active(s)** requise(s) depuis le début du giveaway, "
+                f"tu en as **{new_active_invites}**"
+            )
     if data.get("require_server_tag") and not member_has_server_tag(member, guild.id):
         failures.append("le **tag de ce serveur** doit être affiché sur ton profil Discord")
     return failures
@@ -3487,7 +3560,9 @@ def giveaway_conditions_text(min_invites=0, require_server_tag=False):
     conditions = []
     min_invites = max(0, int(min_invites or 0))
     if min_invites:
-        conditions.append(f"• Avoir au moins **{min_invites} invitation(s) active(s)**")
+        conditions.append(
+            f"• Obtenir au moins **{min_invites} nouvelle(s) invitation(s) active(s)** pendant ce giveaway"
+        )
     if require_server_tag:
         conditions.append("• Afficher le **tag de ce serveur** sur son profil Discord")
     return "\n".join(conditions)
@@ -3980,7 +4055,8 @@ async def on_invite_delete(invite):
 
 @bot.event
 async def on_member_join(member):
-    await register_invited_member(member)
+    invite_data = await register_invited_member(member)
+    await send_member_activity_log(member, joined=True, invite_data=invite_data)
     schedule_server_counter_refresh(member.guild)
     role = member.guild.get_role(NEW_MEMBER_ROLE_ID)
     if role:
@@ -3992,7 +4068,8 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_remove(member):
-    await register_departed_member(member)
+    invite_data = await register_departed_member(member)
+    await send_member_activity_log(member, joined=False, invite_data=invite_data)
     schedule_server_counter_refresh(member.guild)
 
 
@@ -6603,7 +6680,7 @@ async def cmd_config_compteurs(ctx, avis_channel: discord.TextChannel):
 @discord.app_commands.describe(
     duration="Durée, par exemple 30m, 2h ou 1d",
     nom="Nom du giveaway",
-    invitations="Nombre minimum d'invitations actives requis",
+    invitations="Nouvelles invitations actives à obtenir pendant le giveaway",
     tag_serveur="Exiger que le membre affiche le tag de ce serveur",
     image_url="Lien direct d'une image optionnelle",
 )
@@ -6634,6 +6711,7 @@ async def cmd_giveaway(
     if not image_url and getattr(ctx, "message", None) and ctx.message.attachments:
         image_url = ctx.message.attachments[0].url
     end_ts = int(time.time()) + seconds
+    giveaway_started_at = utc_now()
     embed = build_giveaway_embed(
         nom,
         end_ts,
@@ -6654,7 +6732,8 @@ async def cmd_giveaway(
         "require_server_tag": tag_serveur,
         "participants": [],
         "ended": False,
-        "created_at": utc_now().isoformat()
+        "created_at": giveaway_started_at.isoformat(),
+        "invite_requirement_started_ts": giveaway_started_at.timestamp(),
     })
     asyncio.create_task(finish_giveaway_later(message.id, seconds))
 
@@ -6871,9 +6950,11 @@ def start_discord_background():
 def ensure_discord_background_started():
     start_discord_background()
 
+
+# Gunicorn importe `bot:app` sans exécuter le bloc __main__. Le thread Discord
+# doit donc démarrer dès l'import du module, sans attendre une visite du site.
+start_discord_background()
+
+
 if __name__ == "__main__":
-    # Démarre Discord immédiatement. Auparavant, le bot ne se lançait qu'après
-    # la première requête HTTP reçue par Flask, ce qui pouvait laisser les
-    # boutons inactifs après un redémarrage du service.
-    start_discord_background()
     run_web()
