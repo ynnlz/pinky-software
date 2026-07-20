@@ -2064,23 +2064,59 @@ DEFAULT_EMBED_DATA.update({
         "color_rgb": [255, 103, 174],
         "footer": "PinkGift — Services & abonnements"
     },
-    "special_request_ticket_embed": {
-        "title": "🎫 Demande — {service}",
+    "subscription_request_ticket_embed": {
+        "title": "{emoji} Abonnement — {service}",
         "description": [
             "Bonjour {user} !",
             "",
-            "Ton ticket pour **{service}** est ouvert.",
-            "Indique au staff l'offre, la durée et les informations nécessaires à ta demande.",
+            "Ton choix **{service}** est bien enregistré.",
+            "L'offre et la durée sont déjà associées à cet abonnement : tu n'as rien d'autre à sélectionner.",
+            "Le staff prendra la suite de ta demande directement dans ce ticket.",
             "",
             "**Aucun solde PinkGift n'a été débité.**"
         ],
         "fields": [
-            {"name": "Catégorie", "value": "{catalog}", "inline": True},
-            {"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": True}
+            {"name": "Service", "value": "{emoji} **{service}**", "inline": True},
+            {"name": "Offre et durée", "value": "**Prédéfinies pour ce service**", "inline": True}
         ],
         "color_rgb": [255, 192, 203],
         "image_key": "ticket_cree",
-        "footer": "PinkGift — Demande sans débit"
+        "footer": "PinkGift — Abonnement sans débit"
+    },
+    "basic_fit_request_ticket_embed": {
+        "title": "🏋️ Demande — Basic-Fit",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Basic-Fit possède plusieurs offres et plusieurs durées.",
+            "Indique dans ce ticket **l'offre Basic-Fit** et **la durée** que tu souhaites.",
+            "Le staff te répondra ensuite avec les informations correspondantes.",
+            "",
+            "**Aucun solde PinkGift n'a été débité.**"
+        ],
+        "fields": [
+            {"name": "À préciser", "value": "1. L'offre souhaitée\n2. La durée souhaitée", "inline": False}
+        ],
+        "color_rgb": [255, 192, 203],
+        "image_key": "ticket_cree",
+        "footer": "PinkGift — Basic-Fit sans débit"
+    },
+    "discord_decoration_request_ticket_embed": {
+        "title": "🎨 Demande — Décoration Discord",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Envoie dans ce ticket **une capture d'écran ou le lien de la décoration Discord/Nitro** que tu souhaites acheter.",
+            "Les décorations ont un prix fixe : le staff te donnera le prix correspondant à ton choix.",
+            "",
+            "**Aucun solde PinkGift n'a été débité.**"
+        ],
+        "fields": [
+            {"name": "À envoyer", "value": "La capture ou le lien de la décoration souhaitée", "inline": False}
+        ],
+        "color_rgb": [255, 192, 203],
+        "image_key": "ticket_cree",
+        "footer": "PinkGift — Décoration sans débit"
     }
 })
 
@@ -3285,7 +3321,16 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
                 )
                 return
 
-        embed = build_json_embed("special_request_ticket_embed", {
+        if catalog_key == "abonnements":
+            embed_key = "subscription_request_ticket_embed"
+        elif service_key == "BASIC_FIT":
+            embed_key = "basic_fit_request_ticket_embed"
+        elif service_key == "DISCORD_DECORATIONS":
+            embed_key = "discord_decoration_request_ticket_embed"
+        else:
+            embed_key = "subscription_request_ticket_embed"
+
+        embed = build_json_embed(embed_key, {
             "user": user.mention,
             "catalog": catalog_label,
             "service": service["label"],
