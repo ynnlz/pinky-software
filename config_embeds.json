@@ -590,5 +590,72 @@
       113
     ],
     "footer": "PinkGift — Livraison CP"
+  },
+  "autres_embed": {
+    "title": "✨ AUTRES SERVICES — PINKGIFT",
+    "description": [
+      "Choisis le service qui t'intéresse dans le menu ci-dessous.",
+      "",
+      "🏋️ **Basic-Fit**",
+      "🎨 **Décorations Discord**",
+      "",
+      "Un ticket privé sera créé pour organiser ta demande avec le staff.",
+      "**Aucun solde ne sera débité à l'ouverture du ticket.**"
+    ],
+    "color_rgb": [
+      255,
+      103,
+      174
+    ],
+    "footer": "PinkGift — Autres services"
+  },
+  "abonnements_embed": {
+    "title": "📺 ABONNEMENTS — PINKGIFT",
+    "description": [
+      "Choisis ton abonnement dans le menu ci-dessous.",
+      "",
+      "🎬 **Netflix**",
+      "🎵 **Spotify Premium**",
+      "▶️ **YouTube Premium**",
+      "",
+      "Un ticket privé sera créé pour préciser l'offre et la durée souhaitées.",
+      "**Aucun solde ne sera débité à l'ouverture du ticket.**"
+    ],
+    "color_rgb": [
+      255,
+      103,
+      174
+    ],
+    "footer": "PinkGift — Abonnements"
+  },
+  "special_request_ticket_embed": {
+    "title": "🎫 Demande — {service}",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Ton ticket pour **{service}** est ouvert.",
+      "Indique au staff l'offre, la durée et les informations nécessaires à ta demande.",
+      "",
+      "**Aucun solde PinkGift n'a été débité.**"
+    ],
+    "fields": [
+      {
+        "name": "Catégorie",
+        "value": "{catalog}",
+        "inline": true
+      },
+      {
+        "name": "Service sélectionné",
+        "value": "{emoji} **{service}**",
+        "inline": true
+      }
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "image_key": "ticket_cree",
+    "footer": "PinkGift — Demande sans débit"
   }
 }
