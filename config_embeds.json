@@ -592,12 +592,18 @@
     "footer": "PinkGift — Livraison CP"
   },
   "autres_embed": {
-    "title": "✨ AUTRES SERVICES — PINKGIFT",
+    "title": "✨ AUTRES SERVICES & ABONNEMENTS — PINKGIFT",
     "description": [
-      "Choisis le service qui t'intéresse dans le menu ci-dessous.",
+      "Choisis ce qui t'intéresse dans le menu ci-dessous.",
       "",
+      "**✨ Autres services**",
       "🏋️ **Basic-Fit**",
       "🎨 **Décorations Discord**",
+      "",
+      "**📺 Abonnements**",
+      "🎬 **Netflix**",
+      "🎵 **Spotify Premium**",
+      "▶️ **YouTube Premium**",
       "",
       "Un ticket privé sera créé pour organiser ta demande avec le staff.",
       "**Aucun solde ne sera débité à l'ouverture du ticket.**"
@@ -607,26 +613,7 @@
       103,
       174
     ],
-    "footer": "PinkGift — Autres services"
-  },
-  "abonnements_embed": {
-    "title": "📺 ABONNEMENTS — PINKGIFT",
-    "description": [
-      "Choisis ton abonnement dans le menu ci-dessous.",
-      "",
-      "🎬 **Netflix**",
-      "🎵 **Spotify Premium**",
-      "▶️ **YouTube Premium**",
-      "",
-      "Un ticket privé sera créé pour préciser l'offre et la durée souhaitées.",
-      "**Aucun solde ne sera débité à l'ouverture du ticket.**"
-    ],
-    "color_rgb": [
-      255,
-      103,
-      174
-    ],
-    "footer": "PinkGift — Abonnements"
+    "footer": "PinkGift — Services & abonnements"
   },
   "special_request_ticket_embed": {
     "title": "🎫 Demande — {service}",
