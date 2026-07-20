@@ -1198,6 +1198,8 @@ NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
 VALO_TICKET_CATEGORY_ID = 1519913523440779404
 CP_TICKET_CATEGORY_ID = 1528115477501706300
+GIFT_CARD_THREAD_CHANNEL_ID = int(os.environ.get("GIFT_CARD_THREAD_CHANNEL_ID", "1517855734195290213"))
+VALORANT_THREAD_CHANNEL_ID = int(os.environ.get("VALORANT_THREAD_CHANNEL_ID", "1517609836026532022"))
 SPECIAL_TICKET_CATEGORY_ID = int(os.environ.get("SPECIAL_TICKET_CATEGORY_ID", "1528329867790123041"))
 BALANCE_CATEGORY_ID = int(os.environ.get("BALANCE_CATEGORY_ID", TICKET_CATEGORY_ID))
 CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
@@ -1209,32 +1211,70 @@ ORDER_PENDING_IMAGE_URL = "https://media.discordapp.net/attachments/151751694639
 ORDER_FINISHED_IMAGE_URL = "https://media.discordapp.net/attachments/1517516946390908949/1517517069061456102/commande_fini.png?ex=6a369167&is=6a353fe7&hm=e736d0cec28bfc2192e4f360738654e7b4e446adb36b81d33273845a462ce4b8&=&format=webp&quality=lossless"
 
 PRODUCT_CONFIG = {
-    "GOOGLE_PLAY": {"display": "GOOGLE PLAY", "emoji": "<:googleplay:1519907060555186278>", "emoji_ch": "🎮"},
-    "STEAM": {"display": "STEAM", "emoji": "<:steam:1519907154545610873>", "emoji_ch": "🎮"},
-    "DISCORD_NITRO": {"display": "DISCORD NITRO", "emoji": "<:nitroboost:1524439577656561846>", "emoji_ch": "💎"},
+    "GOOGLE_PLAY": {"display": "GOOGLE PLAY", "emoji": "<:googleplay:1528362570681946263>", "emoji_ch": "🎮"},
+    "STEAM": {"display": "STEAM", "emoji": "<:steam:1528359731100647434>", "emoji_ch": "🎮"},
+    "DISCORD_NITRO": {"display": "DISCORD NITRO", "emoji": "<:nitro:1528358484972671096>", "emoji_ch": "💎"},
     "PLAYSTATION": {"display": "PLAYSTATION", "emoji": "<:playstation:1519906767268741200>", "emoji_ch": "🎮"},
-    "NINTENDO": {"display": "NINTENDO", "emoji": "<:nintendo:1519907394157678632>", "emoji_ch": "🎮"},
+    "NINTENDO": {"display": "NINTENDO", "emoji": "<:nintendo:1528357096922419281>", "emoji_ch": "🎮"},
     "ZARA": {"display": "ZARA", "emoji": "<:zara:1519907265681948773>", "emoji_ch": "👕"},
     "SEPHORA": {"display": "SEPHORA", "emoji": "<:sephora:1519907492862103742>", "emoji_ch": "💄"},
-    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1519907231812816906>", "emoji_ch": "👟"},
-    "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1519906784515588116>", "emoji_ch": "👟"},
-    "FOOT_LOCKER": {"display": "FOOT LOCKER", "emoji": "<:footlocker:1519907296342310952>", "emoji_ch": "👟"},
-    "SHEIN": {"display": "SHEIN", "emoji": "<:shein:1524439283367411793>", "emoji_ch": "👗"},
-    "NIKE": {"display": "NIKE", "emoji": "<:nike:1519906735589167164>", "emoji_ch": "👟"},
-    "UBEREATS": {"display": "UBER EATS", "emoji": "<:ubereats:1519907186636099604>", "emoji_ch": "🍔"},
-    "DELIVEROO": {"display": "DELIVEROO", "emoji": "<:deliveroo:1519906860356993174>", "emoji_ch": "🍽️"},
-    "AMAZON": {"display": "AMAZON", "emoji": "<:amazon:1519907450403160104>", "emoji_ch": "📦"},
-    "CARREFOUR": {"display": "CARREFOUR", "emoji": "<:carrefour:1519906825494073414>", "emoji_ch": "🛒"},
-    "INTERMARCHE": {"display": "INTERMARCHE", "emoji": "<:intermarche:1519907100057276546>", "emoji_ch": "🏬"},
-    "APPLE": {"display": "APPLE", "emoji": "<:apple:1519906800411869204>", "emoji_ch": "🍎"},
-    "JOYBUY": {"display": "JOYBUY", "emoji": "<:Joybuy:1524439360638943242>", "emoji_ch": "🛍️"},
-    "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smythstoys:1519907368429944832>", "emoji_ch": "🧸"},
-    "LEGO": {"display": "LEGO", "emoji": "<:lego:1519907470854852720>", "emoji_ch": "🧱"},
-    "TESLA": {"display": "TESLA", "emoji": "<:tesla:1524439914811359293>", "emoji_ch": "🚗"},
-    "AIRBNB": {"display": "AIRBNB", "emoji": "<:airbnb:1519906701900386344>", "emoji_ch": "🏠"},
-    "SKRILL": {"display": "SKRILL", "emoji": "<:skrill:1524440310489288755>", "emoji_ch": "💳"},
+    "ZALANDO": {"display": "ZALANDO", "emoji": "<:zalando:1528666033911500840>", "emoji_ch": "👟"},
+    "ADIDAS": {"display": "ADIDAS", "emoji": "<:adidas:1528662905418158120>", "emoji_ch": "👟"},
+    "FOOT_LOCKER": {"display": "FOOT LOCKER", "emoji": "<:footlocker:1528661139410387054>", "emoji_ch": "👟"},
+    "SHEIN": {"display": "SHEIN", "emoji": "<:shein:1528659562196897822>", "emoji_ch": "👗"},
+    "NIKE": {"display": "NIKE", "emoji": "<:nike:1528368092084699299>", "emoji_ch": "👟"},
+    "UBEREATS": {"display": "UBER EATS", "emoji": "<:ubereats:1528671351668211722>", "emoji_ch": "🍔"},
+    "DELIVEROO": {"display": "DELIVEROO", "emoji": "<:deliveroo:1528678242167427214>", "emoji_ch": "🍽️"},
+    "AMAZON": {"display": "AMAZON", "emoji": "<:amazon:1528686924473172110>", "emoji_ch": "📦"},
+    "CARREFOUR": {"display": "CARREFOUR", "emoji": "<:carrefour:1528688036995665950>", "emoji_ch": "🛒"},
+    "INTERMARCHE": {"display": "INTERMARCHE", "emoji": "<:intermarche:1528689263800094740>", "emoji_ch": "🏬"},
+    "APPLE": {"display": "APPLE", "emoji": "<:apple:1528690433482424435>", "emoji_ch": "🍎"},
+    "JOYBUY": {"display": "JOYBUY", "emoji": "<:joybuy:1528691385140514926>", "emoji_ch": "🛍️"},
+    "SMYTHS_TOYS": {"display": "SMYTHS TOYS", "emoji": "<:smyths:1528693626442350702>", "emoji_ch": "🧸"},
+    "LEGO": {"display": "LEGO", "emoji": "<:lego:1528694473612066826>", "emoji_ch": "🧱"},
+    "TESLA": {"display": "TESLA", "emoji": "<:tesla:1528695367137366053>", "emoji_ch": "🚗"},
+    "AIRBNB": {"display": "AIRBNB", "emoji": "<:airbnb:1528696272796516434>", "emoji_ch": "🏠"},
+    "SKRILL": {"display": "SKRILL", "emoji": "<:skrill:1528697675279765604>", "emoji_ch": "💳"},
     "PAYSAFECARD": {"display": "PAYSAFECARD", "emoji": "<:paysafecard:1519906750571085995>", "emoji_ch": "💳"},
     "VALORANT": {"display": "VALORANT", "emoji": "🎮", "emoji_ch": "🎮"},
+}
+
+PRODUCT_CATEGORY_CONFIG = {
+    "GAMING": {
+        "label": "Gaming",
+        "emoji": "<:gaming:1528336678450892852>",
+        "products": ("GOOGLE_PLAY", "STEAM", "DISCORD_NITRO", "PLAYSTATION", "NINTENDO"),
+    },
+    "MODE_BEAUTE": {
+        "label": "Mode & beauté",
+        "emoji": "<:robe:1528337986096336947>",
+        "products": ("ZARA", "SEPHORA", "ZALANDO", "ADIDAS", "FOOT_LOCKER", "SHEIN", "NIKE"),
+    },
+    "FOOD": {
+        "label": "Food & livraison",
+        "emoji": "<:burger:1528339745464389662>",
+        "products": ("UBEREATS", "DELIVEROO"),
+    },
+    "COURSES": {
+        "label": "Shopping & courses",
+        "emoji": "<:sacs:1528341171833929848>",
+        "products": ("AMAZON", "CARREFOUR", "INTERMARCHE", "APPLE", "JOYBUY"),
+    },
+    "JOUETS": {
+        "label": "Jouets",
+        "emoji": "<:nounours:1528343442604691596>",
+        "products": ("SMYTHS_TOYS", "LEGO"),
+    },
+    "VOYAGE": {
+        "label": "Voyage & auto",
+        "emoji": "<:voyage:1528344840293847130>",
+        "products": ("TESLA", "AIRBNB"),
+    },
+    "PREPAYES": {
+        "label": "Prépayés",
+        "emoji": "<:carte:1528346097276420271>",
+        "products": ("SKRILL", "PAYSAFECARD"),
+    },
 }
 
 GIFT_CARD_AMOUNTS = (100, 200, 400, 800)
@@ -1257,29 +1297,29 @@ CP_PACKS = {
 OTHER_SERVICES = {
     "BASIC_FIT": {
         "label": "Basic-Fit",
-        "emoji": "🏋️",
+        "emoji": "<:basicfit:1528704864446578789>",
         "description": "Abonnement Basic-Fit",
     },
     "DISCORD_DECORATIONS": {
         "label": "Décorations Discord",
-        "emoji": "🎨",
+        "emoji": "<:nitro:1528358484972671096>",
         "description": "Décorations et cosmétiques Discord",
     },
 }
 SUBSCRIPTION_SERVICES = {
     "NETFLIX": {
         "label": "Netflix",
-        "emoji": "🎬",
+        "emoji": "<:netflix:1528701811215569016>",
         "description": "Abonnement Netflix",
     },
     "SPOTIFY": {
         "label": "Spotify",
-        "emoji": "🎵",
+        "emoji": "<:spotify:1528703633724674089>",
         "description": "Abonnement Spotify Premium",
     },
     "YOUTUBE_PREMIUM": {
         "label": "YouTube Premium",
-        "emoji": "▶️",
+        "emoji": "<:youtube:1528704255844946011>",
         "description": "Abonnement YouTube Premium",
     },
 }
@@ -1551,32 +1591,32 @@ DEFAULT_EMBED_DATA = {
         "description": [
             "Clique sur **Commander** pour choisir ton produit en privé. Cartes cadeaux à **-30 %**, sauf Uber Eats avec sa grille fixe et Discord Nitro à **8 €**.",
             "",
-            "🎮 **GAMING**",
-            "<:googleplay:1519907060555186278> **Google Play**", " <:steam:1519907154545610873> **Steam**",
-            "<:nitroboost:1524439577656561846> **Discord Nitro — 8 €**", "<:playstation:1519906767268741200> **PlayStation**", "<:nintendo:1519907394157678632> **Nintendo**",
+            "<:gaming:1528336678450892852> **GAMING**",
+            "<:googleplay:1528362570681946263> **Google Play**", "<:steam:1528359731100647434> **Steam**",
+            "<:nitro:1528358484972671096> **Discord Nitro — 8 €**", "<:playstation:1519906767268741200> **PlayStation**", "<:nintendo:1528357096922419281> **Nintendo**",
             "",
-            "👗 **MODE & BEAUTÉ**",
-            "<:zara:1519907265681948773> **Zara**", "<:sephora:1519907492862103742> **Sephora**", "<:zalando:1519907231812816906> **Zalando**",
-            "<:adidas:1519906784515588116> **Adidas**", "<:footlocker:1519907296342310952> **Foot Locker**", "<:shein:1524439283367411793> **Shein**", "<:nike:1519906735589167164> **Nike**",
+            "<:robe:1528337986096336947> **MODE & BEAUTÉ**",
+            "<:zara:1519907265681948773> **Zara**", "<:sephora:1519907492862103742> **Sephora**", "<:zalando:1528666033911500840> **Zalando**",
+            "<:adidas:1528662905418158120> **Adidas**", "<:footlocker:1528661139410387054> **Foot Locker**", "<:shein:1528659562196897822> **Shein**", "<:nike:1528368092084699299> **Nike**",
             "",
-            "🍔 **FOOD & LIVRAISON**", "<:ubereats:1519907186636099604> **Uber Eats**", "<:deliveroo:1519906860356993174> **Deliveroo**",
+            "<:burger:1528339745464389662> **FOOD & LIVRAISON**", "<:ubereats:1528671351668211722> **Uber Eats**", "<:deliveroo:1528678242167427214> **Deliveroo**",
             "",
-            "🛍️ **SHOPPING & COURSES**", "<:amazon:1519907450403160104> **Amazon**", "<:carrefour:1519906825494073414> **Carrefour**",
-            "<:intermarche:1519907100057276546> **Intermarché**", "<:apple:1519906800411869204> **Apple**", "<:Joybuy:1524439360638943242> **Joybuy**",
+            "<:sacs:1528341171833929848> **SHOPPING & COURSES**", "<:amazon:1528686924473172110> **Amazon**", "<:carrefour:1528688036995665950> **Carrefour**",
+            "<:intermarche:1528689263800094740> **Intermarché**", "<:apple:1528690433482424435> **Apple**", "<:joybuy:1528691385140514926> **Joybuy**",
             "",
-            "🧸 **JOUETS**", "<:smythstoys:1519907368429944832> **Smyths Toys**", "<:lego:1519907470854852720> **LEGO**",
+            "<:nounours:1528343442604691596> **JOUETS**", "<:smyths:1528693626442350702> **Smyths Toys**", "<:lego:1528694473612066826> **LEGO**",
             "",
-            "🚗 **VOYAGE & AUTO**", "<:tesla:1524439914811359293> **Tesla**", "<:airbnb:1519906701900386344> **Airbnb**",
+            "<:voyage:1528344840293847130> **VOYAGE & AUTO**", "<:tesla:1528695367137366053> **Tesla**", "<:airbnb:1528696272796516434> **Airbnb**",
             "",
-            "💳 **PRÉPAYÉ**", "<:skrill:1524440310489288755> **Skrill**", "<:paysafecard:1519906750571085995> **Paysafecard**",
+            "<:carte:1528346097276420271> **PRÉPAYÉ**", "<:skrill:1528697675279765604> **Skrill**", "<:paysafecard:1519906750571085995> **Paysafecard**",
             "",
             "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus sont visibles uniquement par toi."
         ],
-        "gift_cards_field_name": "💳 Cartes cadeaux — toutes les marques",
+        "gift_cards_field_name": "<:carte:1528346097276420271> Cartes cadeaux — toutes les marques",
         "gift_card_line_template": "**{amount} € reçus** → {price} € débités",
-        "uber_eats_field_name": "<:ubereats:1519907186636099604> Uber Eats",
+        "uber_eats_field_name": "<:ubereats:1528671351668211722> Uber Eats",
         "uber_eats_line_template": "**{drop} € estimés** → {price} € débités",
-        "nitro_field_name": "<:nitroboost:1524439577656561846> Discord Nitro",
+        "nitro_field_name": "<:nitro:1528358484972671096> Discord Nitro",
         "nitro_value_template": "**{price} €** débités",
         "dynamic_fields_inline": False,
         "color_rgb": [255, 192, 203],
@@ -1650,7 +1690,7 @@ DEFAULT_EMBED_DATA.update({
         "image_key": "ticket_cree"
     },
     "nitro_ticket_embed": {
-        "title": "<:nitroboost:1524439577656561846> Commande — DISCORD NITRO",
+        "title": "<:nitro:1528358484972671096> Commande — DISCORD NITRO",
         "description": [
             "Bonjour {user} !", "",
             "Ta commande Discord Nitro a bien été enregistrée et ton solde a été débité.",
@@ -1857,7 +1897,7 @@ DEFAULT_EMBED_DATA.update({
 
 DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.", "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.", "Le staff intervient uniquement pour les recharges de solde."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
 
-DEFAULT_EMBED_DATA["uber_eats_ticket_embed"]["title"] = "<:ubereats:1519907186636099604> Commande — UBER EATS"
+DEFAULT_EMBED_DATA["uber_eats_ticket_embed"]["title"] = "<:ubereats:1528671351668211722> Commande — UBER EATS"
 
 DEFAULT_EMBED_DATA.update({
     "faq_embed": {
@@ -1999,17 +2039,38 @@ DEFAULT_EMBED_DATA.update({
     "cp_embed": {
         "title": "<:cp:1528128623117205624> CALL OF DUTY POINTS — PINKGIFT",
         "description": [
-            "Commande tes **COD Points** directement avec ton solde PinkGift.",
+            "Ouvre un ticket privé pour demander tes **COD Points**.",
             "",
-            "🛒 Chaque pack est commandé à la demande auprès du fournisseur",
-            "📩 Livraison du code dans un ticket privé dès sa réception",
-            "💳 Recharge ton solde avec le panneau `/solde`"
+            "📝 Indique le nombre de CP que tu souhaites",
+            "💶 Indique combien tu souhaites payer",
+            "🤝 Le staff te répondra directement dans le ticket",
+            "",
+            "**Aucun solde PinkGift n'est débité.**"
         ],
         "packs_field_name": "<:cp:1528128623117205624> Packs disponibles",
         "pack_line_template": "<:cp:1528128623117205624> **{points} CP** — **{price} €** · officiel ≈ ~~{official} €~~",
         "dynamic_fields_inline": False,
         "color_rgb": [255, 103, 174],
         "footer": "PinkGift — COD Points"
+    },
+    "cp_manual_ticket_embed": {
+        "title": "<:cp:1528128623117205624> Demande de COD Points",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Écris dans ce ticket :",
+            "1. **Le nombre de CP souhaité**",
+            "2. **Le montant que tu proposes de payer**",
+            "",
+            "Le staff te confirmera ensuite la disponibilité et le prix.",
+            "**Aucun solde PinkGift n'a été débité.**"
+        ],
+        "fields": [
+            {"name": "Exemple", "value": "Je souhaite **9 500 CP** et je propose **35 €**.", "inline": False}
+        ],
+        "color_rgb": [255, 192, 203],
+        "image_key": "ticket_cree",
+        "footer": "PinkGift — Demande CP sans débit"
     },
     "cp_order_pending_embed": {
         "title": "<:cp:1528128623117205624> Commande COD Points en attente",
@@ -2050,13 +2111,13 @@ DEFAULT_EMBED_DATA.update({
             "Choisis ce qui t'intéresse dans le menu ci-dessous.",
             "",
             "**✨ Autres services**",
-            "🏋️ **Basic-Fit**",
-            "🎨 **Décorations Discord**",
+            "<:basicfit:1528704864446578789> **Basic-Fit**",
+            "<:nitro:1528358484972671096> **Décorations Discord**",
             "",
             "**📺 Abonnements**",
-            "🎬 **Netflix**",
-            "🎵 **Spotify Premium**",
-            "▶️ **YouTube Premium**",
+            "<:netflix:1528701811215569016> **Netflix**",
+            "<:spotify:1528703633724674089> **Spotify Premium**",
+            "<:youtube:1528704255844946011> **YouTube Premium**",
             "",
             "Un ticket privé sera créé pour organiser ta demande avec le staff.",
             "**Aucun solde ne sera débité à l'ouverture du ticket.**"
@@ -2084,7 +2145,7 @@ DEFAULT_EMBED_DATA.update({
         "footer": "PinkGift — Abonnement sans débit"
     },
     "basic_fit_request_ticket_embed": {
-        "title": "🏋️ Demande — Basic-Fit",
+        "title": "<:basicfit:1528704864446578789> Demande — Basic-Fit",
         "description": [
             "Bonjour {user} !",
             "",
@@ -2102,7 +2163,7 @@ DEFAULT_EMBED_DATA.update({
         "footer": "PinkGift — Basic-Fit sans débit"
     },
     "discord_decoration_request_ticket_embed": {
-        "title": "🎨 Demande — Décoration Discord",
+        "title": "<:nitro:1528358484972671096> Demande — Décoration Discord",
         "description": [
             "Bonjour {user} !",
             "",
@@ -2125,9 +2186,64 @@ def normalize_embed_configuration(data):
     if not isinstance(data, dict):
         return data
 
+    legacy_emojis = {
+        "<:googleplay:1519907060555186278>": "<:googleplay:1528362570681946263>",
+        "<:steam:1519907154545610873>": "<:steam:1528359731100647434>",
+        "<:nitroboost:1524439577656561846>": "<:nitro:1528358484972671096>",
+        "<:nintendo:1519907394157678632>": "<:nintendo:1528357096922419281>",
+        "<:zalando:1519907231812816906>": "<:zalando:1528666033911500840>",
+        "<:adidas:1519906784515588116>": "<:adidas:1528662905418158120>",
+        "<:footlocker:1519907296342310952>": "<:footlocker:1528661139410387054>",
+        "<:shein:1524439283367411793>": "<:shein:1528659562196897822>",
+        "<:nike:1519906735589167164>": "<:nike:1528368092084699299>",
+        "<:ubereats:1519907186636099604>": "<:ubereats:1528671351668211722>",
+        "<:deliveroo:1519906860356993174>": "<:deliveroo:1528678242167427214>",
+        "<:amazon:1519907450403160104>": "<:amazon:1528686924473172110>",
+        "<:carrefour:1519906825494073414>": "<:carrefour:1528688036995665950>",
+        "<:intermarche:1519907100057276546>": "<:intermarche:1528689263800094740>",
+        "<:apple:1519906800411869204>": "<:apple:1528690433482424435>",
+        "<:Joybuy:1524439360638943242>": "<:joybuy:1528691385140514926>",
+        "<:smythstoys:1519907368429944832>": "<:smyths:1528693626442350702>",
+        "<:lego:1519907470854852720>": "<:lego:1528694473612066826>",
+        "<:tesla:1524439914811359293>": "<:tesla:1528695367137366053>",
+        "<:airbnb:1519906701900386344>": "<:airbnb:1528696272796516434>",
+        "<:skrill:1524440310489288755>": "<:skrill:1528697675279765604>",
+    }
+
+    def migrate_value(value):
+        if isinstance(value, str):
+            for old_emoji, new_emoji in legacy_emojis.items():
+                value = value.replace(old_emoji, new_emoji)
+            return value
+        if isinstance(value, list):
+            return [migrate_value(item) for item in value]
+        if isinstance(value, dict):
+            return {key: migrate_value(item) for key, item in value.items()}
+        return value
+
+    data = migrate_value(data)
+
     emoji_catalog = data.get("emojis", {}) if isinstance(data.get("emojis"), dict) else {}
+    # Ces identifiants sont la source officielle PinkGift : ils remplacent aussi
+    # les anciens IDs encore présents dans une configuration sauvegardée du panel.
     for product_key, product in PRODUCT_CONFIG.items():
         emoji_catalog.setdefault(product_key, product["emoji"])
+    for product_key in {
+        "GOOGLE_PLAY", "STEAM", "DISCORD_NITRO", "NINTENDO", "ZALANDO", "ADIDAS",
+        "FOOT_LOCKER", "SHEIN", "NIKE", "UBEREATS", "DELIVEROO", "AMAZON",
+        "CARREFOUR", "INTERMARCHE", "APPLE", "JOYBUY", "SMYTHS_TOYS", "LEGO",
+        "TESLA", "AIRBNB", "SKRILL",
+    }:
+        emoji_catalog[product_key] = PRODUCT_CONFIG[product_key]["emoji"]
+    for category_key, category in PRODUCT_CATEGORY_CONFIG.items():
+        emoji_catalog[f"CATEGORY_{category_key}"] = category["emoji"]
+    emoji_catalog.update({
+        "BASIC_FIT": OTHER_SERVICES["BASIC_FIT"]["emoji"],
+        "DISCORD_DECORATIONS": OTHER_SERVICES["DISCORD_DECORATIONS"]["emoji"],
+        "NETFLIX": SUBSCRIPTION_SERVICES["NETFLIX"]["emoji"],
+        "SPOTIFY": SUBSCRIPTION_SERVICES["SPOTIFY"]["emoji"],
+        "YOUTUBE_PREMIUM": SUBSCRIPTION_SERVICES["YOUTUBE_PREMIUM"]["emoji"],
+    })
     emoji_catalog.setdefault("CP", "<:cp:1528128623117205624>")
     emoji_catalog.setdefault("QUESTION", "<:questionmark:1525869342506614784>")
     data["emojis"] = emoji_catalog
@@ -2138,6 +2254,15 @@ def normalize_embed_configuration(data):
             "".join(c for c in unicodedata.normalize("NFD", product["display"].lower()) if unicodedata.category(c) != "Mn").replace(" ", "").replace("_", ""): product_key
             for product_key, product in PRODUCT_CONFIG.items()
         }
+        category_by_name = {
+            "gaming": PRODUCT_CATEGORY_CONFIG["GAMING"]["emoji"],
+            "mode&beaute": PRODUCT_CATEGORY_CONFIG["MODE_BEAUTE"]["emoji"],
+            "food&livraison": PRODUCT_CATEGORY_CONFIG["FOOD"]["emoji"],
+            "shopping&courses": PRODUCT_CATEGORY_CONFIG["COURSES"]["emoji"],
+            "jouets": PRODUCT_CATEGORY_CONFIG["JOUETS"]["emoji"],
+            "voyage&auto": PRODUCT_CATEGORY_CONFIG["VOYAGE"]["emoji"],
+            "prepaye": PRODUCT_CATEGORY_CONFIG["PREPAYES"]["emoji"],
+        }
         synced_lines = []
         for raw_line in tarifs["description"]:
             line = str(raw_line)
@@ -2147,6 +2272,8 @@ def normalize_embed_configuration(data):
                 product_key = product_by_name.get(normalized_label)
                 if product_key:
                     line = f"{emoji_catalog[product_key]} **{label_match.group(1)}**"
+                elif normalized_label in category_by_name:
+                    line = f"{category_by_name[normalized_label]} **{label_match.group(1)}**"
             synced_lines.append(line)
         tarifs["description"] = synced_lines
         if tarifs.get("uber_eats_field_name") in {None, "", "🍔 Uber Eats"}:
@@ -2282,32 +2409,32 @@ def build_json_embed(embed_key, variables=None, data_override=None):
 
 def apply_custom_brand_emojis(text: str):
     replacements = {
-        "📦 **Amazon**": "<:amazon:1519907450403160104> **Amazon**",
-        "🛒 **Carrefour**": "<:carrefour:1519906825494073414> **Carrefour**",
-        "🏬 **Intermarché**": "<:intermarche:1519907100057276546> **Intermarché**",
-        "🏬 **Intermarche**": "<:intermarche:1519907100057276546> **Intermarche**",
+        "📦 **Amazon**": f"{PRODUCT_CONFIG['AMAZON']['emoji']} **Amazon**",
+        "🛒 **Carrefour**": f"{PRODUCT_CONFIG['CARREFOUR']['emoji']} **Carrefour**",
+        "🏬 **Intermarché**": f"{PRODUCT_CONFIG['INTERMARCHE']['emoji']} **Intermarché**",
+        "🏬 **Intermarche**": f"{PRODUCT_CONFIG['INTERMARCHE']['emoji']} **Intermarche**",
         "👕 **Zara**": "<:zara:1519907265681948773> **Zara**",
         "💄 **Sephora**": "<:sephora:1519907492862103742> **Sephora**",
-        "🍔 **Uber Eats**": "<:ubereats:1519907186636099604> **Uber Eats**",
-        "🍎 **Apple**": "<:apple:1519906800411869204> **Apple**",
-        "🎮 **Google Play**": "<:googleplay:1519907060555186278> **Google Play**",
-        "🎮 **Steam**": "<:steam:1519907154545610873> **Steam**",
-        "🎬 **Netflix**": "<:netflix:1519907125160316928> **Netflix**",
-        "🧸 **Smyths Toys**": "<:smythstoys:1519907368429944832> **Smyths Toys**",
-        "👟 **Zalando**": "<:zalando:1519907231812816906> **Zalando**",
+        "🍔 **Uber Eats**": f"{PRODUCT_CONFIG['UBEREATS']['emoji']} **Uber Eats**",
+        "🍎 **Apple**": f"{PRODUCT_CONFIG['APPLE']['emoji']} **Apple**",
+        "🎮 **Google Play**": f"{PRODUCT_CONFIG['GOOGLE_PLAY']['emoji']} **Google Play**",
+        "🎮 **Steam**": f"{PRODUCT_CONFIG['STEAM']['emoji']} **Steam**",
+        "🎬 **Netflix**": f"{SUBSCRIPTION_SERVICES['NETFLIX']['emoji']} **Netflix**",
+        "🧸 **Smyths Toys**": f"{PRODUCT_CONFIG['SMYTHS_TOYS']['emoji']} **Smyths Toys**",
+        "👟 **Zalando**": f"{PRODUCT_CONFIG['ZALANDO']['emoji']} **Zalando**",
         "🧸 **King Jouet**": "<:kingjouet:1519907322783338557> **King Jouet**",
-        "🧱 **LEGO**": "<:lego:1519907470854852720> **LEGO**",
-        "👟 **Adidas**": "<:adidas:1519906784515588116> **Adidas**",
-        "👟 **Foot Locker**": "<:footlocker:1519907296342310952> **Foot Locker**",
-        "🍽️ **Deliveroo**": "<:deliveroo:1519906860356993174> **Deliveroo**",
+        "🧱 **LEGO**": f"{PRODUCT_CONFIG['LEGO']['emoji']} **LEGO**",
+        "👟 **Adidas**": f"{PRODUCT_CONFIG['ADIDAS']['emoji']} **Adidas**",
+        "👟 **Foot Locker**": f"{PRODUCT_CONFIG['FOOT_LOCKER']['emoji']} **Foot Locker**",
+        "🍽️ **Deliveroo**": f"{PRODUCT_CONFIG['DELIVEROO']['emoji']} **Deliveroo**",
         "✨ **Claude**": "<:claude:1519906842006913065> **Claude**",
-        "🏠 **Airbnb**": "<:airbnb:1519906701900386344> **Airbnb**",
+        "🏠 **Airbnb**": f"{PRODUCT_CONFIG['AIRBNB']['emoji']} **Airbnb**",
         "🎮 **Xbox**": "<:xbox:1519907418836828230> **Xbox**",
         "🎮 **PlayStation**": "<:playstation:1519906767268741200> **PlayStation**",
         "💳 **Paysafecard**": "<:paysafecard:1519906750571085995> **Paysafecard**",
         "📚 **Fnac**": "<:fnac:1519906718140727387> **Fnac**",
-        "🎮 **Nintendo**": "<:nintendo:1519907394157678632> **Nintendo**",
-        "👟 **Nike**": "<:nike:1519906735589167164> **Nike**",
+        "🎮 **Nintendo**": f"{PRODUCT_CONFIG['NINTENDO']['emoji']} **Nintendo**",
+        "👟 **Nike**": f"{PRODUCT_CONFIG['NIKE']['emoji']} **Nike**",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -2612,6 +2739,36 @@ def build_leaderboard_embed():
         embed.set_image(url=image_url)
     return embed
 
+
+async def create_private_order_thread(guild, user, parent_channel_id: int, order_kind: str):
+    """Crée un fil privé dont les seuls membres ajoutés sont le client et le bot."""
+    parent = guild.get_channel(parent_channel_id)
+    if parent is None:
+        try:
+            parent = await bot.fetch_channel(parent_channel_id)
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            parent = None
+    if not isinstance(parent, discord.TextChannel):
+        raise RuntimeError("Le salon parent des fils privés est introuvable ou n'est pas un salon textuel")
+
+    safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
+    thread = await parent.create_thread(
+        name=f"{order_kind}-{safe_user}"[:100],
+        type=discord.ChannelType.private_thread,
+        auto_archive_duration=1440,
+        invitable=False,
+        reason=f"Commande privée PinkGift de {user}",
+    )
+    try:
+        await thread.add_user(user)
+    except Exception:
+        try:
+            await thread.delete(reason="Client impossible à ajouter au fil privé")
+        except discord.HTTPException:
+            pass
+        raise
+    return thread
+
 async def create_product_ticket(interaction, product_key, amount):
     guild = interaction.guild
     user = interaction.user
@@ -2667,40 +2824,28 @@ async def create_product_ticket(interaction, product_key, amount):
         if current_balance < paid_amount:
             await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{paid_amount:g} €**, ton solde est de **{current_balance:.2f} €**. Utilise le panneau !solde pour le recharger.", ephemeral=True)
             return
-        category = guild.get_channel(TICKET_CATEGORY_ID)
-        if category is None:
-            await interaction.followup.send("❌ Catégorie ticket introuvable.", ephemeral=True)
+        try:
+            ticket_channel = await create_private_order_thread(
+                guild,
+                user,
+                GIFT_CARD_THREAD_CHANNEL_ID,
+                "commande-carte",
+            )
+        except Exception as error:
+            await interaction.followup.send(
+                "⏳ Discord ne peut pas créer le fil privé de commande actuellement. Réessaie dans quelques minutes.",
+                ephemeral=True,
+            )
+            print(f"Erreur création fil privé commande pour {user}: {error}")
             return
-        ticket_channel = None
-        for channel in category.text_channels:
-            if channel.topic == f"pinkgift-owner:{user.id}" and not channel.name.startswith("closed-"):
-                ticket_channel = channel
-                if not channel.name.startswith("🎁"):
-                    try:
-                        await channel.edit(name=f"🎁・{user.display_name}"[:95])
-                    except discord.HTTPException:
-                        pass
-                break
-        if ticket_channel is None:
-            staff_role = guild.get_role(STAFF_ROLE_ID)
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-            }
-            if staff_role:
-                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-            safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
-            try:
-                ticket_channel = await guild.create_text_channel(name=f"🎁・{user.display_name}"[:95], category=category, topic=f"pinkgift-owner:{user.id}", overwrites=overwrites, reason=f"Commandes PinkGift de {user}")
-            except discord.HTTPException as error:
-                await interaction.followup.send("⏳ Discord ne peut pas créer le ticket actuellement. Réessaie dans quelques minutes.", ephemeral=True)
-                print(f"Erreur création ticket commande pour {user}: {error}")
-                return
         try:
             remaining_balance = change_balance(guild.id, user.id, -paid_amount, bot.user.id if bot.user else 0)
         except Exception as error:
             print(f"Erreur débit solde de {user}: {error}")
+            try:
+                await ticket_channel.delete(reason="Débit du solde impossible")
+            except discord.HTTPException:
+                pass
             await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
             return
         if product_key == "UBEREATS":
@@ -2714,12 +2859,16 @@ async def create_product_ticket(interaction, product_key, amount):
             "amount": amount, "paid": f"{paid_amount:g}", "drop": received_display, "balance": f"{remaining_balance:.2f}"
         })
         try:
-            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=PendingOrderActionsView(user.id))
+            order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
         except Exception as error:
             try:
                 change_balance(guild.id, user.id, paid_amount, bot.user.id if bot.user else 0)
             except Exception as refund_error:
                 print(f"ERREUR REMBOURSEMENT {user}: {refund_error}")
+            try:
+                await ticket_channel.delete(reason="Commande impossible à publier")
+            except discord.HTTPException:
+                pass
             await interaction.followup.send("❌ L'envoi de la commande a échoué. Le montant a été recrédité.", ephemeral=True)
             print(f"Erreur envoi commande pour {user}: {error}")
             return
@@ -2732,7 +2881,7 @@ async def create_product_ticket(interaction, product_key, amount):
             record_referral_purchase(guild.id, user.id, order_message.id, paid_amount, purchase_cost, cfg["display"])
         except Exception as error:
             print(f"Erreur calcul parrainage commande de {user}: {error}")
-        await interaction.followup.send(f"✅ Commande ajoutée dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+        await interaction.followup.send(f"✅ Commande ajoutée dans ton fil privé {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
 def default_stock_config():
     return {
         "products": {key: True for key in PRODUCT_CONFIG if key != "VALORANT"},
@@ -2835,39 +2984,25 @@ async def create_valo_order(interaction, region_key, pack_key):
         if current_balance < price:
             await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{format_price(price)} €**, ton solde est de **{current_balance:.2f} €**.", ephemeral=True)
             return
-        category = guild.get_channel(VALO_TICKET_CATEGORY_ID)
-        if category is None:
-            await interaction.followup.send("❌ Catégorie Valorant introuvable.", ephemeral=True)
+        try:
+            ticket_channel = await create_private_order_thread(
+                guild,
+                user,
+                VALORANT_THREAD_CHANNEL_ID,
+                "commande-valorant",
+            )
+        except Exception as error:
+            await interaction.followup.send("⏳ Discord ne peut pas créer le fil privé Valorant actuellement.", ephemeral=True)
+            print(f"Erreur création fil privé Valorant pour {user}: {error}")
             return
-        ticket_channel = None
-        for channel in category.text_channels:
-            if channel.topic == f"pinkgift-valorant-owner:{user.id}" and not channel.name.startswith("closed-"):
-                ticket_channel = channel
-                if not channel.name.startswith("🎁"):
-                    try:
-                        await channel.edit(name=f"🎁・{user.display_name}"[:95])
-                    except discord.HTTPException:
-                        pass
-                break
-        if ticket_channel is None:
-            staff_role = guild.get_role(STAFF_ROLE_ID)
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-            }
-            if staff_role:
-                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-            try:
-                ticket_channel = await guild.create_text_channel(name=f"🎁・{user.display_name}"[:95], category=category, topic=f"pinkgift-valorant-owner:{user.id}", overwrites=overwrites, reason=f"Commande Valorant de {user}")
-            except discord.HTTPException as error:
-                await interaction.followup.send("⏳ Discord ne peut pas créer le ticket actuellement.", ephemeral=True)
-                print(f"Erreur création ticket Valorant pour {user}: {error}")
-                return
         try:
             remaining_balance = change_balance(guild.id, user.id, -price, bot.user.id if bot.user else 0)
         except Exception as error:
             print(f"Erreur débit Valorant de {user}: {error}")
+            try:
+                await ticket_channel.delete(reason="Débit du solde Valorant impossible")
+            except discord.HTTPException:
+                pass
             await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
             return
         code_pending = (chr(96) * 3) + "\nEn attente...\n" + (chr(96) * 3)
@@ -2877,12 +3012,16 @@ async def create_valo_order(interaction, region_key, pack_key):
             "code": code_pending, "balance": f"{remaining_balance:.2f}"
         })
         try:
-            order_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=PendingOrderActionsView(user.id))
+            order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
         except Exception as error:
             try:
                 change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
             except Exception as refund_error:
                 print(f"ERREUR REMBOURSEMENT VALORANT {user}: {refund_error}")
+            try:
+                await ticket_channel.delete(reason="Commande Valorant impossible à publier")
+            except discord.HTTPException:
+                pass
             await interaction.followup.send("❌ L'envoi a échoué. Le montant a été recrédité.", ephemeral=True)
             return
         try:
@@ -2894,7 +3033,7 @@ async def create_valo_order(interaction, region_key, pack_key):
             record_referral_purchase(guild.id, user.id, order_message.id, price, purchase_cost, f"Valorant {region_label} {pack}")
         except Exception as error:
             print(f"Erreur calcul parrainage Valorant de {user}: {error}")
-        await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+        await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans ton fil privé {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
 
 
 class ValoRegionSelect(discord.ui.Select):
@@ -2963,6 +3102,62 @@ class ValoOrderLauncherView(discord.ui.View):
             content="Choisis d'abord ta région Valorant :",
             view=ValoRegionView()
         )
+
+
+async def create_cp_manual_ticket(interaction):
+    """Ouvre une demande CP manuelle sans lire ni modifier le solde du client."""
+    guild = interaction.guild
+    user = interaction.user
+    if guild is None:
+        await interaction.followup.send("❌ Cette demande doit être faite depuis le serveur.", ephemeral=True)
+        return
+
+    category = guild.get_channel(CP_TICKET_CATEGORY_ID)
+    if not isinstance(category, discord.CategoryChannel):
+        await interaction.followup.send("❌ La catégorie des tickets CP est introuvable ou mal configurée.", ephemeral=True)
+        return
+
+    ticket_channel = next(
+        (
+            channel for channel in category.text_channels
+            if channel.topic == f"pinkgift-cp-manual:{user.id}" and not channel.name.startswith("closed-")
+        ),
+        None,
+    )
+    if ticket_channel is None:
+        staff_role = guild.get_role(STAFF_ROLE_ID)
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+        }
+        me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+        if me:
+            overwrites[me] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+        if staff_role:
+            overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+        try:
+            ticket_channel = await guild.create_text_channel(
+                name=f"🪙・cp-{user.display_name}"[:95],
+                category=category,
+                topic=f"pinkgift-cp-manual:{user.id}",
+                overwrites=overwrites,
+                reason=f"Demande manuelle COD Points de {user}",
+            )
+            await ticket_channel.send(
+                content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
+                embed=build_json_embed("cp_manual_ticket_embed", {"user": user.mention}),
+                view=CloseTicketView(user.id),
+            )
+        except discord.HTTPException as error:
+            print(f"Erreur création ticket CP manuel pour {user}: {error}")
+            await interaction.followup.send("⏳ Discord ne peut pas créer le ticket CP actuellement.", ephemeral=True)
+            return
+
+    await interaction.followup.send(
+        f"✅ Ton ticket CP est ouvert : {ticket_channel.mention}\n"
+        "Indique le nombre de CP souhaité et combien tu proposes de payer. **Aucun solde n'a été débité.**",
+        ephemeral=True,
+    )
 
 
 async def create_cp_order(interaction, pack_key):
@@ -3221,7 +3416,9 @@ class CPPackSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await create_cp_order(interaction, self.values[0])
+        # Compatibilité avec un ancien menu encore ouvert au moment du déploiement :
+        # aucune sélection CP ne peut désormais déclencher un débit de solde.
+        await create_cp_manual_ticket(interaction)
 
 
 class CPPackView(discord.ui.View):
@@ -3236,16 +3433,13 @@ class CPOrderLauncherView(discord.ui.View):
 
     @discord.ui.button(
         label="Commander des COD Points",
-        emoji="🪙",
+        emoji="<:cp:1528128623117205624>",
         style=discord.ButtonStyle.success,
         custom_id="pinkgift_start_cp_order",
     )
     async def start_cp_order(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await interaction.edit_original_response(
-            content="Choisis ton pack. Il sera commandé au fournisseur après le débit du solde :",
-            view=CPPackView(),
-        )
+        await create_cp_manual_ticket(interaction)
 
 
 def special_service_catalog(catalog_key):
@@ -3371,7 +3565,7 @@ class OtherServicesSelect(discord.ui.Select):
             discord.SelectOption(
                 label=service["label"],
                 value=f"{catalog_key}:{service_key}",
-                emoji=service["emoji"],
+                emoji=safe_component_emoji(service["emoji"], "✨"),
                 description=service["description"],
             )
             for catalog_key, service_key, service in (*catalog_services, *subscription_services)
@@ -3466,14 +3660,14 @@ class ProductServiceSelect(discord.ui.Select):
                 ),
             )
             for key, cfg in PRODUCT_CONFIG.items()
-            if key != "VALORANT"
+            if key not in {"VALORANT", "SKRILL"}
         ]
         super().__init__(
             placeholder="Choisis une marque",
             custom_id="pinkgift_product_service",
             min_values=1,
             max_values=1,
-            options=options[:25]
+            options=options,
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -3507,7 +3701,7 @@ class ProductServiceSelect(discord.ui.Select):
                 prompt = "choisis maintenant le montant :"
 
             await interaction.edit_original_response(
-                content=f"{cfg['emoji']} **{cfg['display']}** — {prompt}",
+                content=f"{get_product_emoji(product_key)} **{cfg['display']}** — {prompt}",
                 view=amount_view
             )
         except Exception as error:
@@ -3554,7 +3748,7 @@ class OrderLauncherView(discord.ui.View):
         try:
             # Le menu est désormais entièrement local et peut être envoyé directement.
             await interaction.response.send_message(
-                "Choisis d'abord la marque que tu souhaites commander :",
+                "Choisis la marque que tu souhaites commander :",
                 view=ProductSelectView(),
                 ephemeral=True
             )
@@ -5674,15 +5868,15 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       const uberTemplate = data.uber_eats_line_template || "**{drop} € estimés** → {price} € débités";
       const nitroTemplate = data.nitro_value_template || "**{price} €** débités";
       if (Array.isArray(context.gift_cards)) fields.push({
-        name: data.gift_cards_field_name || "💳 Cartes cadeaux — toutes les marques",
+        name: data.gift_cards_field_name || "<:carte:1528346097276420271> Cartes cadeaux — toutes les marques",
         value: context.gift_cards.map(item => fillTokens(giftTemplate, item)).join("\n"), inline,
       });
       if (Array.isArray(context.uber_eats)) fields.push({
-        name: data.uber_eats_field_name || "<:ubereats:1519907186636099604> Uber Eats",
+        name: data.uber_eats_field_name || "<:ubereats:1528671351668211722> Uber Eats",
         value: context.uber_eats.map(item => fillTokens(uberTemplate, item)).join("\n"), inline,
       });
       if (context.nitro) fields.push({
-        name: data.nitro_field_name || "<:nitroboost:1524439577656561846> Discord Nitro",
+        name: data.nitro_field_name || "<:nitro:1528358484972671096> Discord Nitro",
         value: fillTokens(nitroTemplate, context.nitro), inline,
       });
     } else if (key === "valo_embed" && Array.isArray(context.regions)) {
@@ -6279,13 +6473,13 @@ body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}head
 <header><h1>PinkGift — COD Points</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header>
 <main>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
-<p class="muted">Les packs sont commandés au fournisseur au cas par cas. Le client paie avec son solde, puis la commande apparaît ici et dans son ticket jusqu'à la livraison du code.</p>
+<section class="card"><h2>Fonctionnement actuel</h2><p>Les nouvelles demandes CP ouvrent un ticket manuel dans Discord. Le client y précise le nombre de CP souhaité et combien il propose de payer.</p><p class="muted">Le solde PinkGift n'est ni consulté ni débité. Le tableau ci-dessous conserve uniquement les anciennes commandes automatiques pour permettre leur livraison ou leur remboursement.</p></section>
 <form method="post" class="card"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="save_settings">
-<h2>Prix et coûts des packs</h2><div class="grid">{% for item in packs %}<section class="card"><h3>{{ item.points_label }} CP</h3>
-<label class="field"><span>Prix de vente</span><input type="number" name="cp_price_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Débit du solde client</small></label>
-<label class="field"><span>Coût d'achat</span><input type="number" name="cp_cost_{{ item.key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required><small>Utilisé pour calculer le bénéfice</small></label>
-<p class="muted">Prix officiel ≈ {{ item.official }} €</p></section>{% endfor %}</div><button type="submit">Enregistrer les prix et coûts</button></form>
-<h2>Commandes CP</h2><table><thead><tr><th>Client</th><th>Pack</th><th>Payé</th><th>État</th><th>Date</th><th>Actions</th></tr></thead><tbody>
+<h2>Prix affichés dans l'embed /cp</h2><div class="grid">{% for item in packs %}<section class="card"><h3>{{ item.points_label }} CP</h3>
+<label class="field"><span>Prix affiché</span><input type="number" name="cp_price_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Information visible dans /cp, sans débit automatique</small></label>
+<label class="field"><span>Coût d'achat</span><input type="number" name="cp_cost_{{ item.key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required><small>Conservé comme donnée interne</small></label>
+<p class="muted">Prix officiel ≈ {{ item.official }} €</p></section>{% endfor %}</div><button type="submit">Mettre à jour l'embed /cp</button></form>
+<h2>Anciennes commandes CP automatiques</h2><table><thead><tr><th>Client</th><th>Pack</th><th>Payé</th><th>État</th><th>Date</th><th>Actions</th></tr></thead><tbody>
 {% for order in orders %}<tr><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.received_label }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td>{{ order.updated_at or order.created_at }}</td><td><div class="actions">
 {% if order.status == 'pending' %}<form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="deliver_order"><input type="hidden" name="order_id" value="{{ order.id }}"><input name="code" required placeholder="Code reçu du fournisseur"><button type="submit">Livrer</button></form>
 <form method="post" onsubmit="return confirm('Annuler cette commande et rembourser le client ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="action" value="refund_order"><input type="hidden" name="order_id" value="{{ order.id }}"><button class="danger" type="submit">Annuler + rembourser</button></form>{% elif order.status == 'done' %}<span class="positive">Livrée</span>{% else %}<span>—</span>{% endif %}
@@ -6670,7 +6864,7 @@ def panel_cp():
                 if BOT_LOOP is not None:
                     future = asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
                     future.add_done_callback(log_price_embed_refresh)
-                flash("Prix et coûts CP enregistrés. Le débit, le bénéfice et l'embed /cp sont synchronisés sans redémarrage.")
+                flash("Prix et coûts CP enregistrés. L'embed /cp est synchronisé sans redémarrage ; aucun débit automatique n'est effectué.")
             elif action == "deliver_order":
                 order = get_cp_order(order_id=int(request.form.get("order_id", 0)))
                 code = normalize_cp_code(request.form.get("code"))
@@ -6956,7 +7150,7 @@ def panel_embeds():
         "emojis": "Catalogue central des emojis custom. Toute modification est reprise par les menus et les embeds concernés sans redémarrage.",
         "tarifs_embed": "Les champs de prix sont entièrement modifiables. Variables : {amount}, {drop}, {price} et {pack_key}. Les montants restent synchronisés avec l'onglet Prix.",
         "valo_embed": "Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
-        "cp_embed": "Le bloc Packs disponibles est entièrement modifiable. Variables : {points}, {price}, {official} et {pack_key}. Les prix restent synchronisés avec l'onglet CP.",
+        "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit du solde.",
     }
     embeds = []
     for key in sorted(
