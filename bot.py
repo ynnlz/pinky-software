@@ -1235,7 +1235,7 @@ PRODUCT_CONFIG = {
     "TESLA": {"display": "TESLA", "emoji": "<:tesla:1528695367137366053>", "emoji_ch": "🚗"},
     "AIRBNB": {"display": "AIRBNB", "emoji": "<:airbnb:1528696272796516434>", "emoji_ch": "🏠"},
     "SKRILL": {"display": "SKRILL", "emoji": "<:skrill:1528697675279765604>", "emoji_ch": "💳"},
-    "PAYSAFECARD": {"display": "PAYSAFECARD", "emoji": "<:paysafecard:1519906750571085995>", "emoji_ch": "💳"},
+    "PAYSAFECARD": {"display": "PAYSAFECARD", "emoji": "<:paysafe:1528698901836726354>", "emoji_ch": "💳"},
     "VALORANT": {"display": "VALORANT", "emoji": "🎮", "emoji_ch": "🎮"},
 }
 
@@ -1608,17 +1608,10 @@ DEFAULT_EMBED_DATA = {
             "",
             "<:voyage:1528344840293847130> **VOYAGE & AUTO**", "<:tesla:1528695367137366053> **Tesla**", "<:airbnb:1528696272796516434> **Airbnb**",
             "",
-            "<:carte:1528346097276420271> **PRÉPAYÉ**", "<:skrill:1528697675279765604> **Skrill**", "<:paysafecard:1519906750571085995> **Paysafecard**",
+            "<:carte:1528346097276420271> **PRÉPAYÉ**", "<:skrill:1528697675279765604> **Skrill**", "<:paysafe:1528698901836726354> **Paysafecard**",
             "",
             "🎫 Clique sur le bouton **Commander** ci-dessous. Les menus sont visibles uniquement par toi."
         ],
-        "gift_cards_field_name": "<:carte:1528346097276420271> Cartes cadeaux — toutes les marques",
-        "gift_card_line_template": "**{amount} € reçus** → {price} € débités",
-        "uber_eats_field_name": "<:ubereats:1528671351668211722> Uber Eats",
-        "uber_eats_line_template": "**{drop} € estimés** → {price} € débités",
-        "nitro_field_name": "<:nitro:1528358484972671096> Discord Nitro",
-        "nitro_value_template": "**{price} €** débités",
-        "dynamic_fields_inline": False,
         "color_rgb": [255, 192, 203],
         "image_url": "",
         "footer": "PinkGift — Tarifs"
@@ -2431,7 +2424,7 @@ def apply_custom_brand_emojis(text: str):
         "🏠 **Airbnb**": f"{PRODUCT_CONFIG['AIRBNB']['emoji']} **Airbnb**",
         "🎮 **Xbox**": "<:xbox:1519907418836828230> **Xbox**",
         "🎮 **PlayStation**": "<:playstation:1519906767268741200> **PlayStation**",
-        "💳 **Paysafecard**": "<:paysafecard:1519906750571085995> **Paysafecard**",
+        "💳 **Paysafecard**": "<:paysafe:1528698901836726354> **Paysafecard**",
         "📚 **Fnac**": "<:fnac:1519906718140727387> **Fnac**",
         "🎮 **Nintendo**": f"{PRODUCT_CONFIG['NINTENDO']['emoji']} **Nintendo**",
         "👟 **Nike**": f"{PRODUCT_CONFIG['NIKE']['emoji']} **Nike**",
@@ -4765,6 +4758,8 @@ def build_tarifs_embed():
     description = apply_custom_brand_emojis(description)
     embed = build_json_embed("tarifs_embed", data_override=texts)
     embed.description = description or None
+    if not bool(texts.get("show_dynamic_fields", False)):
+        return embed
     prices = get_pricing_config()
     gift_template = texts.get("gift_card_line_template", "**{amount} € reçus** → {price} € débités")
     uber_template = texts.get("uber_eats_line_template", "**{drop} € estimés** → {price} € débités")
@@ -5863,7 +5858,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
         value: context.packs.map(pack => fillTokens(template, pack)).join("\n"),
         inline,
       });
-    } else if (key === "tarifs_embed") {
+    } else if (key === "tarifs_embed" && data.show_dynamic_fields === true) {
       const giftTemplate = data.gift_card_line_template || "**{amount} € reçus** → {price} € débités";
       const uberTemplate = data.uber_eats_line_template || "**{drop} € estimés** → {price} € débités";
       const nitroTemplate = data.nitro_value_template || "**{price} €** débités";
@@ -7148,7 +7143,7 @@ def panel_embeds():
         print(f"Erreur préparation aperçus dynamiques du panel : {error}")
     embed_help = {
         "emojis": "Catalogue central des emojis custom. Toute modification est reprise par les menus et les embeds concernés sans redémarrage.",
-        "tarifs_embed": "Les champs de prix sont entièrement modifiables. Variables : {amount}, {drop}, {price} et {pack_key}. Les montants restent synchronisés avec l'onglet Prix.",
+        "tarifs_embed": "La liste des marques est modifiable ici. Les prix restent synchronisés avec l'onglet Prix et le parcours de commande.",
         "valo_embed": "Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
         "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit du solde.",
     }
