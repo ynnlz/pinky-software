@@ -72,6 +72,7 @@ RECENTLY_DELETED_INVITES = {}
 DISCORD_THREAD_STARTED = False
 COMMAND_SYNC_DONE = False
 PUBLIC_VIEWS_REPAIRED = False
+DECORATION_ACCESS_REPAIRED = False
 SERVER_COUNTER_REFRESH_TASK = None
 SERVER_COUNTER_UPDATE_TASKS = {}
 SERVER_COUNTER_UPDATE_FLAGS = {}
@@ -87,6 +88,7 @@ AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:151758229
 VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 REFERRAL_TRACKING_CHANNEL_ID = 1525601870561935391
 MEMBER_ACTIVITY_CHANNEL_ID = 1525601870561935391
+DISCORD_DECORATION_ACCESS_USER_IDS = {1518303260178649328}
 MIN_INVITE_ACCOUNT_AGE_DAYS = 30
 STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
 STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
@@ -3443,6 +3445,77 @@ def special_service_catalog(catalog_key):
     return "", {}
 
 
+async def resolve_discord_decoration_access_members(guild):
+    members = []
+    for user_id in DISCORD_DECORATION_ACCESS_USER_IDS:
+        member = guild.get_member(user_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                continue
+        members.append(member)
+    return members
+
+
+async def grant_discord_decoration_ticket_access(ticket_channel, members):
+    updated = 0
+    for member in members:
+        overwrite = ticket_channel.overwrites_for(member)
+        if (
+            overwrite.view_channel is True
+            and overwrite.send_messages is True
+            and overwrite.read_message_history is True
+        ):
+            continue
+        overwrite.view_channel = True
+        overwrite.send_messages = True
+        overwrite.read_message_history = True
+        try:
+            await ticket_channel.set_permissions(
+                member,
+                overwrite=overwrite,
+                reason="Accès aux tickets Décorations Discord/Nitro",
+            )
+            updated += 1
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
+            print(f"Erreur accès décoration pour {member} dans {ticket_channel}: {error}")
+    return updated
+
+
+async def repair_discord_decoration_ticket_access():
+    updated = 0
+    for guild in bot.guilds:
+        category = guild.get_channel(SPECIAL_TICKET_CATEGORY_ID)
+        if not isinstance(category, discord.CategoryChannel):
+            continue
+        members = await resolve_discord_decoration_access_members(guild)
+        if not members:
+            continue
+        for channel in category.text_channels:
+            if not str(channel.topic or "").startswith("pinkgift-special:autres:"):
+                continue
+            is_decoration_ticket = False
+            try:
+                async for message in channel.history(limit=30):
+                    if not message.embeds or (bot.user and message.author.id != bot.user.id):
+                        continue
+                    title = str(message.embeds[0].title or "")
+                    normalized_title = "".join(
+                        char
+                        for char in unicodedata.normalize("NFD", title.lower())
+                        if unicodedata.category(char) != "Mn"
+                    )
+                    if "decoration discord" in normalized_title:
+                        is_decoration_ticket = True
+                        break
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                continue
+            if is_decoration_ticket:
+                updated += await grant_discord_decoration_ticket_access(channel, members)
+    return updated
+
+
 async def create_special_request_ticket(interaction, catalog_key, service_key):
     guild = interaction.guild
     user = interaction.user
@@ -3462,6 +3535,11 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
 
     lock = ORDER_LOCKS.setdefault((guild.id, user.id, f"special:{catalog_key}"), asyncio.Lock())
     async with lock:
+        decoration_access_members = (
+            await resolve_discord_decoration_access_members(guild)
+            if service_key == "DISCORD_DECORATIONS"
+            else []
+        )
         topic = f"pinkgift-special:{catalog_key}:{user.id}"
         ticket_channel = next(
             (
@@ -3490,6 +3568,12 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
                     send_messages=True,
                     read_message_history=True,
                 )
+            for access_member in decoration_access_members:
+                overwrites[access_member] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                )
             safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
             prefix = "autres" if catalog_key == "autres" else "abonnement"
             try:
@@ -3507,6 +3591,9 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
                     ephemeral=True,
                 )
                 return
+
+        if decoration_access_members:
+            await grant_discord_decoration_ticket_access(ticket_channel, decoration_access_members)
 
         if catalog_key == "abonnements":
             embed_key = "subscription_request_ticket_embed"
@@ -4585,7 +4672,7 @@ async def sync_commands_to_guilds():
 
 @bot.event
 async def on_ready():
-    global BOT_LOOP, COMMAND_SYNC_DONE, PUBLIC_VIEWS_REPAIRED, SERVER_COUNTER_REFRESH_TASK
+    global BOT_LOOP, COMMAND_SYNC_DONE, PUBLIC_VIEWS_REPAIRED, DECORATION_ACCESS_REPAIRED, SERVER_COUNTER_REFRESH_TASK
     BOT_LOOP = asyncio.get_running_loop()
     if not COMMAND_SYNC_DONE:
         await sync_commands_to_guilds()
@@ -4600,6 +4687,14 @@ async def on_ready():
         except Exception as error:
             print(f"Erreur réparation automatique des boutons publics : {error}")
         PUBLIC_VIEWS_REPAIRED = True
+
+    if not DECORATION_ACCESS_REPAIRED:
+        try:
+            repaired = await repair_discord_decoration_ticket_access()
+            print(f"✅ Accès ajouté à {repaired} ticket(s) Décorations Discord/Nitro.")
+        except Exception as error:
+            print(f"Erreur réparation accès tickets Décorations Discord/Nitro : {error}")
+        DECORATION_ACCESS_REPAIRED = True
 
     await schedule_active_giveaways()
     await initialize_invite_tracking()
