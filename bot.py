@@ -2445,6 +2445,42 @@ def ticket_channel_name(emoji: str, label: str, suffix: str) -> str:
     return f"{emoji}-{clean_label}-{clean_suffix}"[:95]
 
 
+async def pin_first_bot_ticket_message(channel, fallback_message=None):
+    """Épingle le plus ancien message normal du bot dans un ticket ou un fil de commande."""
+    try:
+        bot_user_id = bot.user.id if bot.user else 0
+        first_bot_message = None
+        created_at = getattr(channel, "created_at", None)
+        after = created_at - datetime.timedelta(seconds=2) if created_at else None
+        async for candidate in channel.history(limit=100, after=after, oldest_first=True):
+            if (
+                bot_user_id
+                and candidate.author.id == bot_user_id
+                and candidate.type is discord.MessageType.default
+            ):
+                first_bot_message = candidate
+                break
+        target = first_bot_message or fallback_message
+        if target is not None and not target.pinned:
+            await target.pin(reason="Premier message du ticket PinkGift")
+        return target
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError, TypeError) as error:
+        print(f"Erreur épinglage premier message du ticket {getattr(channel, 'id', 0)}: {error}")
+        return fallback_message
+
+
+def bot_ticket_permission_overwrite():
+    permissions = {
+        "view_channel": True,
+        "send_messages": True,
+        "read_message_history": True,
+        "manage_messages": True,
+    }
+    if hasattr(discord.Permissions.none(), "pin_messages"):
+        permissions["pin_messages"] = True
+    return discord.PermissionOverwrite(**permissions)
+
+
 def parse_duration(duration_str: str):
     match = re.match(r"(\d+)([mhds])?", duration_str.lower())
     if not match:
@@ -2858,6 +2894,7 @@ async def create_product_ticket(interaction, product_key, amount):
         })
         try:
             order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
+            await pin_first_bot_ticket_message(ticket_channel, order_message)
         except Exception as error:
             try:
                 change_balance(guild.id, user.id, paid_amount, bot.user.id if bot.user else 0)
@@ -3011,6 +3048,7 @@ async def create_valo_order(interaction, region_key, pack_key):
         })
         try:
             order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
+            await pin_first_bot_ticket_message(ticket_channel, order_message)
         except Exception as error:
             try:
                 change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
@@ -3130,7 +3168,7 @@ async def create_cp_manual_ticket(interaction):
         }
         me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
         if me:
-            overwrites[me] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            overwrites[me] = bot_ticket_permission_overwrite()
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
         try:
@@ -3141,11 +3179,12 @@ async def create_cp_manual_ticket(interaction):
                 overwrites=overwrites,
                 reason=f"Demande manuelle COD Points de {user}",
             )
-            await ticket_channel.send(
+            opening_message = await ticket_channel.send(
                 content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
                 embed=build_json_embed("cp_manual_ticket_embed", {"user": user.mention}),
                 view=CloseTicketView(user.id),
             )
+            await pin_first_bot_ticket_message(ticket_channel, opening_message)
         except discord.HTTPException as error:
             print(f"Erreur création ticket CP manuel pour {user}: {error}")
             await interaction.followup.send("⏳ Discord ne peut pas créer le ticket CP actuellement.", ephemeral=True)
@@ -3201,7 +3240,7 @@ async def create_cp_order(interaction, pack_key):
             }
             me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
             if me:
-                overwrites[me] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+                overwrites[me] = bot_ticket_permission_overwrite()
             if staff_role:
                 overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
             try:
@@ -3236,6 +3275,7 @@ async def create_cp_order(interaction, pack_key):
                 embed=embed,
                 view=CPPendingOrderView(),
             )
+            await pin_first_bot_ticket_message(ticket_channel, order_message)
         except Exception as error:
             try:
                 change_balance(guild.id, user.id, price, bot.user.id if bot.user else 0)
@@ -3560,13 +3600,15 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
                 user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             }
             if me:
-                overwrites[me] = discord.PermissionOverwrite(
+                overwrites[me] = bot_ticket_permission_overwrite()
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True,
                     read_message_history=True,
                 )
-            if staff_role:
-                overwrites[staff_role] = discord.PermissionOverwrite(
+            for access_member in decoration_access_members:
+                overwrites[access_member] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True,
                     read_message_history=True,
@@ -3614,11 +3656,12 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
             "emoji": service["emoji"],
         })
         try:
-            await ticket_channel.send(
+            opening_message = await ticket_channel.send(
                 content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
                 embed=embed,
                 view=CloseTicketView(user.id),
             )
+            await pin_first_bot_ticket_message(ticket_channel, opening_message)
         except discord.HTTPException as error:
             print(f"Erreur envoi demande {catalog_key} pour {user}: {error}")
             await interaction.followup.send(
@@ -3879,7 +3922,7 @@ async def create_balance_recharge_ticket(interaction, referral=None):
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        guild.me: bot_ticket_permission_overwrite()
     }
     if staff_role:
         overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
@@ -3894,7 +3937,8 @@ async def create_balance_recharge_ticket(interaction, referral=None):
         if referral:
             save_balance_ticket_referral(channel, user.id, referral)
         embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": f"{get_balance(guild.id, user.id):.2f}"})
-        await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+        opening_message = await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
+        await pin_first_bot_ticket_message(channel, opening_message)
         await interaction.followup.send(f"✅ Ticket de recharge créé : {channel.mention}", ephemeral=True)
     except Exception as error:
         print(f"Erreur création ticket solde pour {user}: {error}")
@@ -4043,7 +4087,7 @@ class OpenTicketView(discord.ui.View):
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            guild.me: bot_ticket_permission_overwrite()
         }
         ticket_channel = await guild.create_text_channel(
             name=f"ticket-{user.name}",
@@ -4065,7 +4109,8 @@ class OpenTicketView(discord.ui.View):
         title = title.replace(" — {product}", "").replace(" - {product}", "").format(product="")
         embed_ticket = discord.Embed(title=title, description=description, color=discord.Color.from_rgb(rgb[0], rgb[1], rgb[2]))
         embed_ticket.set_image(url=get_image_url("ticket_cree", TICKET_IMAGE_URL))
-        await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
+        opening_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
+        await pin_first_bot_ticket_message(ticket_channel, opening_message)
         await interaction.response.send_message(f"✅ Ton ticket a ete cree ici : {ticket_channel.mention}", ephemeral=True)
 
 class ProductView(OpenTicketView):
@@ -4090,7 +4135,7 @@ class ValoTicketButton(discord.ui.View):
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            guild.me: bot_ticket_permission_overwrite()
         }
         ticket_channel = await guild.create_text_channel(
             name=f"ticket-valorant-{user.name}",
@@ -4099,7 +4144,8 @@ class ValoTicketButton(discord.ui.View):
             reason=f"Ouverture ticket Valorant par {user}"
         )
         embed_ticket = build_json_embed("valo_ticket_bienvenue_embed", {"user": user.mention})
-        await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
+        opening_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
+        await pin_first_bot_ticket_message(ticket_channel, opening_message)
         await interaction.response.send_message(f"✅ Ton ticket Valorant a ete cree ici : {ticket_channel.mention}", ephemeral=True)
 
 
