@@ -2188,7 +2188,10 @@ def normalize_embed_configuration(data):
         "<:googleplay:1519907060555186278>": "<:googleplay:1528362570681946263>",
         "<:steam:1519907154545610873>": "<:steam:1528359731100647434>",
         "<:nitroboost:1524439577656561846>": "<:nitro:1528358484972671096>",
+        "<:playstation:1519906767268741200>": "<:playstation:1528357122520387584>",
         "<:nintendo:1519907394157678632>": "<:nintendo:1528357096922419281>",
+        "<:zara:1519907265681948773>": "<:zara:1528775696347037697>",
+        "<:sephora:1519907492862103742>": "<:sephora:1528775577757159454>",
         "<:zalando:1519907231812816906>": "<:zalando:1528666033911500840>",
         "<:adidas:1519906784515588116>": "<:adidas:1528662905418158120>",
         "<:footlocker:1519907296342310952>": "<:footlocker:1528661139410387054>",
@@ -2227,7 +2230,8 @@ def normalize_embed_configuration(data):
     for product_key, product in PRODUCT_CONFIG.items():
         emoji_catalog.setdefault(product_key, product["emoji"])
     for product_key in {
-        "GOOGLE_PLAY", "STEAM", "DISCORD_NITRO", "NINTENDO", "ZALANDO", "ADIDAS",
+        "GOOGLE_PLAY", "STEAM", "DISCORD_NITRO", "PLAYSTATION", "NINTENDO",
+        "ZARA", "SEPHORA", "ZALANDO", "ADIDAS",
         "FOOT_LOCKER", "SHEIN", "NIKE", "UBEREATS", "DELIVEROO", "AMAZON",
         "CARREFOUR", "INTERMARCHE", "APPLE", "JOYBUY", "SMYTHS_TOYS", "LEGO",
         "TESLA", "AIRBNB", "SKRILL",
@@ -5264,10 +5268,10 @@ async def repair_public_launcher_views():
     """Réattache les boutons actuels aux anciens panneaux publics du bot."""
     repaired = 0
     launcher_rules = (
-        (("commandes pinkgift", "carte cadeaux"), OrderLauncherView),
-        (("valorant", "valorant points"), ValoOrderLauncherView),
-        (("call of duty points", "cod points"), CPOrderLauncherView),
-        (("autres services", "abonnements"), OtherServicesView),
+        (("commandes pinkgift", "carte cadeaux"), build_tarifs_embed, OrderLauncherView),
+        (("valorant", "valorant points"), build_valo_embed, ValoOrderLauncherView),
+        (("call of duty points", "cod points"), build_cp_embed, CPOrderLauncherView),
+        (("autres services", "abonnements"), lambda: build_json_embed("autres_embed"), OtherServicesView),
     )
 
     for guild in bot.guilds:
@@ -5283,9 +5287,9 @@ async def repair_public_launcher_views():
                     if message.author.id != bot.user.id or not message.embeds:
                         continue
                     title = (message.embeds[0].title or "").lower()
-                    for keywords, view_factory in launcher_rules:
+                    for keywords, embed_builder, view_factory in launcher_rules:
                         if any(keyword in title for keyword in keywords):
-                            await message.edit(view=view_factory())
+                            await message.edit(embed=embed_builder(), view=view_factory())
                             repaired += 1
                             break
             except (discord.Forbidden, discord.NotFound):
