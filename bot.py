@@ -89,6 +89,9 @@ VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 REFERRAL_TRACKING_CHANNEL_ID = 1525601870561935391
 MEMBER_ACTIVITY_CHANNEL_ID = 1525601870561935391
 DISCORD_DECORATION_ACCESS_USER_IDS = {1518303260178649328}
+ANTI_RAID_CONFIG_CACHE = {}
+ANTI_RAID_RECENT_JOINS = {}
+ANTI_RAID_LOCKS = {}
 MIN_INVITE_ACCOUNT_AGE_DAYS = 30
 STOCK_OK_EMOJI = "<:verify:1525796690899108000>"
 STOCK_KO_EMOJI = "<:crossmark:1525798036276514887>"
@@ -4771,8 +4774,174 @@ async def send_member_join_ghost_ping(member):
         print(f"Erreur ghost ping arrivée de {member} dans {channel_id}: {error}")
 
 
+def anti_raid_setting_key(guild_id):
+    return f"anti_raid:{int(guild_id)}"
+
+
+def normalize_anti_raid_config(data=None):
+    source = data if isinstance(data, dict) else {}
+    try:
+        threshold = max(3, min(50, int(source.get("threshold", 6) or 6)))
+    except (TypeError, ValueError):
+        threshold = 6
+    try:
+        window_seconds = max(3, min(60, int(source.get("window_seconds", 10) or 10)))
+    except (TypeError, ValueError):
+        window_seconds = 10
+    try:
+        raid_duration_minutes = max(1, min(120, int(source.get("raid_duration_minutes", 10) or 10)))
+    except (TypeError, ValueError):
+        raid_duration_minutes = 10
+    try:
+        log_channel_id = int(source.get("log_channel_id") or MEMBER_ACTIVITY_CHANNEL_ID)
+    except (TypeError, ValueError):
+        log_channel_id = MEMBER_ACTIVITY_CHANNEL_ID
+    try:
+        active_until = max(0.0, float(source.get("active_until", 0) or 0))
+    except (TypeError, ValueError):
+        active_until = 0.0
+    try:
+        blocked_count = max(0, int(source.get("blocked_count", 0) or 0))
+    except (TypeError, ValueError):
+        blocked_count = 0
+    return {
+        "enabled": bool(source.get("enabled", True)),
+        "threshold": threshold,
+        "window_seconds": window_seconds,
+        "raid_duration_minutes": raid_duration_minutes,
+        "log_channel_id": log_channel_id,
+        "active_until": active_until,
+        "blocked_count": blocked_count,
+        "last_triggered_at": str(source.get("last_triggered_at") or ""),
+        "updated_by": int(source.get("updated_by") or 0),
+    }
+
+
+def get_anti_raid_config(guild_id):
+    guild_id = int(guild_id)
+    if guild_id not in ANTI_RAID_CONFIG_CACHE:
+        stored = get_panel_setting(anti_raid_setting_key(guild_id), {})
+        ANTI_RAID_CONFIG_CACHE[guild_id] = normalize_anti_raid_config(stored)
+    return dict(ANTI_RAID_CONFIG_CACHE[guild_id])
+
+
+def save_anti_raid_config(guild_id, data):
+    guild_id = int(guild_id)
+    normalized = normalize_anti_raid_config(data)
+    ANTI_RAID_CONFIG_CACHE[guild_id] = normalized
+    set_panel_setting(anti_raid_setting_key(guild_id), normalized)
+    return dict(normalized)
+
+
+async def send_anti_raid_alert(guild, config, title, description, color):
+    channel_id = int(config.get("log_channel_id") or MEMBER_ACTIVITY_CHANNEL_ID)
+    channel = guild.get_channel(channel_id) or bot.get_channel(channel_id)
+    if channel is None and channel_id != MEMBER_ACTIVITY_CHANNEL_ID:
+        channel = guild.get_channel(MEMBER_ACTIVITY_CHANNEL_ID) or bot.get_channel(MEMBER_ACTIVITY_CHANNEL_ID)
+    try:
+        if channel is None:
+            channel = await bot.fetch_channel(channel_id)
+        embed = discord.Embed(title=title, description=description, color=color, timestamp=utc_now())
+        embed.add_field(
+            name="Configuration",
+            value=(
+                f"**{config['threshold']}** arrivées en **{config['window_seconds']} s**\n"
+                f"Protection renforcée pendant **{config['raid_duration_minutes']} min**"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="PinkGift — Protection anti-raid")
+        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError) as error:
+        print(f"Erreur journal anti-raid sur {guild.id}: {error}")
+
+
+async def kick_anti_raid_member(member, reason):
+    if member.bot or member.id == member.guild.owner_id or member.guild_permissions.administrator:
+        return False
+    try:
+        await member.kick(reason=reason)
+        return True
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
+        print(f"Erreur expulsion anti-raid de {member} ({member.id}): {error}")
+        return False
+
+
+async def handle_anti_raid_join(member):
+    if member.bot or member.id == member.guild.owner_id or member.guild_permissions.administrator:
+        return False
+    guild = member.guild
+    lock = ANTI_RAID_LOCKS.setdefault(guild.id, asyncio.Lock())
+    members_to_kick = []
+    triggered = False
+    config = None
+    now = time.time()
+    async with lock:
+        config = get_anti_raid_config(guild.id)
+        if not config["enabled"]:
+            return False
+        if config["active_until"] > now:
+            members_to_kick = [member]
+        else:
+            if config["active_until"]:
+                config["active_until"] = 0
+                save_anti_raid_config(guild.id, config)
+            cutoff = now - config["window_seconds"]
+            recent = [
+                (joined_at, member_id)
+                for joined_at, member_id in ANTI_RAID_RECENT_JOINS.get(guild.id, [])
+                if joined_at >= cutoff
+            ]
+            recent.append((now, member.id))
+            ANTI_RAID_RECENT_JOINS[guild.id] = recent
+            if len(recent) < config["threshold"]:
+                return False
+            triggered = True
+            config["active_until"] = now + config["raid_duration_minutes"] * 60
+            config["last_triggered_at"] = utc_now().isoformat()
+            save_anti_raid_config(guild.id, config)
+            member_ids = {member_id for _, member_id in recent}
+            members_to_kick = [
+                recent_member
+                for member_id in member_ids
+                if (recent_member := guild.get_member(member_id)) is not None
+            ]
+            ANTI_RAID_RECENT_JOINS[guild.id] = []
+
+    results = await asyncio.gather(*(
+        kick_anti_raid_member(
+            recent_member,
+            "Protection anti-raid PinkGift : arrivées massives détectées",
+        )
+        for recent_member in members_to_kick
+    ))
+    blocked = sum(1 for result in results if result)
+    if blocked:
+        config["blocked_count"] += blocked
+        ANTI_RAID_CONFIG_CACHE[guild.id] = normalize_anti_raid_config(config)
+        if triggered or config["blocked_count"] % 10 == 0:
+            save_anti_raid_config(guild.id, config)
+    if triggered:
+        end_timestamp = int(config["active_until"])
+        await send_anti_raid_alert(
+            guild,
+            config,
+            "🚨 Raid détecté — protection activée",
+            (
+                f"Une vague de **{len(members_to_kick)} arrivées** a été détectée. "
+                f"**{blocked} compte(s)** ont été expulsés.\n"
+                f"Les nouvelles arrivées seront bloquées jusqu’à <t:{end_timestamp}:R>."
+            ),
+            discord.Color.red(),
+        )
+    return True
+
+
 @bot.event
 async def on_member_join(member):
+    if await handle_anti_raid_join(member):
+        schedule_server_counter_refresh(member.guild)
+        return
     invite_data = await register_invited_member(member)
     await send_member_activity_log(member, joined=True, invite_data=invite_data)
     await send_member_join_ghost_ping(member)
@@ -7492,6 +7661,122 @@ async def cmd_ghostping(ctx, salon: discord.TextChannel = None, activer: bool = 
     await ctx.send(
         f"✅ Chaque nouveau membre sera ghost ping dans {salon.mention}. "
         "La mention sera supprimée automatiquement après une seconde.",
+        ephemeral=True,
+    )
+
+
+@bot.hybrid_command(name="antiraid", description="Configurer la protection contre les raids")
+@discord.app_commands.default_permissions(administrator=True)
+@discord.app_commands.describe(
+    activer="Active ou désactive la protection anti-raid",
+    seuil="Nombre d'arrivées déclenchant la protection (3 à 50)",
+    fenetre="Durée de détection en secondes (3 à 60)",
+    duree="Durée du mode raid en minutes (1 à 120)",
+    salon_logs="Salon recevant les alertes anti-raid",
+)
+@commands.guild_only()
+@commands.has_permissions(administrator=True)
+async def cmd_antiraid(
+    ctx,
+    activer: bool = True,
+    seuil: int = 6,
+    fenetre: int = 10,
+    duree: int = 10,
+    salon_logs: discord.TextChannel = None,
+):
+    config = get_anti_raid_config(ctx.guild.id)
+    if not activer:
+        config["enabled"] = False
+        config["active_until"] = 0
+        config["updated_by"] = ctx.author.id
+        save_anti_raid_config(ctx.guild.id, config)
+        ANTI_RAID_RECENT_JOINS.pop(ctx.guild.id, None)
+        await ctx.send("✅ La protection anti-raid est désactivée.", ephemeral=True)
+        return
+    if not 3 <= seuil <= 50:
+        await ctx.send("❌ Le seuil doit être compris entre 3 et 50 arrivées.", ephemeral=True)
+        return
+    if not 3 <= fenetre <= 60:
+        await ctx.send("❌ La fenêtre doit être comprise entre 3 et 60 secondes.", ephemeral=True)
+        return
+    if not 1 <= duree <= 120:
+        await ctx.send("❌ La durée doit être comprise entre 1 et 120 minutes.", ephemeral=True)
+        return
+    bot_member = ctx.guild.me
+    if bot_member is None or not bot_member.guild_permissions.kick_members:
+        await ctx.send(
+            "❌ Le bot doit avoir la permission **Expulser des membres** pour activer l’anti-raid.",
+            ephemeral=True,
+        )
+        return
+    log_channel = salon_logs or ctx.guild.get_channel(int(config.get("log_channel_id") or 0)) or ctx.channel
+    log_permissions = log_channel.permissions_for(bot_member) if isinstance(log_channel, discord.TextChannel) else None
+    if log_permissions is None or not log_permissions.view_channel or not log_permissions.send_messages:
+        await ctx.send(
+            "❌ Le bot doit pouvoir voir le salon de logs et y envoyer des messages.",
+            ephemeral=True,
+        )
+        return
+    config.update({
+        "enabled": True,
+        "threshold": seuil,
+        "window_seconds": fenetre,
+        "raid_duration_minutes": duree,
+        "log_channel_id": log_channel.id,
+        "updated_by": ctx.author.id,
+    })
+    save_anti_raid_config(ctx.guild.id, config)
+    ANTI_RAID_RECENT_JOINS.pop(ctx.guild.id, None)
+    await ctx.send(
+        f"✅ Anti-raid activé : **{seuil} arrivées en {fenetre} secondes** déclencheront "
+        f"une protection de **{duree} minutes**. Alertes dans {log_channel.mention}.\n"
+        "Les comptes de la vague et les nouvelles arrivées seront expulsés, jamais bannis.",
+        ephemeral=True,
+    )
+
+
+@bot.hybrid_command(name="antiraid_statut", description="Afficher l'état de la protection anti-raid")
+@discord.app_commands.default_permissions(administrator=True)
+@commands.guild_only()
+@commands.has_permissions(administrator=True)
+async def cmd_antiraid_statut(ctx):
+    config = get_anti_raid_config(ctx.guild.id)
+    now = time.time()
+    if not config["enabled"]:
+        state = "⛔ Désactivée"
+    elif config["active_until"] > now:
+        state = f"🚨 Mode raid actif jusqu’à <t:{int(config['active_until'])}:R>"
+    else:
+        state = "✅ Active — surveillance en cours"
+    embed = discord.Embed(
+        title="🛡️ Protection anti-raid",
+        description=state,
+        color=discord.Color.red() if config["active_until"] > now else discord.Color.green(),
+        timestamp=utc_now(),
+    )
+    embed.add_field(
+        name="Déclenchement",
+        value=f"**{config['threshold']}** arrivées en **{config['window_seconds']} secondes**",
+        inline=False,
+    )
+    embed.add_field(name="Durée du mode raid", value=f"**{config['raid_duration_minutes']} minutes**", inline=True)
+    embed.add_field(name="Comptes bloqués", value=f"**{config['blocked_count']}**", inline=True)
+    embed.add_field(name="Salon d’alertes", value=f"<#{config['log_channel_id']}>", inline=False)
+    await ctx.send(embed=embed, ephemeral=True)
+
+
+@bot.hybrid_command(name="antiraid_stop", description="Arrêter immédiatement le mode raid automatique")
+@discord.app_commands.default_permissions(administrator=True)
+@commands.guild_only()
+@commands.has_permissions(administrator=True)
+async def cmd_antiraid_stop(ctx):
+    config = get_anti_raid_config(ctx.guild.id)
+    config["active_until"] = 0
+    config["updated_by"] = ctx.author.id
+    save_anti_raid_config(ctx.guild.id, config)
+    ANTI_RAID_RECENT_JOINS.pop(ctx.guild.id, None)
+    await ctx.send(
+        "✅ Le mode raid est arrêté. La détection automatique reste active.",
         ephemeral=True,
     )
 
