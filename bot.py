@@ -1,66 +1,3 @@
-def panel_filter_redirect():
-    return redirect(url_for(
-        "panel_orders",
-        tab=request.form.get("return_tab", "orders"),
-        service=request.form.get("return_service", ""),
-        amount=request.form.get("return_amount", ""),
-        region=request.form.get("return_region", ""),
-        pack=request.form.get("return_pack", "")
-    ))
-
-
-def panel_order_id(order):
-    try:
-        return int(order.get("id") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def panel_order_sort_key(order):
-    status = str(order.get("status") or "pending").lower()
-    delivered = status in ("done", "livre", "livré", "delivered")
-    order_id = panel_order_id(order)
-    return (1 if delivered else 0, -order_id if delivered else order_id)
-
-
-def panel_amount_label(order):
-    amount = order.get("amount")
-    try:
-        return f"{float(amount):g} €"
-    except (TypeError, ValueError):
-        return f"{amount} €" if amount not in (None, "") else "Montant inconnu"
-
-
-def panel_amount_sort_key(label):
-    match = re.search(r"\d+(?:[.,]\d+)?", str(label))
-    return float(match.group(0).replace(",", ".")) if match else 999999
-
-
-def panel_valorant_region(order):
-    service = str(order.get("service") or "")
-    if not service.lower().startswith("valorant"):
-        return ""
-    details = service[len("Valorant"):].strip()
-    for region in VALO_REGIONS.values():
-        label = region.get("label", "")
-        if label and details.lower().startswith(label.lower()):
-            return label
-    return details.split()[0] if details else "Région inconnue"
-
-
-def panel_valorant_pack(order):
-    received_label = str(order.get("received_label") or "").strip()
-    if received_label:
-        return received_label
-    service = str(order.get("service") or "")
-    match = re.search(r"(\d+\s*VP)", service, re.IGNORECASE)
-    if match:
-        number_match = re.search(r"\d+", match.group(1))
-        if number_match:
-            return f"{number_match.group(0)} VP"
-    return "Pack inconnu"
-
-
 import discord
 from discord.ext import commands
 from flask import Flask, request, session, redirect, url_for, render_template_string, flash
@@ -108,6 +45,8 @@ class PinkGiftBot(commands.Bot):
             OrderLauncherView(),
             ValoOrderLauncherView(),
             CPOrderLauncherView(),
+            OtherServicesView(),
+            SubscriptionsView(),
             CPPendingOrderView(),
             PendingOrderActionsView(),
             BalanceView(),
@@ -1260,6 +1199,7 @@ NEW_MEMBER_ROLE_ID = 1517580901356277921
 TICKET_CATEGORY_ID = 1519898899047776336
 VALO_TICKET_CATEGORY_ID = 1519913523440779404
 CP_TICKET_CATEGORY_ID = 1528115477501706300
+SPECIAL_TICKET_CATEGORY_ID = int(os.environ.get("SPECIAL_TICKET_CATEGORY_ID", "1528329867790123041"))
 BALANCE_CATEGORY_ID = int(os.environ.get("BALANCE_CATEGORY_ID", TICKET_CATEGORY_ID))
 CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
 EMBED_CONFIG_URL = os.environ.get("EMBED_CONFIG_URL", "https://raw.githubusercontent.com/ynnlz/pinky-software/main/config_embeds.json")
@@ -1314,6 +1254,35 @@ CP_PACKS = {
     "21000": {"points": 21000, "default_price": 70, "default_cost": 31, "official_price": 165.94},
     "30000": {"points": 30000, "default_price": 95, "default_cost": 42, "official_price": 234.95},
     "40800": {"points": 40800, "default_price": 125, "default_cost": 55, "official_price": 316.94},
+}
+OTHER_SERVICES = {
+    "BASIC_FIT": {
+        "label": "Basic-Fit",
+        "emoji": "🏋️",
+        "description": "Abonnement Basic-Fit",
+    },
+    "DISCORD_DECORATIONS": {
+        "label": "Décorations Discord",
+        "emoji": "🎨",
+        "description": "Décorations et cosmétiques Discord",
+    },
+}
+SUBSCRIPTION_SERVICES = {
+    "NETFLIX": {
+        "label": "Netflix",
+        "emoji": "🎬",
+        "description": "Abonnement Netflix",
+    },
+    "SPOTIFY": {
+        "label": "Spotify",
+        "emoji": "🎵",
+        "description": "Abonnement Spotify Premium",
+    },
+    "YOUTUBE_PREMIUM": {
+        "label": "YouTube Premium",
+        "emoji": "▶️",
+        "description": "Abonnement YouTube Premium",
+    },
 }
 VALO_REGIONS = {
     "EUROPE": {
@@ -2072,6 +2041,56 @@ DEFAULT_EMBED_DATA.update({
         ],
         "color_rgb": [46, 204, 113],
         "footer": "PinkGift — Livraison CP"
+    }
+})
+
+DEFAULT_EMBED_DATA.update({
+    "autres_embed": {
+        "title": "✨ AUTRES SERVICES — PINKGIFT",
+        "description": [
+            "Choisis le service qui t'intéresse dans le menu ci-dessous.",
+            "",
+            "🏋️ **Basic-Fit**",
+            "🎨 **Décorations Discord**",
+            "",
+            "Un ticket privé sera créé pour organiser ta demande avec le staff.",
+            "**Aucun solde ne sera débité à l'ouverture du ticket.**"
+        ],
+        "color_rgb": [255, 103, 174],
+        "footer": "PinkGift — Autres services"
+    },
+    "abonnements_embed": {
+        "title": "📺 ABONNEMENTS — PINKGIFT",
+        "description": [
+            "Choisis ton abonnement dans le menu ci-dessous.",
+            "",
+            "🎬 **Netflix**",
+            "🎵 **Spotify Premium**",
+            "▶️ **YouTube Premium**",
+            "",
+            "Un ticket privé sera créé pour préciser l'offre et la durée souhaitées.",
+            "**Aucun solde ne sera débité à l'ouverture du ticket.**"
+        ],
+        "color_rgb": [255, 103, 174],
+        "footer": "PinkGift — Abonnements"
+    },
+    "special_request_ticket_embed": {
+        "title": "🎫 Demande — {service}",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Ton ticket pour **{service}** est ouvert.",
+            "Indique au staff l'offre, la durée et les informations nécessaires à ta demande.",
+            "",
+            "**Aucun solde PinkGift n'a été débité.**"
+        ],
+        "fields": [
+            {"name": "Catégorie", "value": "{catalog}", "inline": True},
+            {"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": True}
+        ],
+        "color_rgb": [255, 192, 203],
+        "image_key": "ticket_cree",
+        "footer": "PinkGift — Demande sans débit"
     }
 })
 
@@ -3201,6 +3220,162 @@ class CPOrderLauncherView(discord.ui.View):
             content="Choisis ton pack. Il sera commandé au fournisseur après le débit du solde :",
             view=CPPackView(),
         )
+
+
+def special_service_catalog(catalog_key):
+    if catalog_key == "autres":
+        return "Autres services", OTHER_SERVICES
+    if catalog_key == "abonnements":
+        return "Abonnements", SUBSCRIPTION_SERVICES
+    return "", {}
+
+
+async def create_special_request_ticket(interaction, catalog_key, service_key):
+    guild = interaction.guild
+    user = interaction.user
+    catalog_label, services = special_service_catalog(catalog_key)
+    service = services.get(service_key)
+    if guild is None or service is None:
+        await interaction.followup.send("❌ Ce service est introuvable. Relance le menu.", ephemeral=True)
+        return
+
+    category = guild.get_channel(SPECIAL_TICKET_CATEGORY_ID)
+    if not isinstance(category, discord.CategoryChannel):
+        await interaction.followup.send(
+            "❌ La catégorie des tickets Autres et Abonnements est introuvable.",
+            ephemeral=True,
+        )
+        return
+
+    lock = ORDER_LOCKS.setdefault((guild.id, user.id, f"special:{catalog_key}"), asyncio.Lock())
+    async with lock:
+        topic = f"pinkgift-special:{catalog_key}:{user.id}"
+        ticket_channel = next(
+            (
+                channel for channel in category.text_channels
+                if channel.topic == topic and not channel.name.startswith("closed-")
+            ),
+            None,
+        )
+
+        if ticket_channel is None:
+            staff_role = guild.get_role(STAFF_ROLE_ID)
+            me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            }
+            if me:
+                overwrites[me] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                )
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                )
+            safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
+            prefix = "autres" if catalog_key == "autres" else "abonnement"
+            try:
+                ticket_channel = await guild.create_text_channel(
+                    name=f"🎫・{prefix}-{safe_user}"[:95],
+                    category=category,
+                    topic=topic,
+                    overwrites=overwrites,
+                    reason=f"Demande {catalog_label} de {user}",
+                )
+            except discord.HTTPException as error:
+                print(f"Erreur création ticket {catalog_key} pour {user}: {error}")
+                await interaction.followup.send(
+                    "⏳ Discord ne peut pas créer ce ticket actuellement. Réessaie dans quelques minutes.",
+                    ephemeral=True,
+                )
+                return
+
+        embed = build_json_embed("special_request_ticket_embed", {
+            "user": user.mention,
+            "catalog": catalog_label,
+            "service": service["label"],
+            "emoji": service["emoji"],
+        })
+        try:
+            await ticket_channel.send(
+                content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
+                embed=embed,
+                view=CloseTicketView(user.id),
+            )
+        except discord.HTTPException as error:
+            print(f"Erreur envoi demande {catalog_key} pour {user}: {error}")
+            await interaction.followup.send(
+                "❌ Le ticket existe mais le message de demande n'a pas pu être envoyé.",
+                ephemeral=True,
+            )
+            return
+
+    await interaction.followup.send(
+        f"✅ Ton ticket pour {service['emoji']} **{service['label']}** est ouvert : {ticket_channel.mention}\n"
+        "Aucun solde n'a été débité.",
+        ephemeral=True,
+    )
+
+
+class OtherServicesSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label=service["label"],
+                value=service_key,
+                emoji=service["emoji"],
+                description=service["description"],
+            )
+            for service_key, service in OTHER_SERVICES.items()
+        ]
+        super().__init__(
+            placeholder="Choisis un autre service",
+            custom_id="pinkgift_other_services_select",
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_special_request_ticket(interaction, "autres", self.values[0])
+
+
+class OtherServicesView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(OtherServicesSelect())
+
+
+class SubscriptionsSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label=service["label"],
+                value=service_key,
+                emoji=service["emoji"],
+                description=service["description"],
+            )
+            for service_key, service in SUBSCRIPTION_SERVICES.items()
+        ]
+        super().__init__(
+            placeholder="Choisis ton abonnement",
+            custom_id="pinkgift_subscriptions_select",
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await create_special_request_ticket(interaction, "abonnements", self.values[0])
+
+
+class SubscriptionsView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(SubscriptionsSelect())
 
 
 class UberEatsAmountSelect(discord.ui.Select):
@@ -4525,6 +4700,8 @@ def public_embed_builders():
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["CALL OF DUTY POINTS", "COD POINTS"], build_cp_embed, CPOrderLauncherView()),
+        (["AUTRES SERVICES"], lambda: build_json_embed("autres_embed"), OtherServicesView()),
+        (["ABONNEMENTS"], lambda: build_json_embed("abonnements_embed"), SubscriptionsView()),
         (["Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
@@ -4540,6 +4717,8 @@ async def repair_public_launcher_views():
         (("commandes pinkgift", "carte cadeaux"), OrderLauncherView),
         (("valorant", "valorant points"), ValoOrderLauncherView),
         (("call of duty points", "cod points"), CPOrderLauncherView),
+        (("autres services",), OtherServicesView),
+        (("abonnements",), SubscriptionsView),
     )
 
     for guild in bot.guilds:
@@ -4700,6 +4879,28 @@ async def cmd_valo(ctx):
 async def cmd_cp(ctx):
     embed = build_cp_embed()
     await ctx.send(content="||@everyone||", embed=embed, view=CPOrderLauncherView())
+
+
+@bot.hybrid_command(name="autres", description="Publier le panneau des autres services")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_autres(ctx):
+    await ctx.send(
+        content="||@everyone||",
+        embed=build_json_embed("autres_embed"),
+        view=OtherServicesView(),
+    )
+
+
+@bot.hybrid_command(name="abonnements", description="Publier le panneau des abonnements")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_abonnements(ctx):
+    await ctx.send(
+        content="||@everyone||",
+        embed=build_json_embed("abonnements_embed"),
+        view=SubscriptionsView(),
+    )
 
 @bot.hybrid_command(name="purge_all", description="Supprimer tous les messages du salon")
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -5023,6 +5224,69 @@ def panel_required(view):
             session["csrf"] = secrets.token_urlsafe(24)
         return view(*args, **kwargs)
     return wrapped
+
+
+def panel_filter_redirect():
+    return redirect(url_for(
+        "panel_orders",
+        tab=request.form.get("return_tab", "orders"),
+        service=request.form.get("return_service", ""),
+        amount=request.form.get("return_amount", ""),
+        region=request.form.get("return_region", ""),
+        pack=request.form.get("return_pack", "")
+    ))
+
+
+def panel_order_id(order):
+    try:
+        return int(order.get("id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def panel_order_sort_key(order):
+    status = str(order.get("status") or "pending").lower()
+    delivered = status in ("done", "livre", "livré", "delivered")
+    order_id = panel_order_id(order)
+    return (1 if delivered else 0, -order_id if delivered else order_id)
+
+
+def panel_amount_label(order):
+    amount = order.get("amount")
+    try:
+        return f"{float(amount):g} €"
+    except (TypeError, ValueError):
+        return f"{amount} €" if amount not in (None, "") else "Montant inconnu"
+
+
+def panel_amount_sort_key(label):
+    match = re.search(r"\d+(?:[.,]\d+)?", str(label))
+    return float(match.group(0).replace(",", ".")) if match else 999999
+
+
+def panel_valorant_region(order):
+    service = str(order.get("service") or "")
+    if not service.lower().startswith("valorant"):
+        return ""
+    details = service[len("Valorant"):].strip()
+    for region in VALO_REGIONS.values():
+        label = region.get("label", "")
+        if label and details.lower().startswith(label.lower()):
+            return label
+    return details.split()[0] if details else "Région inconnue"
+
+
+def panel_valorant_pack(order):
+    received_label = str(order.get("received_label") or "").strip()
+    if received_label:
+        return received_label
+    service = str(order.get("service") or "")
+    match = re.search(r"(\d+\s*VP)", service, re.IGNORECASE)
+    if match:
+        number_match = re.search(r"\d+", match.group(1))
+        if number_match:
+            return f"{number_match.group(0)} VP"
+    return "Pack inconnu"
 
 
 PANEL_TEMPLATE = """
