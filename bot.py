@@ -4736,10 +4736,46 @@ async def on_invite_delete(invite):
     RECENTLY_DELETED_INVITES.setdefault(guild.id, {})[invite.code] = data
 
 
+def ghost_ping_setting_key(guild_id):
+    return f"ghost_ping_channel:{int(guild_id)}"
+
+
+def get_ghost_ping_channel_id(guild_id):
+    data = get_panel_setting(ghost_ping_setting_key(guild_id), {})
+    try:
+        channel_id = int((data or {}).get("channel_id") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0
+    return channel_id if channel_id > 0 else 0
+
+
+async def send_member_join_ghost_ping(member):
+    channel_id = get_ghost_ping_channel_id(member.guild.id)
+    if not channel_id:
+        return
+    channel = member.guild.get_channel(channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        return
+    try:
+        await channel.send(
+            member.mention,
+            allowed_mentions=discord.AllowedMentions(
+                users=True,
+                roles=False,
+                everyone=False,
+                replied_user=False,
+            ),
+            delete_after=1,
+        )
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
+        print(f"Erreur ghost ping arrivée de {member} dans {channel_id}: {error}")
+
+
 @bot.event
 async def on_member_join(member):
     invite_data = await register_invited_member(member)
     await send_member_activity_log(member, joined=True, invite_data=invite_data)
+    await send_member_join_ghost_ping(member)
     schedule_server_counter_refresh(member.guild)
     role = member.guild.get_role(NEW_MEMBER_ROLE_ID)
     if role:
@@ -7416,6 +7452,46 @@ async def cmd_config_compteurs(ctx, avis_channel: discord.TextChannel):
     await ctx.send(
         f"✅ Le compteur des avis vérifiés utilise maintenant {avis_channel.mention}. "
         "Les salons statistiques seront actualisés dans quelques secondes.",
+        ephemeral=True,
+    )
+
+
+@bot.hybrid_command(name="ghostping", description="Configurer le ghost ping des nouveaux membres")
+@discord.app_commands.default_permissions(administrator=True)
+@discord.app_commands.describe(
+    salon="Salon dans lequel mentionner les nouveaux membres",
+    activer="Active ou désactive le ghost ping",
+)
+@commands.guild_only()
+@commands.has_permissions(administrator=True)
+async def cmd_ghostping(ctx, salon: discord.TextChannel = None, activer: bool = True):
+    setting_key = ghost_ping_setting_key(ctx.guild.id)
+    if not activer:
+        delete_panel_setting(setting_key)
+        await ctx.send("✅ Le ghost ping des nouveaux membres est désactivé.", ephemeral=True)
+        return
+    if salon is None:
+        await ctx.send(
+            "❌ Choisis un salon avec `/ghostping salon:#ton-salon activer:Oui`.",
+            ephemeral=True,
+        )
+        return
+    bot_member = ctx.guild.me
+    permissions = salon.permissions_for(bot_member) if bot_member else None
+    if permissions is None or not permissions.view_channel or not permissions.send_messages:
+        await ctx.send(
+            "❌ Le bot doit pouvoir voir ce salon et y envoyer des messages.",
+            ephemeral=True,
+        )
+        return
+    set_panel_setting(setting_key, {
+        "channel_id": salon.id,
+        "updated_by": ctx.author.id,
+        "updated_at": utc_now().isoformat(),
+    })
+    await ctx.send(
+        f"✅ Chaque nouveau membre sera ghost ping dans {salon.mention}. "
+        "La mention sera supprimée automatiquement après une seconde.",
         ephemeral=True,
     )
 
