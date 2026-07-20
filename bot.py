@@ -46,7 +46,6 @@ class PinkGiftBot(commands.Bot):
             ValoOrderLauncherView(),
             CPOrderLauncherView(),
             OtherServicesView(),
-            SubscriptionsView(),
             CPPendingOrderView(),
             PendingOrderActionsView(),
             BalanceView(),
@@ -2046,33 +2045,24 @@ DEFAULT_EMBED_DATA.update({
 
 DEFAULT_EMBED_DATA.update({
     "autres_embed": {
-        "title": "✨ AUTRES SERVICES — PINKGIFT",
+        "title": "✨ AUTRES SERVICES & ABONNEMENTS — PINKGIFT",
         "description": [
-            "Choisis le service qui t'intéresse dans le menu ci-dessous.",
+            "Choisis ce qui t'intéresse dans le menu ci-dessous.",
             "",
+            "**✨ Autres services**",
             "🏋️ **Basic-Fit**",
             "🎨 **Décorations Discord**",
+            "",
+            "**📺 Abonnements**",
+            "🎬 **Netflix**",
+            "🎵 **Spotify Premium**",
+            "▶️ **YouTube Premium**",
             "",
             "Un ticket privé sera créé pour organiser ta demande avec le staff.",
             "**Aucun solde ne sera débité à l'ouverture du ticket.**"
         ],
         "color_rgb": [255, 103, 174],
-        "footer": "PinkGift — Autres services"
-    },
-    "abonnements_embed": {
-        "title": "📺 ABONNEMENTS — PINKGIFT",
-        "description": [
-            "Choisis ton abonnement dans le menu ci-dessous.",
-            "",
-            "🎬 **Netflix**",
-            "🎵 **Spotify Premium**",
-            "▶️ **YouTube Premium**",
-            "",
-            "Un ticket privé sera créé pour préciser l'offre et la durée souhaitées.",
-            "**Aucun solde ne sera débité à l'ouverture du ticket.**"
-        ],
-        "color_rgb": [255, 103, 174],
-        "footer": "PinkGift — Abonnements"
+        "footer": "PinkGift — Services & abonnements"
     },
     "special_request_ticket_embed": {
         "title": "🎫 Demande — {service}",
@@ -3324,58 +3314,39 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
 
 class OtherServicesSelect(discord.ui.Select):
     def __init__(self):
+        catalog_services = (
+            ("autres", service_key, service)
+            for service_key, service in OTHER_SERVICES.items()
+        )
+        subscription_services = (
+            ("abonnements", service_key, service)
+            for service_key, service in SUBSCRIPTION_SERVICES.items()
+        )
         options = [
             discord.SelectOption(
                 label=service["label"],
-                value=service_key,
+                value=f"{catalog_key}:{service_key}",
                 emoji=service["emoji"],
                 description=service["description"],
             )
-            for service_key, service in OTHER_SERVICES.items()
+            for catalog_key, service_key, service in (*catalog_services, *subscription_services)
         ]
         super().__init__(
-            placeholder="Choisis un autre service",
+            placeholder="Choisis un service ou un abonnement",
             custom_id="pinkgift_other_services_select",
             options=options,
         )
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await create_special_request_ticket(interaction, "autres", self.values[0])
+        catalog_key, service_key = self.values[0].split(":", 1)
+        await create_special_request_ticket(interaction, catalog_key, service_key)
 
 
 class OtherServicesView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(OtherServicesSelect())
-
-
-class SubscriptionsSelect(discord.ui.Select):
-    def __init__(self):
-        options = [
-            discord.SelectOption(
-                label=service["label"],
-                value=service_key,
-                emoji=service["emoji"],
-                description=service["description"],
-            )
-            for service_key, service in SUBSCRIPTION_SERVICES.items()
-        ]
-        super().__init__(
-            placeholder="Choisis ton abonnement",
-            custom_id="pinkgift_subscriptions_select",
-            options=options,
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        await create_special_request_ticket(interaction, "abonnements", self.values[0])
-
-
-class SubscriptionsView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(SubscriptionsSelect())
 
 
 class UberEatsAmountSelect(discord.ui.Select):
@@ -4700,8 +4671,7 @@ def public_embed_builders():
         (["COMMANDES PINKGIFT", "CARTE CADEAUX"], build_tarifs_embed, OrderLauncherView()),
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["CALL OF DUTY POINTS", "COD POINTS"], build_cp_embed, CPOrderLauncherView()),
-        (["AUTRES SERVICES"], lambda: build_json_embed("autres_embed"), OtherServicesView()),
-        (["ABONNEMENTS"], lambda: build_json_embed("abonnements_embed"), SubscriptionsView()),
+        (["AUTRES SERVICES", "ABONNEMENTS"], lambda: build_json_embed("autres_embed"), OtherServicesView()),
         (["Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
@@ -4717,8 +4687,7 @@ async def repair_public_launcher_views():
         (("commandes pinkgift", "carte cadeaux"), OrderLauncherView),
         (("valorant", "valorant points"), ValoOrderLauncherView),
         (("call of duty points", "cod points"), CPOrderLauncherView),
-        (("autres services",), OtherServicesView),
-        (("abonnements",), SubscriptionsView),
+        (("autres services", "abonnements"), OtherServicesView),
     )
 
     for guild in bot.guilds:
@@ -4891,16 +4860,6 @@ async def cmd_autres(ctx):
         view=OtherServicesView(),
     )
 
-
-@bot.hybrid_command(name="abonnements", description="Publier le panneau des abonnements")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_abonnements(ctx):
-    await ctx.send(
-        content="||@everyone||",
-        embed=build_json_embed("abonnements_embed"),
-        view=SubscriptionsView(),
-    )
 
 @bot.hybrid_command(name="purge_all", description="Supprimer tous les messages du salon")
 @discord.app_commands.default_permissions(manage_messages=True)
