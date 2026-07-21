@@ -5349,6 +5349,7 @@ async def repair_public_launcher_views():
         (("valorant", "valorant points"), build_valo_embed, ValoOrderLauncherView),
         (("call of duty points", "cod points"), build_cp_embed, CPOrderLauncherView),
         (("autres services", "abonnements"), lambda: build_json_embed("autres_embed"), OtherServicesView),
+        (("solde & paiements", "solde pinkgift", "pinkwallet", "pinkcoins"), lambda: build_json_embed("balance_embed"), BalanceView),
     )
 
     for guild in bot.guilds:
