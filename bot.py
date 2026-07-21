@@ -169,7 +169,7 @@ def change_balance(guild_id, user_id, delta, staff_id):
         row = db.execute("SELECT cents FROM balances WHERE guild_id=? AND user_id=?", (guild_id, user_id)).fetchone()
         current = row["cents"] if row else 0
         updated = current + delta_cents
-        if updated < 0: raise ValueError("Solde insuffisant")
+        if updated < 0: raise ValueError("PinkCoins insuffisants")
         db.execute("INSERT INTO balances(guild_id,user_id,cents) VALUES(?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET cents=excluded.cents", (guild_id, user_id, updated))
         db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
         return updated / 100
@@ -992,8 +992,8 @@ async def send_referral_tracking_notification(guild, user, staff, lot, new_balan
         timestamp=datetime.datetime.now(datetime.timezone.utc),
     )
     embed.add_field(name="Client", value=f"{user.mention} (`{user.id}`)", inline=False)
-    embed.add_field(name="Montant ajouté", value=f"**{float(lot.get('credited') or 0):.2f} €**", inline=True)
-    embed.add_field(name="Nouveau solde", value=f"**{float(new_balance):.2f} €**", inline=True)
+    embed.add_field(name="PinkCoins crédités", value=f"**{format_pinkcoins(float(lot.get('credited') or 0))}**", inline=True)
+    embed.add_field(name="PinkWallet", value=f"**{format_pinkcoins(new_balance)}**", inline=True)
     embed.add_field(name="Code", value=f"**{lot.get('code') or 'Inconnu'}**", inline=True)
     embed.add_field(name="Parrain", value=sponsor_label, inline=True)
     embed.add_field(name="Commission", value=f"**{valid_referral_percentage(lot.get('percentage'), 0):g} %** du bénéfice", inline=True)
@@ -1178,7 +1178,7 @@ async def mark_balance_ticket_credited(guild, user_id: int):
         topic = channel.topic or ""
         if topic.startswith(expected_prefix) and not channel.name.startswith("closed-") and not topic.endswith(":credited"):
             try:
-                await channel.edit(topic=f"{expected_prefix}:credited", reason="Solde ajoute au client")
+                await channel.edit(topic=f"{expected_prefix}:credited", reason="PinkCoins crédités au client")
             except discord.HTTPException as error:
                 print(f"Erreur marquage ticket solde credite pour {user_id}: {error}")
 
@@ -1424,6 +1424,28 @@ def get_pricing_config():
 
 def format_price(value):
     return f"{float(value):g}"
+
+
+PINKCOINS_PER_EURO = 100
+
+
+def euros_to_pinkcoins(value):
+    """Convertit un montant interne en euros vers l'affichage PinkCoins."""
+    return int(round(float(value) * PINKCOINS_PER_EURO))
+
+
+def pinkcoins_to_euros(value):
+    """Convertit un montant saisi en PinkCoins vers le stockage historique en euros."""
+    return round(float(value) / PINKCOINS_PER_EURO, 2)
+
+
+def format_pinkcoins(value, short=False):
+    amount = f"{euros_to_pinkcoins(value):,}".replace(",", " ")
+    return f"{amount} {'PC' if short else 'PinkCoins'}"
+
+
+def pinkcoin_number(value):
+    return f"{euros_to_pinkcoins(value):,}".replace(",", " ")
 
 
 def valid_purchase_cost(value, fallback=0):
@@ -2215,6 +2237,7 @@ def normalize_embed_configuration(data):
         if isinstance(value, str):
             for old_emoji, new_emoji in legacy_emojis.items():
                 value = value.replace(old_emoji, new_emoji)
+            value = re.sub(r"\bsoldes?\b", "PinkWallet", value, flags=re.IGNORECASE)
             return value
         if isinstance(value, list):
             return [migrate_value(item) for item in value]
@@ -2223,6 +2246,39 @@ def normalize_embed_configuration(data):
         return value
 
     data = migrate_value(data)
+
+    # Les anciens embeds sauvegardés dans le panel restent compatibles, mais leur
+    # vocabulaire et leurs unités sont automatiquement migrés vers PinkCoins.
+    pinkcoin_embed_keys = {
+        "menu_ticket_embed", "uber_eats_ticket_embed", "nitro_ticket_embed", "commande_embed",
+        "commande_vp_embed", "cp_order_pending_embed", "cp_delivery_embed",
+        "balance_ticket_embed",
+    }
+    for embed_key in pinkcoin_embed_keys:
+        embed_data = data.get(embed_key)
+        if not isinstance(embed_data, dict):
+            continue
+        embed_data = migrate_value(embed_data)
+        def migrate_pinkcoin_units(value):
+            if isinstance(value, str):
+                value = value.replace("{paid} €", "{paid} PC")
+                value = value.replace("{paid}€", "{paid} PC")
+                value = value.replace("{balance} €", "{balance} PC")
+                value = value.replace("{amount}€", "{amount} PC")
+                return value
+            if isinstance(value, list):
+                return [migrate_pinkcoin_units(item) for item in value]
+            if isinstance(value, dict):
+                return {key: migrate_pinkcoin_units(item) for key, item in value.items()}
+            return value
+        data[embed_key] = migrate_pinkcoin_units(embed_data)
+
+    tarifs_data = data.get("tarifs_embed")
+    if isinstance(tarifs_data, dict):
+        tarifs_data["title"] = "🎟️ PINKSHOP — COMMANDES"
+        tarifs_data["gift_card_line_template"] = "**{amount} € reçus** → **{price} PC**"
+        tarifs_data["uber_eats_line_template"] = "**{drop} € estimés** → **{price} PC**"
+        tarifs_data["nitro_value_template"] = "**{price} PC**"
 
     emoji_catalog = data.get("emojis", {}) if isinstance(data.get("emojis"), dict) else {}
     # Ces identifiants sont la source officielle PinkGift : ils remplacent aussi
@@ -2287,8 +2343,11 @@ def normalize_embed_configuration(data):
     if isinstance(valo, dict):
         valo.setdefault("region_emojis", {"EUROPE": "🇪🇺", "TURQUIE": "🇹🇷"})
         template = str(valo.get("pack_line_template") or "")
+        template = re.sub(r"\{price\}\s*€", "{price} PC", template)
         if "{official}" not in template:
             valo["pack_line_template"] = f"{template} · origine ≈ ~~{{official}} €~~".strip()
+        else:
+            valo["pack_line_template"] = template
         description = valo.get("description")
         if isinstance(description, list):
             cleaned = []
@@ -2306,6 +2365,24 @@ def normalize_embed_configuration(data):
             while cleaned and not cleaned[-1]:
                 cleaned.pop()
             valo["description"] = cleaned
+
+    wallet_embed = data.get("balance_embed")
+    if isinstance(wallet_embed, dict):
+        wallet_embed["title"] = "<:cash:1525568414117134528> PinkWallet & PinkCoins"
+        description = wallet_embed.get("description")
+        if isinstance(description, list) and not any("100 PinkCoins" in str(line) for line in description):
+            insert_at = 1 if description else 0
+            description[insert_at:insert_at] = ["", "> 1 € = 100 PinkCoins", "> Minimum : 2 000 PinkCoins (20 €)"]
+        elif isinstance(description, str) and "100 PinkCoins" not in description:
+            wallet_embed["description"] = description + "\n\n> 1 € = 100 PinkCoins\n> Minimum : 2 000 PinkCoins (20 €)"
+
+    wallet_ticket = data.get("balance_ticket_embed")
+    if isinstance(wallet_ticket, dict):
+        description = wallet_ticket.get("description")
+        if isinstance(description, list) and not any("100 PinkCoins" in str(line) for line in description):
+            description.append("Chaque euro déposé est converti en **100 PinkCoins**.")
+        elif isinstance(description, str) and "100 PinkCoins" not in description:
+            wallet_ticket["description"] = description + "\nChaque euro déposé est converti en **100 PinkCoins**."
     return data
 
 
@@ -2860,7 +2937,7 @@ async def create_product_ticket(interaction, product_key, amount):
             received_display = f"{amount} €"
         current_balance = get_balance(guild.id, user.id)
         if current_balance < paid_amount:
-            await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{paid_amount:g} €**, ton solde est de **{current_balance:.2f} €**. Utilise le panneau !solde pour le recharger.", ephemeral=True)
+            await interaction.followup.send(f"❌ PinkCoins insuffisants. Il faut **{format_pinkcoins(paid_amount)}**, ton PinkWallet contient **{format_pinkcoins(current_balance)}**. Utilise le panneau `/pinkcoins` pour le recharger.", ephemeral=True)
             return
         try:
             ticket_channel = await create_private_order_thread(
@@ -2879,12 +2956,12 @@ async def create_product_ticket(interaction, product_key, amount):
         try:
             remaining_balance = change_balance(guild.id, user.id, -paid_amount, bot.user.id if bot.user else 0)
         except Exception as error:
-            print(f"Erreur débit solde de {user}: {error}")
+            print(f"Erreur débit PinkCoins de {user}: {error}")
             try:
-                await ticket_channel.delete(reason="Débit du solde impossible")
+                await ticket_channel.delete(reason="Débit des PinkCoins impossible")
             except discord.HTTPException:
                 pass
-            await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
+            await interaction.followup.send("❌ Le débit des PinkCoins a échoué. Aucun PinkCoin n'a été retiré.", ephemeral=True)
             return
         if product_key == "UBEREATS":
             embed_key = "uber_eats_ticket_embed"
@@ -2894,7 +2971,7 @@ async def create_product_ticket(interaction, product_key, amount):
             embed_key = "menu_ticket_embed"
         embed = build_json_embed(embed_key, {
             "user": user.mention, "service": cfg["display"], "emoji": get_product_emoji(product_key),
-            "amount": amount, "paid": f"{paid_amount:g}", "drop": received_display, "balance": f"{remaining_balance:.2f}"
+            "amount": amount, "paid": pinkcoin_number(paid_amount), "drop": received_display, "balance": pinkcoin_number(remaining_balance)
         })
         try:
             order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
@@ -2920,7 +2997,7 @@ async def create_product_ticket(interaction, product_key, amount):
             record_referral_purchase(guild.id, user.id, order_message.id, paid_amount, purchase_cost, cfg["display"])
         except Exception as error:
             print(f"Erreur calcul parrainage commande de {user}: {error}")
-        await interaction.followup.send(f"✅ Commande ajoutée dans ton fil privé {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+        await interaction.followup.send(f"✅ Commande ajoutée dans ton fil privé {ticket_channel.mention}. Ton PinkWallet contient maintenant **{format_pinkcoins(remaining_balance)}**.", ephemeral=True)
 def default_stock_config():
     return {
         "products": {key: True for key in PRODUCT_CONFIG if key != "VALORANT"},
@@ -3021,7 +3098,7 @@ async def create_valo_order(interaction, region_key, pack_key):
         purchase_cost = get_purchase_cost_config()["valorant"][region_key][pack_key]
         current_balance = get_balance(guild.id, user.id)
         if current_balance < price:
-            await interaction.followup.send(f"❌ Solde insuffisant. Il faut **{format_price(price)} €**, ton solde est de **{current_balance:.2f} €**.", ephemeral=True)
+            await interaction.followup.send(f"❌ PinkCoins insuffisants. Il faut **{format_pinkcoins(price)}**, ton PinkWallet contient **{format_pinkcoins(current_balance)}**.", ephemeral=True)
             return
         try:
             ticket_channel = await create_private_order_thread(
@@ -3039,16 +3116,16 @@ async def create_valo_order(interaction, region_key, pack_key):
         except Exception as error:
             print(f"Erreur débit Valorant de {user}: {error}")
             try:
-                await ticket_channel.delete(reason="Débit du solde Valorant impossible")
+                await ticket_channel.delete(reason="Débit des PinkCoins Valorant impossible")
             except discord.HTTPException:
                 pass
-            await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
+            await interaction.followup.send("❌ Le débit des PinkCoins a échoué. Aucun PinkCoin n'a été retiré.", ephemeral=True)
             return
         code_pending = (chr(96) * 3) + "\nEn attente...\n" + (chr(96) * 3)
         embed = build_json_embed("commande_vp_embed", {
             "emoji": get_product_emoji("VALORANT"), "user": user.mention,
-            "region": f"{region_emoji} {region_label}", "pack": pack, "amount": price,
-            "code": code_pending, "balance": f"{remaining_balance:.2f}"
+            "region": f"{region_emoji} {region_label}", "pack": pack, "amount": pinkcoin_number(price),
+            "code": code_pending, "balance": pinkcoin_number(remaining_balance)
         })
         try:
             order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
@@ -3073,7 +3150,7 @@ async def create_valo_order(interaction, region_key, pack_key):
             record_referral_purchase(guild.id, user.id, order_message.id, price, purchase_cost, f"Valorant {region_label} {pack}")
         except Exception as error:
             print(f"Erreur calcul parrainage Valorant de {user}: {error}")
-        await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans ton fil privé {ticket_channel.mention}. Nouveau solde : **{remaining_balance:.2f} €**.", ephemeral=True)
+        await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans ton fil privé {ticket_channel.mention}. Ton PinkWallet contient maintenant **{format_pinkcoins(remaining_balance)}**.", ephemeral=True)
 
 
 class ValoRegionSelect(discord.ui.Select):
@@ -3116,7 +3193,7 @@ class ValoPackSelect(discord.ui.Select):
         options = []
         for pack_key, pack in packs.items():
             available = region_stock.get(pack_key, True)
-            options.append(discord.SelectOption(label=f"{pack['label']} — {format_price(prices[pack_key])} €", value=pack_key, emoji=stock_partial_emoji(available), description=stock_label(available)))
+            options.append(discord.SelectOption(label=f"{pack['label']} — {format_pinkcoins(prices[pack_key], short=True)}", value=pack_key, emoji=stock_partial_emoji(available), description=stock_label(available)))
         super().__init__(placeholder="Choisis ton pack Valorant Points", options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -3145,7 +3222,7 @@ class ValoOrderLauncherView(discord.ui.View):
 
 
 async def create_cp_manual_ticket(interaction):
-    """Ouvre une demande CP manuelle sans lire ni modifier le solde du client."""
+    """Ouvre une demande CP manuelle sans lire ni modifier le PinkWallet du client."""
     guild = interaction.guild
     user = interaction.user
     if guild is None:
@@ -3196,7 +3273,7 @@ async def create_cp_manual_ticket(interaction):
 
     await interaction.followup.send(
         f"✅ Ton ticket CP est ouvert : {ticket_channel.mention}\n"
-        "Indique le nombre de CP souhaité et combien tu proposes de payer. **Aucun solde n'a été débité.**",
+        "Indique le nombre de CP souhaité et combien tu proposes de payer. **Aucun PinkCoin n'a été débité.**",
         ephemeral=True,
     )
 
@@ -3219,7 +3296,7 @@ async def create_cp_order(interaction, pack_key):
         current_balance = get_balance(guild.id, user.id)
         if current_balance < price:
             await interaction.followup.send(
-                f"❌ Solde insuffisant. Il faut **{format_price(price)} €**, ton solde est de **{current_balance:.2f} €**. Recharge-le avec `/solde`.",
+                f"❌ PinkCoins insuffisants. Il faut **{format_pinkcoins(price)}**, ton PinkWallet contient **{format_pinkcoins(current_balance)}**. Recharge-le avec `/pinkcoins`.",
                 ephemeral=True,
             )
             return
@@ -3264,14 +3341,14 @@ async def create_cp_order(interaction, pack_key):
             remaining_balance = change_balance(guild.id, user.id, -price, bot.user.id if bot.user else 0)
         except Exception as error:
             print(f"Erreur débit CP de {user}: {error}")
-            await interaction.followup.send("❌ Le débit du solde a échoué. Aucun montant n'a été retiré.", ephemeral=True)
+            await interaction.followup.send("❌ Le débit des PinkCoins a échoué. Aucun PinkCoin n'a été retiré.", ephemeral=True)
             return
 
         embed = build_json_embed("cp_order_pending_embed", {
             "user": user.mention,
             "points": f"{pack['points']:,}".replace(",", " "),
-            "paid": format_price(price),
-            "balance": f"{remaining_balance:.2f}",
+            "paid": pinkcoin_number(price),
+            "balance": pinkcoin_number(remaining_balance),
         })
         try:
             order_message = await ticket_channel.send(
@@ -3325,7 +3402,7 @@ async def create_cp_order(interaction, pack_key):
         except Exception as error:
             print(f"Erreur calcul parrainage CP de {user}: {error}")
         await interaction.followup.send(
-            f"✅ Commande de **{pack['points']:,} CP** enregistrée dans {ticket_channel.mention}. Le code sera livré dès sa réception. Nouveau solde : **{remaining_balance:.2f} €**.".replace(",", " "),
+            f"✅ Commande de **{pack['points']:,} CP** enregistrée dans {ticket_channel.mention}. Le code sera livré dès sa réception. PinkWallet : **{format_pinkcoins(remaining_balance)}**.".replace(",", " "),
             ephemeral=True,
         )
 
@@ -3353,8 +3430,8 @@ async def deliver_cp_order_to_discord(order, code):
     embed = build_json_embed("cp_delivery_embed", {
         "user": f"<@{int(order['user_id'])}>",
         "points": str(order.get("received_label") or order.get("amount") or "COD Points").replace(" CP", ""),
-        "paid": format_price(order.get("paid") or 0),
-        "balance": f"{balance:.2f}",
+        "paid": pinkcoin_number(order.get("paid") or 0),
+        "balance": pinkcoin_number(balance),
         "code": f"```\n{displayed_code}\n```",
     })
     await message.edit(
@@ -3374,8 +3451,8 @@ async def show_order_refund_on_discord(order, new_balance):
         title="↩️ Commande annulée et remboursée",
         description=(
             f"<@{int(order['user_id'])}>, la commande **{order.get('service') or 'PinkGift'}** a été annulée et "
-            f"**{format_price(order.get('paid') or 0)} €** ont été recrédités.\n"
-            f"Nouveau solde : **{new_balance:.2f} €**."
+            f"**{format_pinkcoins(order.get('paid') or 0)}** ont été recrédités.\n"
+            f"Ton PinkWallet contient maintenant **{format_pinkcoins(new_balance)}**."
         ),
         color=discord.Color.red(),
     )
@@ -3676,7 +3753,7 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
 
     await interaction.followup.send(
         f"✅ Ton ticket pour {service['emoji']} **{service['label']}** est ouvert : {ticket_channel.mention}\n"
-        "Aucun solde n'a été débité.",
+        "Aucun PinkCoin n'a été débité.",
         ephemeral=True,
     )
 
@@ -3723,7 +3800,7 @@ class UberEatsAmountSelect(discord.ui.Select):
         available = product_is_available("UBEREATS")
         prices = get_pricing_config()["uber_eats"]
         options = [
-            discord.SelectOption(label=f"{format_price(prices[pack_key])} € → {pack['drop']} € estimés", value=pack_key, emoji=stock_partial_emoji(available), description=stock_label(available))
+            discord.SelectOption(label=f"{format_pinkcoins(prices[pack_key], short=True)} → {pack['drop']} € estimés", value=pack_key, emoji=stock_partial_emoji(available), description=stock_label(available))
             for pack_key, pack in UBEREATS_PACKS.items()
         ]
         super().__init__(placeholder="Choisis ton pack Uber Eats", options=options)
@@ -3742,10 +3819,10 @@ class UberEatsAmountView(discord.ui.View):
 class NitroOrderView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
-        self.children[0].label = f"Commander Discord Nitro — {format_price(get_pricing_config()['discord_nitro'])} €"
+        self.children[0].label = f"Commander Discord Nitro — {format_pinkcoins(get_pricing_config()['discord_nitro'], short=True)}"
 
     @discord.ui.button(
-        label="Commander Discord Nitro — 8 €",
+        label="Commander Discord Nitro",
         emoji="💎",
         style=discord.ButtonStyle.success
     )
@@ -3760,7 +3837,7 @@ class ProductAmountSelect(discord.ui.Select):
         available = product_is_available(product_key)
         prices = get_pricing_config()["gift_cards"]
         options = [
-            discord.SelectOption(label=f"Carte cadeau {amount} € → {format_price(prices[str(amount)])} € débités", value=str(amount), emoji=stock_partial_emoji(available), description=stock_label(available))
+            discord.SelectOption(label=f"Carte {amount} € → {format_pinkcoins(prices[str(amount)], short=True)}", value=str(amount), emoji=stock_partial_emoji(available), description=stock_label(available))
             for amount in GIFT_CARD_AMOUNTS
         ]
         super().__init__(placeholder="Choisis le montant de la carte", options=options)
@@ -3932,15 +4009,15 @@ async def create_balance_recharge_ticket(interaction, referral=None):
         overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
     try:
         channel = await guild.create_text_channel(
-            name=f"solde-{user.name}"[:95],
+            name=f"pinkwallet-{user.name}"[:95],
             category=category,
             topic=f"pinkgift-balance:{user.id}:pending",
             overwrites=overwrites,
-            reason=f"Recharge solde de {user}",
+            reason=f"Recharge PinkWallet de {user}",
         )
         if referral:
             save_balance_ticket_referral(channel, user.id, referral)
-        embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": f"{get_balance(guild.id, user.id):.2f}"})
+        embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": pinkcoin_number(get_balance(guild.id, user.id))})
         opening_message = await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
         await pin_first_bot_ticket_message(channel, opening_message)
         await interaction.followup.send(f"✅ Ticket de recharge créé : {channel.mention}", ephemeral=True)
@@ -4002,12 +4079,12 @@ class BalanceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Voir mon solde", emoji="💰", style=discord.ButtonStyle.secondary, custom_id="pinkgift_view_balance")
+    @discord.ui.button(label="Voir mes PinkCoins", emoji="💰", style=discord.ButtonStyle.secondary, custom_id="pinkgift_view_balance")
     async def view_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         balance = get_balance(interaction.guild.id, interaction.user.id)
-        await interaction.response.send_message(f"💰 Ton solde PinkGift est de **{balance:.2f} €**.", ephemeral=True)
+        await interaction.response.send_message(f"💰 Ton PinkWallet contient **{format_pinkcoins(balance)}**.", ephemeral=True)
 
-    @discord.ui.button(label="Recharger mon solde", emoji="➕", style=discord.ButtonStyle.success, custom_id="pinkgift_recharge_balance")
+    @discord.ui.button(label="Recharger mon PinkWallet", emoji="➕", style=discord.ButtonStyle.success, custom_id="pinkgift_recharge_balance")
     async def recharge_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         existing = find_balance_ticket(interaction.guild, interaction.user.id)
         if existing:
@@ -4052,8 +4129,8 @@ class CloseTicketView(discord.ui.View):
                 except Exception as error:
                     print(f"Erreur verification credit ticket solde {channel.id}: {error}")
             if not credited:
-                await interaction.response.send_message("🗑️ Ticket de recharge ferme sans ajout de solde : suppression du salon.", ephemeral=True)
-                await channel.delete(reason=f"Ticket solde sans ajout ferme par {interaction.user}")
+                await interaction.response.send_message("🗑️ Ticket fermé sans recharge du PinkWallet : suppression du salon.", ephemeral=True)
+                await channel.delete(reason=f"Ticket PinkWallet sans recharge fermé par {interaction.user}")
                 return
 
         closed_category = guild.get_channel(CLOSED_TICKET_CATEGORY_ID) if guild else None
@@ -5111,13 +5188,13 @@ def build_tarifs_embed():
     if not bool(texts.get("show_dynamic_fields", False)):
         return embed
     prices = get_pricing_config()
-    gift_template = texts.get("gift_card_line_template", "**{amount} € reçus** → {price} € débités")
-    uber_template = texts.get("uber_eats_line_template", "**{drop} € estimés** → {price} € débités")
-    nitro_template = texts.get("nitro_value_template", "**{price} €** débités")
+    gift_template = texts.get("gift_card_line_template", "**{amount} € reçus** → **{price} PC**")
+    uber_template = texts.get("uber_eats_line_template", "**{drop} € estimés** → **{price} PC**")
+    nitro_template = texts.get("nitro_value_template", "**{price} PC**")
     gift_lines = [
         format_embed_text(gift_template, {
             "amount": amount,
-            "price": format_price(prices["gift_cards"][str(amount)]),
+            "price": pinkcoin_number(prices["gift_cards"][str(amount)]),
         })
         for amount in GIFT_CARD_AMOUNTS
     ]
@@ -5125,7 +5202,7 @@ def build_tarifs_embed():
         format_embed_text(uber_template, {
             "pack_key": pack_key,
             "drop": pack["drop"],
-            "price": format_price(prices["uber_eats"][pack_key]),
+            "price": pinkcoin_number(prices["uber_eats"][pack_key]),
         })
         for pack_key, pack in UBEREATS_PACKS.items()
     ]
@@ -5142,7 +5219,7 @@ def build_tarifs_embed():
     )
     embed.add_field(
         name=texts.get("nitro_field_name", "💎 Discord Nitro"),
-        value=format_embed_text(nitro_template, {"price": format_price(prices["discord_nitro"])}),
+        value=format_embed_text(nitro_template, {"price": pinkcoin_number(prices["discord_nitro"])}),
         inline=dynamic_inline,
     )
     return embed
@@ -5168,7 +5245,7 @@ def build_valo_embed():
     field_name_template = texts.get("region_field_name_template", "{emoji} {region}")
     pack_line_template = texts.get(
         "pack_line_template",
-        "<:vp:1519915966476320901> **{pack}** — **{price} €** · origine ≈ ~~{official} €~~",
+        "<:vp:1519915966476320901> **{pack}** — **{price} PC** · origine ≈ ~~{official} €~~",
     )
     region_emojis = texts.get("region_emojis", {}) if isinstance(texts.get("region_emojis"), dict) else {}
     dynamic_inline = bool(texts.get("dynamic_fields_inline", False))
@@ -5180,7 +5257,7 @@ def build_valo_embed():
                 "emoji": region_emojis.get(region_key, region["emoji"]),
                 "pack_key": pack_key,
                 "pack": pack["label"],
-                "price": format_price(prices[region_key][pack_key]),
+                "price": pinkcoin_number(prices[region_key][pack_key]),
                 "official": format_price(pricing["valorant_original"][region_key][pack_key]),
             })
             for pack_key, pack in region["packs"].items()
@@ -5256,7 +5333,7 @@ def public_embed_builders():
         (["VALORANT", "VALORANT POINTS"], build_valo_embed, ValoOrderLauncherView()),
         (["CALL OF DUTY POINTS", "COD POINTS"], build_cp_embed, CPOrderLauncherView()),
         (["AUTRES SERVICES", "ABONNEMENTS"], lambda: build_json_embed("autres_embed"), OtherServicesView()),
-        (["Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
+        (["PinkWallet", "PinkCoins", "Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
         (["FAQ PinkGift", "FAQ"], lambda: build_json_embed("faq_embed"), None),
@@ -5411,7 +5488,7 @@ async def cmd_close_button(ctx):
     embed = build_json_embed("close_ticket_embed")
     await ctx.send(embed=embed, view=CloseTicketView())
 
-@bot.hybrid_command(name="tarifs", description="Publier le panneau des tarifs et des commandes")
+@bot.hybrid_command(name="tarifs", description="Publier le PinkShop et ses commandes")
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def send_tarifs(ctx):
@@ -5623,54 +5700,97 @@ async def cmd_reset_invitations(ctx, member: discord.Member = None, confirmation
     )
 
 
-@bot.hybrid_command(name="solde", description="Publier le panneau de consultation et recharge du solde")
-@discord.app_commands.default_permissions(manage_messages=True)
-@commands.has_role(STAFF_ROLE_ID)
-async def cmd_solde(ctx):
+async def publish_pinkwallet_panel(ctx):
     await ctx.send(embed=build_json_embed("balance_embed"), view=BalanceView())
 
 
-@bot.hybrid_command(name="ajouter_solde", description="Ajouter un montant au solde d'un client")
+@bot.hybrid_command(name="pinkcoins", description="Publier le panneau PinkWallet et PinkCoins")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_pinkcoins(ctx):
+    await publish_pinkwallet_panel(ctx)
+
+
+@bot.hybrid_command(name="solde", description="Ancien alias du panneau PinkWallet")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_solde(ctx):
+    await publish_pinkwallet_panel(ctx)
+
+
+async def add_pinkcoins_from_euros(ctx, member, montant_euros):
+    if montant_euros <= 0:
+        await ctx.send("❌ Le montant doit être positif.", delete_after=5)
+        return
+    wallet = change_balance(ctx.guild.id, member.id, montant_euros, ctx.author.id)
+    referral_lot = None
+    try:
+        referral_lot = track_referral_balance_credit(ctx.guild, member.id, montant_euros, ctx.author.id)
+    except Exception as error:
+        print(f"Erreur tracking PinkCoins parrainés pour {member}: {error}")
+    await mark_balance_ticket_credited(ctx.guild, member.id)
+    if referral_lot:
+        try:
+            await send_referral_tracking_notification(ctx.guild, member, ctx.author, referral_lot, wallet)
+        except Exception as error:
+            print(f"Erreur notification recharge parrainée pour {member}: {error}")
+    await ctx.send(
+        f"✅ **{montant_euros:.2f} €** convertis en **{format_pinkcoins(montant_euros)}** pour {member.mention}. "
+        f"PinkWallet : **{format_pinkcoins(wallet)}**."
+    )
+
+
+async def remove_pinkcoins(ctx, member, montant_pinkcoins):
+    if montant_pinkcoins <= 0 or round(float(montant_pinkcoins), 2) != int(montant_pinkcoins):
+        await ctx.send("❌ Indique un nombre entier positif de PinkCoins.", delete_after=5)
+        return
+    euros = pinkcoins_to_euros(montant_pinkcoins)
+    try:
+        wallet = change_balance(ctx.guild.id, member.id, -euros, ctx.author.id)
+    except ValueError:
+        await ctx.send("❌ PinkCoins insuffisants.", delete_after=5)
+        return
+    try:
+        reconcile_referral_balance(ctx.guild.id, member.id, wallet)
+    except Exception as error:
+        print(f"Erreur réconciliation PinkCoins parrainés de {member}: {error}")
+    amount_text = f"{int(montant_pinkcoins):,}".replace(",", " ")
+    await ctx.send(
+        f"✅ **{amount_text} PinkCoins** retirés à {member.mention}. "
+        f"PinkWallet : **{format_pinkcoins(wallet)}**."
+    )
+
+
+@bot.hybrid_command(name="ajouter_pinkcoins", description="Convertir un dépôt en euros et créditer le PinkWallet")
+@discord.app_commands.default_permissions(manage_messages=True)
+@discord.app_commands.describe(member="Client concerné", montant_euros="Dépôt reçu en euros (1 € = 100 PinkCoins)")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_ajouter_pinkcoins(ctx, member: discord.Member, montant_euros: float):
+    await add_pinkcoins_from_euros(ctx, member, montant_euros)
+
+
+@bot.hybrid_command(name="retirer_pinkcoins", description="Retirer des PinkCoins du PinkWallet d'un client")
+@discord.app_commands.default_permissions(manage_messages=True)
+@discord.app_commands.describe(member="Client concerné", montant_pinkcoins="Nombre entier de PinkCoins à retirer")
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_retirer_pinkcoins(ctx, member: discord.Member, montant_pinkcoins: int):
+    await remove_pinkcoins(ctx, member, montant_pinkcoins)
+
+
+@bot.hybrid_command(name="ajouter_solde", description="Ancien alias : convertir un dépôt en PinkCoins")
 @discord.app_commands.default_permissions(manage_messages=True)
 @discord.app_commands.describe(member="Client concerné", montant="Montant à ajouter en euros")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
-    if montant <= 0:
-        await ctx.send("❌ Le montant doit être positif.", delete_after=5)
-        return
-    balance = change_balance(ctx.guild.id, member.id, montant, ctx.author.id)
-    referral_lot = None
-    try:
-        referral_lot = track_referral_balance_credit(ctx.guild, member.id, montant, ctx.author.id)
-    except Exception as error:
-        print(f"Erreur tracking solde parrainé pour {member}: {error}")
-    await mark_balance_ticket_credited(ctx.guild, member.id)
-    if referral_lot:
-        try:
-            await send_referral_tracking_notification(ctx.guild, member, ctx.author, referral_lot, balance)
-        except Exception as error:
-            print(f"Erreur notification recharge parrainée pour {member}: {error}")
-    await ctx.send(f"✅ **{montant:.2f} €** ajoutés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
+    await add_pinkcoins_from_euros(ctx, member, montant)
 
 
-@bot.hybrid_command(name="retirer_solde", description="Retirer un montant du solde d'un client")
+@bot.hybrid_command(name="retirer_solde", description="Ancien alias : retirer une valeur en euros du PinkWallet")
 @discord.app_commands.default_permissions(manage_messages=True)
 @discord.app_commands.describe(member="Client concerné", montant="Montant à retirer en euros")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
-    if montant <= 0:
-        await ctx.send("❌ Le montant doit être positif.", delete_after=5)
-        return
-    try:
-        balance = change_balance(ctx.guild.id, member.id, -montant, ctx.author.id)
-    except ValueError:
-        await ctx.send("❌ Solde insuffisant.", delete_after=5)
-        return
-    try:
-        reconcile_referral_balance(ctx.guild.id, member.id, balance)
-    except Exception as error:
-        print(f"Erreur réconciliation solde parrainé de {member}: {error}")
-    await ctx.send(f"✅ **{montant:.2f} €** retirés à {member.mention}. Nouveau solde : **{balance:.2f} €**.")
+    await remove_pinkcoins(ctx, member, euros_to_pinkcoins(montant))
 
 
 
@@ -6209,9 +6329,9 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
         inline,
       });
     } else if (key === "tarifs_embed" && data.show_dynamic_fields === true) {
-      const giftTemplate = data.gift_card_line_template || "**{amount} € reçus** → {price} € débités";
-      const uberTemplate = data.uber_eats_line_template || "**{drop} € estimés** → {price} € débités";
-      const nitroTemplate = data.nitro_value_template || "**{price} €** débités";
+      const giftTemplate = data.gift_card_line_template || "**{amount} € reçus** → **{price} PC**";
+      const uberTemplate = data.uber_eats_line_template || "**{drop} € estimés** → **{price} PC**";
+      const nitroTemplate = data.nitro_value_template || "**{price} PC**";
       if (Array.isArray(context.gift_cards)) fields.push({
         name: data.gift_cards_field_name || "<:carte:1528346097276420271> Cartes cadeaux — toutes les marques",
         value: context.gift_cards.map(item => fillTokens(giftTemplate, item)).join("\n"), inline,
@@ -6226,7 +6346,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       });
     } else if (key === "valo_embed" && Array.isArray(context.regions)) {
       const nameTemplate = data.region_field_name_template || "{emoji} {region}";
-      const packTemplate = data.pack_line_template || "<:vp:1519915966476320901> **{pack}** — **{price} €** · origine ≈ ~~{official} €~~";
+      const packTemplate = data.pack_line_template || "<:vp:1519915966476320901> **{pack}** — **{price} PC** · origine ≈ ~~{official} €~~";
       const regionEmojis = data.region_emojis && typeof data.region_emojis === "object" ? data.region_emojis : {};
       context.regions.forEach(region => {
         const regionValues = {...region, emoji: regionEmojis[region.region_key] || region.emoji};
@@ -6838,6 +6958,19 @@ PANEL_PRICES_COSTS_TEMPLATE = PANEL_PRICES_COSTS_TEMPLATE.replace(
     1,
 )
 
+PANEL_PRICES_COSTS_TEMPLATE = (
+    PANEL_PRICES_COSTS_TEMPLATE
+    .replace("Prix et coûts d'achat", "PinkShop — Prix et coûts d'achat")
+    .replace("Le prix de vente détermine le débit client.", "Le prix de vente en PinkCoins détermine le débit du PinkWallet.")
+    .replace("— prix de vente", "— prix PinkCoins")
+    .replace("<span>Prix de vente</span>", "<span>Prix en PinkCoins</span>")
+    .replace("<small>Débit client</small>", "<small>Débit du PinkWallet en PinkCoins</small>")
+    .replace('min="0.01" max="100000" step="0.01" required><small>Débit du PinkWallet', 'min="1" max="10000000" step="1" required><small>Débit du PinkWallet')
+    .replace('name="uber_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01"', 'name="uber_{{ item.key }}" value="{{ item.price }}" min="1" max="10000000" step="1"')
+    .replace('name="discord_nitro" value="{{ discord_nitro }}" min="0.01" max="100000" step="0.01"', 'name="discord_nitro" value="{{ discord_nitro }}" min="1" max="10000000" step="1"')
+    .replace('name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01"', 'name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="1" max="10000000" step="1"')
+)
+
 
 PANEL_SESSION_SCRIPT = r"""
 <script>
@@ -6891,9 +7024,42 @@ def apply_panel_theme(template, include_session_timeout=True):
     return themed
 
 
+def migrate_panel_pinkcoin_copy(template):
+    """Nettoie les anciennes mentions visibles sans toucher aux clés techniques."""
+    replacements = {
+        "Solde ajouté": "Dépôts suivis",
+        "Solde parrainé crédité": "Valeur parrainée créditée",
+        "Solde parrainé restant": "Valeur parrainée restante",
+        "Solde utilisé": "Valeur utilisée",
+        "solde utilisé": "valeur utilisée",
+        "Le solde obtenu avec un code": "Les PinkCoins obtenus avec un code",
+        "part de solde parrainée": "part de PinkCoins parrainée",
+        "Aucun solde n'est crédité": "Aucun PinkCoin n'est crédité",
+        "rembourser le client en solde": "recréditer les PinkCoins du client",
+    }
+    for old, new in replacements.items():
+        template = template.replace(old, new)
+    template = template.replace(">Prix</a>", ">PinkShop</a>")
+    return re.sub(r"\bsoldes?\b", "PinkWallet", template, flags=re.IGNORECASE)
+
+
+PANEL_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_TEMPLATE)
+PANEL_STOCK_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_STOCK_TEMPLATE)
+PANEL_STOCK_TEMPLATE = PANEL_STOCK_TEMPLATE.replace("{{ item.price }} €", "{{ item.price }} PC")
+PANEL_CP_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_CP_TEMPLATE)
+PANEL_PRICES_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_PRICES_TEMPLATE)
+PANEL_FINANCES_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_FINANCES_TEMPLATE)
+PANEL_PRICES_COSTS_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_PRICES_COSTS_TEMPLATE)
+PANEL_FINANCES_PRODUCT_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_FINANCES_PRODUCT_TEMPLATE)
+PANEL_FINANCES_NITRO_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_FINANCES_NITRO_TEMPLATE)
+PANEL_REFERRALS_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_REFERRALS_TEMPLATE)
+PANEL_REFERRALS_PROFIT_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_REFERRALS_PROFIT_TEMPLATE)
+PANEL_EMBEDS_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_EMBEDS_TEMPLATE)
+
+
 PANEL_TEMPLATE = apply_panel_theme(PANEL_TEMPLATE).replace(
     '<form method="post" action="{{ url_for(\'panel_delete_order\', order_id=order.id) }}" style="display:inline"',
-    '''{% if order.status == 'pending' %}<form method="post" action="{{ url_for('panel_refund_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Annuler cette commande et rembourser le client en solde ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit">Rembourser</button></form>{% endif %}<form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline"'''
+    '''{% if order.status == 'pending' %}<form method="post" action="{{ url_for('panel_refund_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Annuler cette commande et recréditer les PinkCoins du client ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit">Rembourser</button></form>{% endif %}<form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline"'''
 )
 PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
     '<form method="post" action="{{ url_for(\'panel_set_code\', order_id=order.id) }}" style="display:inline">',
@@ -7064,6 +7230,20 @@ def panel_price_value(field_name):
     if not 0 < value <= 100000:
         raise ValueError(f"Le prix {field_name} doit être compris entre 0,01 et 100 000 €")
     return value
+
+
+def panel_pinkcoin_value(field_name):
+    raw = request.form.get(field_name, "").strip().replace(" ", "").replace(",", ".")
+    try:
+        parsed = float(raw)
+        if not parsed.is_integer():
+            raise ValueError
+        pinkcoins = int(parsed)
+    except ValueError as error:
+        raise ValueError(f"Nombre de PinkCoins invalide pour {field_name}") from error
+    if not 1 <= pinkcoins <= 10000000:
+        raise ValueError(f"Le prix {field_name} doit être compris entre 1 et 10 000 000 PinkCoins")
+    return pinkcoins_to_euros(pinkcoins)
 
 
 def panel_cost_value(field_name):
@@ -7273,13 +7453,13 @@ def panel_prices():
             return redirect(url_for("panel_prices"))
         try:
             pricing = {
-                "gift_cards": {str(amount): panel_price_value(f"gift_{amount}") for amount in GIFT_CARD_AMOUNTS},
-                "uber_eats": {pack_key: panel_price_value(f"uber_{pack_key}") for pack_key in UBEREATS_PACKS},
-                "discord_nitro": panel_price_value("discord_nitro"),
+                "gift_cards": {str(amount): panel_pinkcoin_value(f"gift_{amount}") for amount in GIFT_CARD_AMOUNTS},
+                "uber_eats": {pack_key: panel_pinkcoin_value(f"uber_{pack_key}") for pack_key in UBEREATS_PACKS},
+                "discord_nitro": panel_pinkcoin_value("discord_nitro"),
                 "cp": get_pricing_config()["cp"],
                 "valorant": {
                     region_key: {
-                        pack_key: panel_price_value(f"valo_{region_key}_{pack_key}")
+                        pack_key: panel_pinkcoin_value(f"valo_{region_key}_{pack_key}")
                         for pack_key in region["packs"]
                     }
                     for region_key, region in VALO_REGIONS.items()
@@ -7319,7 +7499,7 @@ def panel_prices():
             if BOT_LOOP is not None:
                 future = asyncio.run_coroutine_threadsafe(refresh_price_embeds_from_panel(), BOT_LOOP)
                 future.add_done_callback(log_price_embed_refresh)
-                flash("Prix et coûts d'achat enregistrés. Les débits, les statistiques et les panneaux Discord sont actualisés sans redémarrage.")
+                flash("Prix PinkCoins et coûts d'achat enregistrés. Le PinkShop et les panneaux Discord sont actualisés sans redémarrage.")
             else:
                 flash("Prix et coûts d'achat enregistrés. Ils seront utilisés dès que le bot Discord sera connecté.")
         except Exception as error:
@@ -7330,11 +7510,11 @@ def panel_prices():
     pricing = get_pricing_config()
     purchase_costs = get_purchase_cost_config()
     gift_cards = [
-        {"amount": amount, "price": format_price(pricing["gift_cards"][str(amount)])}
+        {"amount": amount, "price": pinkcoin_number(pricing["gift_cards"][str(amount)])}
         for amount in GIFT_CARD_AMOUNTS
     ]
     uber_eats = [
-        {"key": pack_key, "drop": pack["drop"], "price": format_price(pricing["uber_eats"][pack_key]), "cost": format_price(purchase_costs["uber_eats"][pack_key])}
+        {"key": pack_key, "drop": pack["drop"], "price": pinkcoin_number(pricing["uber_eats"][pack_key]), "cost": format_price(purchase_costs["uber_eats"][pack_key])}
         for pack_key, pack in UBEREATS_PACKS.items()
     ]
     gift_cost_products = [
@@ -7356,7 +7536,7 @@ def panel_prices():
                 "region": region["label"],
                 "pack_key": pack_key,
                 "pack": pack["label"],
-                "price": format_price(pricing["valorant"][region_key][pack_key]),
+                "price": pinkcoin_number(pricing["valorant"][region_key][pack_key]),
                 "official": format_price(pricing["valorant_original"][region_key][pack_key]),
                 "cost": format_price(purchase_costs["valorant"][region_key][pack_key]),
             })
@@ -7365,7 +7545,7 @@ def panel_prices():
         gift_cards=gift_cards,
         gift_cost_products=gift_cost_products,
         uber_eats=uber_eats,
-        discord_nitro=format_price(pricing["discord_nitro"]),
+        discord_nitro=pinkcoin_number(pricing["discord_nitro"]),
         discord_nitro_cost=format_price(purchase_costs["discord_nitro"]),
         valorant=valorant,
     )
@@ -7396,7 +7576,7 @@ def panel_stock():
     valorant = []
     for region_key, region in VALO_REGIONS.items():
         for pack_key, pack in region["packs"].items():
-            valorant.append({"region_key": region_key, "region": region["label"], "pack_key": pack_key, "price": format_price(pricing["valorant"][region_key][pack_key]), "pack": pack["label"], "available": stock["valorant"].get(region_key, {}).get(pack_key, True)})
+            valorant.append({"region_key": region_key, "region": region["label"], "pack_key": pack_key, "price": pinkcoin_number(pricing["valorant"][region_key][pack_key]), "pack": pack["label"], "available": stock["valorant"].get(region_key, {}).get(pack_key, True)})
     return render_template_string(PANEL_STOCK_TEMPLATE, products=products, valorant=valorant, ok_emoji=STOCK_OK_EMOJI, ko_emoji=STOCK_KO_EMOJI)
 
 
@@ -7446,18 +7626,18 @@ def panel_embeds():
         pricing = get_pricing_config()
         preview_contexts["tarifs_embed"] = {
             "gift_cards": [
-                {"amount": amount, "price": format_price(pricing["gift_cards"][str(amount)])}
+                {"amount": amount, "price": pinkcoin_number(pricing["gift_cards"][str(amount)])}
                 for amount in GIFT_CARD_AMOUNTS
             ],
             "uber_eats": [
                 {
                     "pack_key": pack_key,
                     "drop": pack["drop"],
-                    "price": format_price(pricing["uber_eats"][pack_key]),
+                    "price": pinkcoin_number(pricing["uber_eats"][pack_key]),
                 }
                 for pack_key, pack in UBEREATS_PACKS.items()
             ],
-            "nitro": {"price": format_price(pricing["discord_nitro"])},
+            "nitro": {"price": pinkcoin_number(pricing["discord_nitro"])},
         }
         preview_contexts["valo_embed"] = {
             "regions": [
@@ -7469,7 +7649,7 @@ def panel_embeds():
                         {
                             "pack_key": pack_key,
                             "pack": pack["label"],
-                            "price": format_price(pricing["valorant"][region_key][pack_key]),
+                            "price": pinkcoin_number(pricing["valorant"][region_key][pack_key]),
                             "official": format_price(pricing["valorant_original"][region_key][pack_key]),
                         }
                         for pack_key, pack in region["packs"].items()
@@ -7495,7 +7675,7 @@ def panel_embeds():
         "emojis": "Catalogue central des emojis custom. Toute modification est reprise par les menus et les embeds concernés sans redémarrage.",
         "tarifs_embed": "La liste des marques est modifiable ici. Les prix restent synchronisés avec l'onglet Prix et le parcours de commande.",
         "valo_embed": "Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
-        "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit du solde.",
+        "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit de PinkCoins.",
     }
     embeds = []
     for key in sorted(

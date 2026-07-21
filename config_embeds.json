@@ -42,9 +42,9 @@
     "YOUTUBE_PREMIUM": "<:youtube:1528704255844946011>"
   },
   "tarifs_embed": {
-    "title": "🎟️ COMMANDES PINKGIFT",
+    "title": "🎟️ PINKSHOP — COMMANDES",
     "description": [
-      "> Recharge ton solde et paie avec.",
+      "> Recharge ton PinkWallet, reçois des PinkCoins et paie avec.",
       "",
       "<:gaming:1528336678450892852> **GAMING**",
       "<:googleplay:1528362570681946263> **Google Play**",
@@ -94,13 +94,13 @@
       203
     ],
     "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525630636923158620/carte_cadeau.jpg?ex=6a5415c0&is=6a52c440&hm=3ad3f843fe840ad6019e67ff75c1457f46749b8c25c79247839f43084498b556&=&format=webp&width=1872&height=802",
-    "footer": "PinkGift — Tarifs"
+    "footer": "PinkGift — PinkShop"
   },
   "valo_embed": {
     "title": "<:vp:1519915966476320901> VALORANT POINTS",
     "description": [
       "Choisis ta région puis ton pack.",
-      "Le prix est débité automatiquement de ton solde.",
+      "Le prix est débité automatiquement de ton PinkWallet en PinkCoins.",
       "",
       "🛒 Clique sur **Commander des VP**, puis choisis ta région et ton pack."
     ],
@@ -109,7 +109,7 @@
       "TURQUIE": "🇹🇷"
     },
     "region_field_name_template": "{emoji} {region}",
-    "pack_line_template": "<:vp:1519915966476320901> **{pack}** — **{price} €** · origine ≈ ~~{official} €~~",
+    "pack_line_template": "<:vp:1519915966476320901> **{pack}** — **{price} PC** · origine ≈ ~~{official} €~~",
     "dynamic_fields_inline": false,
     "color_rgb": [
       255,
@@ -148,9 +148,9 @@
     "description": [
       "Bonjour {user} !",
       "",
-      "Ta commande a bien été enregistrée et ton solde a été débité.",
+      "Ta commande a bien été enregistrée et les PinkCoins ont été débités de ton PinkWallet.",
       "La livraison est automatique : ton code sera envoyé ici dès qu'il sera disponible.",
-      "Le staff intervient uniquement pour les recharges de solde."
+      "Le staff intervient uniquement pour les recharges du PinkWallet."
     ],
     "fields": [
       {
@@ -164,13 +164,13 @@
         "inline": true
       },
       {
-        "name": "Montant débité",
-        "value": "**{paid} €**",
+        "name": "PinkCoins débités",
+        "value": "**{paid} PC**",
         "inline": true
       },
       {
-        "name": "Solde restant",
-        "value": "**{balance} €**",
+        "name": "PinkWallet restant",
+        "value": "**{balance} PC**",
         "inline": false
       }
     ],
@@ -190,7 +190,7 @@
       "Indique le pack Valorant Points souhaité dans ce ticket.",
       "",
       "La livraison est automatique : ton code Valorant sera envoyé dans ce ticket dès qu'il sera disponible.",
-      "Le staff intervient uniquement pour les recharges de solde."
+      "Le staff intervient uniquement pour les recharges du PinkWallet."
     ],
     "color_rgb": [
       255,
@@ -269,8 +269,8 @@
         "inline": true
       },
       {
-        "name": "Prix",
-        "value": "{amount}€",
+        "name": "PinkCoins débités",
+        "value": "**{amount} PC**",
         "inline": true
       },
       {
@@ -279,8 +279,8 @@
         "inline": false
       },
       {
-        "name": "Solde restant",
-        "value": "**{balance} €**",
+        "name": "PinkWallet restant",
+        "value": "**{balance} PC**",
         "inline": false
       }
     ],
@@ -315,7 +315,7 @@
     "fields": [
       {
         "name": "🎫 Panneaux publics",
-        "value": "!tarifs — cartes cadeaux et commande automatique\n!valo — Valorant Points par région\n!cp — COD Points avec livraison automatique\n!solde — consultation et recharge du solde\n!paiements — moyens de paiement",
+        "value": "!tarifs — PinkShop et cartes cadeaux\n!valo — Valorant Points par région\n!cp — COD Points sur demande\n!pinkcoins — consultation et recharge du PinkWallet\n!paiements — moyens de paiement",
         "inline": false
       },
       {
@@ -324,8 +324,8 @@
         "inline": false
       },
       {
-        "name": "💰 Gestion des soldes",
-        "value": "!ajouter_solde @membre montant\n!retirer_solde @membre montant",
+        "name": "💰 Gestion des PinkCoins",
+        "value": "!ajouter_pinkcoins @membre montant_euros\n!retirer_pinkcoins @membre montant_pinkcoins",
         "inline": false
       },
       {
@@ -346,11 +346,12 @@
     ]
   },
   "balance_embed": {
-    "title": "<:cash:1525568414117134528> Solde & paiements PinkGift",
+    "title": "<:cash:1525568414117134528> PinkWallet & PinkCoins",
     "description": [
-      "Consulte ton solde personnel ou ouvre un ticket pour le recharger.",
+      "Consulte tes PinkCoins ou ouvre un ticket pour recharger ton PinkWallet.",
       "",
-      "> Minimum dépôt : 20€",
+      "> 1 € = 100 PinkCoins",
+      "> Minimum : 2 000 PinkCoins (20 €)",
       "Les informations de chaque client restent privées.",
       "",
       "<:cashapp:1525570860189225112> Moyens de paiement acceptés",
@@ -360,14 +361,14 @@
       "<:banque:1523803303253905590> **Virements bancaires**",
       "<:litecoin:1523802843352531147> **Cryptomonnaies**",
       "",
-      "Clique sur les boutons ci-dessous pour consulter ton solde ou ouvrir un ticket de recharge."
+      "Clique sur les boutons ci-dessous pour consulter tes PinkCoins ou recharger ton PinkWallet."
     ],
     "color_rgb": [
       255,
       192,
       203
     ],
-    "footer": "PinkGift — Solde & paiements",
+    "footer": "PinkGift — PinkWallet & PinkCoins",
     "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525626921537507500/A_polished_ultra-wide_219_cinematic_banner_for_th-1783808104704-text-shapes-1x.jpg?ex=6a54124a&is=6a52c0ca&hm=be9de76f91072e5c6817e5fde7346376f10ac84da07b5a1c1ca533bf19bc1ec6&=&format=webp&width=1872&height=796"
   },
   "parrainages_embed": {
@@ -376,10 +377,10 @@
       "Tu es **streamer Twitch**, créateur de contenu ou responsable d'une communauté ? PinkGift propose un programme de parrainage simple pour récompenser les partenaires qui nous présentent à leur audience.",
       "",
       "🎟️ **Un code personnalisé**",
-      "Nous créons un code unique au nom du partenaire. Les membres de sa communauté peuvent l'indiquer lorsqu'ils rechargent leur solde PinkGift.",
+      "Nous créons un code unique au nom du partenaire. Les membres de sa communauté peuvent l'indiquer lorsqu'ils rechargent leur PinkWallet.",
       "",
       "📊 **Un suivi automatique**",
-      "Le solde ajouté avec ce code est suivi en interne. Lorsqu'un client effectue un achat, le système calcule la part de bénéfice réellement générée grâce au parrainage.",
+      "Les PinkCoins ajoutés avec ce code sont suivis en interne. Lorsqu'un client effectue un achat, le système calcule la part de bénéfice réellement générée grâce au parrainage.",
       "",
       "💸 **Une commission sur le bénéfice**",
       "Le partenaire reçoit le pourcentage convenu sur le bénéfice attribué à ses clients. Le taux et les modalités sont définis avec PinkGift avant l'activation du code.",
@@ -399,12 +400,12 @@
     "image_url": ""
   },
   "balance_ticket_embed": {
-    "title": "➕ Recharge de solde",
+    "title": "➕ Recharge du PinkWallet",
     "description": [
       "Bonjour {user} !",
       "",
-      "Ton solde actuel est de **{balance} €**.",
-      "Indique au staff le montant et le moyen de paiement souhaités."
+      "Ton PinkWallet contient actuellement **{balance} PinkCoins**.",
+      "Indique au staff le montant en euros et le moyen de paiement souhaités. Chaque euro déposé est converti en 100 PinkCoins."
     ],
     "color_rgb": [
       255,
@@ -418,9 +419,9 @@
     "description": [
       "Bonjour {user} !",
       "",
-      "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.",
+      "Ta commande Uber Eats a bien été enregistrée et les PinkCoins ont été débités de ton PinkWallet.",
       "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.",
-      "Le staff intervient uniquement pour les recharges de solde."
+      "Le staff intervient uniquement pour les recharges du PinkWallet."
     ],
     "fields": [
       {
@@ -429,8 +430,8 @@
         "inline": false
       },
       {
-        "name": "Prix payé",
-        "value": "**{paid} €**",
+        "name": "PinkCoins débités",
+        "value": "**{paid} PC**",
         "inline": true
       },
       {
@@ -439,8 +440,8 @@
         "inline": true
       },
       {
-        "name": "Solde restant",
-        "value": "**{balance} €**",
+        "name": "PinkWallet restant",
+        "value": "**{balance} PC**",
         "inline": false
       }
     ],
@@ -456,9 +457,9 @@
     "description": [
       "Bonjour {user} !",
       "",
-      "Ta commande Discord Nitro a bien été enregistrée et ton solde a été débité.",
+      "Ta commande Discord Nitro a bien été enregistrée et les PinkCoins ont été débités de ton PinkWallet.",
       "La livraison est automatique : ton Nitro sera envoyé ici dès qu'il sera disponible.",
-      "Le staff intervient uniquement pour les recharges de solde."
+      "Le staff intervient uniquement pour les recharges du PinkWallet."
     ],
     "fields": [
       {
@@ -467,13 +468,13 @@
         "inline": false
       },
       {
-        "name": "Prix",
-        "value": "**{paid} €**",
+        "name": "PinkCoins débités",
+        "value": "**{paid} PC**",
         "inline": true
       },
       {
-        "name": "Solde restant",
-        "value": "**{balance} €**",
+        "name": "PinkWallet restant",
+        "value": "**{balance} PC**",
         "inline": true
       }
     ],
@@ -516,7 +517,7 @@
       "💶 Indique combien tu souhaites payer",
       "🤝 Le staff te répondra directement dans le ticket",
       "",
-      "**Aucun solde PinkGift n'est débité.**"
+      "**Aucun PinkCoin n'est débité.**"
     ],
     "packs_field_name": "<:cp:1528128623117205624> Packs disponibles",
     "pack_line_template": "<:cp:1528128623117205624> **{points} CP** — **{price} €** · officiel ≈ ~~{official} €~~",
@@ -538,7 +539,7 @@
       "2. **Le montant que tu proposes de payer**",
       "",
       "Le staff te confirmera ensuite la disponibilité et le prix.",
-      "**Aucun solde PinkGift n'a été débité.**"
+      "**Aucun PinkCoin n'a été débité.**"
     ],
     "fields": [
       {
@@ -564,13 +565,13 @@
         "inline": true
       },
       {
-        "name": "Prix débité",
-        "value": "**{paid} €**",
+        "name": "PinkCoins débités",
+        "value": "**{paid} PC**",
         "inline": true
       },
       {
-        "name": "Solde restant",
-        "value": "**{balance} €**",
+        "name": "PinkWallet restant",
+        "value": "**{balance} PC**",
         "inline": true
       },
       {
@@ -599,13 +600,13 @@
         "inline": true
       },
       {
-        "name": "Prix débité",
-        "value": "**{paid} €**",
+        "name": "PinkCoins débités",
+        "value": "**{paid} PC**",
         "inline": true
       },
       {
-        "name": "Solde restant",
-        "value": "**{balance} €**",
+        "name": "PinkWallet restant",
+        "value": "**{balance} PC**",
         "inline": true
       },
       {
@@ -636,7 +637,7 @@
       "<:youtube:1528704255844946011> **YouTube Premium**",
       "",
       "Un ticket privé sera créé pour organiser ta demande avec le staff.",
-      "**Aucun solde ne sera débité à l'ouverture du ticket.**"
+      "**Aucun PinkCoin ne sera débité à l'ouverture du ticket.**"
     ],
     "color_rgb": [
       255,
@@ -654,7 +655,7 @@
       "L'offre et la durée sont déjà associées à cet abonnement : tu n'as rien d'autre à sélectionner.",
       "Le staff prendra la suite de ta demande directement dans ce ticket.",
       "",
-      "**Aucun solde PinkGift n'a été débité.**"
+      "**Aucun PinkCoin n'a été débité.**"
     ],
     "fields": [
       {
@@ -685,7 +686,7 @@
       "Indique dans ce ticket **l'offre Basic-Fit** et **la durée** que tu souhaites.",
       "Le staff te répondra ensuite avec les informations correspondantes.",
       "",
-      "**Aucun solde PinkGift n'a été débité.**"
+      "**Aucun PinkCoin n'a été débité.**"
     ],
     "fields": [
       {
@@ -710,7 +711,7 @@
       "Envoie dans ce ticket **une capture d'écran ou le lien de la décoration Discord/Nitro** que tu souhaites acheter.",
       "Les décorations ont un prix fixe : le staff te donnera le prix correspondant à ton choix.",
       "",
-      "**Aucun solde PinkGift n'a été débité.**"
+      "**Aucun PinkCoin n'a été débité.**"
     ],
     "fields": [
       {
