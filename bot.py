@@ -1706,8 +1706,7 @@ DEFAULT_EMBED_DATA.update({
             255,
             192,
             203
-        ],
-        "image_key": "ticket_cree"
+        ]
     },
     "nitro_ticket_embed": {
         "title": "<:nitro:1528358484972671096> Commande — DISCORD NITRO",
@@ -1722,8 +1721,7 @@ DEFAULT_EMBED_DATA.update({
             {"name": "Prix", "value": "**{paid} €**", "inline": True},
             {"name": "Solde restant", "value": "**{balance} €**", "inline": True}
         ],
-        "color_rgb": [255, 192, 203],
-        "image_key": "ticket_cree"
+        "color_rgb": [255, 192, 203]
     },
     "valo_ticket_bienvenue_embed": {
         "title": "<:vp:1519915966476320901> Ticket d'achat — VALORANT",
@@ -1787,7 +1785,6 @@ DEFAULT_EMBED_DATA.update({
             204,
             113
         ],
-        "image_key": "commande_confirmee",
         "footer": "PinkGift — Ticket commande"
     },
     "commande_vp_embed": {
@@ -1823,7 +1820,6 @@ DEFAULT_EMBED_DATA.update({
             204,
             113
         ],
-        "image_key": "commande_confirmee",
         "footer": "PinkGift — Ticket Valorant"
     },
     "commande_finalisee": {
@@ -1837,7 +1833,6 @@ DEFAULT_EMBED_DATA.update({
             204,
             113
         ],
-        "image_key": "commande_livree",
         "footer": "PinkGift — Livraison automatique terminée",
         "code_field_name": "Code livré automatiquement"
     },
@@ -1915,7 +1910,7 @@ DEFAULT_EMBED_DATA.update({
     }
 })
 
-DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.", "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.", "Le staff intervient uniquement pour les recharges de solde."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203], "image_key": "ticket_cree"}})
+DEFAULT_EMBED_DATA.update({"uber_eats_ticket_embed": {"title": "🍔 Commande — UBER EATS", "description": ["Bonjour {user} !", "", "Ta commande Uber Eats a bien été enregistrée et ton solde a été débité.", "La livraison est automatique : les informations seront envoyées ici dès qu'elles seront disponibles.", "Le staff intervient uniquement pour les recharges de solde."], "fields": [{"name": "Service sélectionné", "value": "{emoji} **{service}**", "inline": False}, {"name": "Prix payé", "value": "**{paid} €**", "inline": True}, {"name": "Drop estimé", "value": "**{drop}**", "inline": True}, {"name": "Solde restant", "value": "**{balance} €**", "inline": False}], "color_rgb": [255, 192, 203]}})
 
 DEFAULT_EMBED_DATA["uber_eats_ticket_embed"]["title"] = "<:ubereats:1528671351668211722> Commande — UBER EATS"
 
@@ -2272,6 +2267,19 @@ def normalize_embed_configuration(data):
                 return {key: migrate_pinkcoin_units(item) for key, item in value.items()}
             return value
         data[embed_key] = migrate_pinkcoin_units(embed_data)
+
+    # Les embeds de commande et de livraison doivent rester compacts. On retire
+    # aussi les images provenant d'anciens réglages sauvegardés depuis le panel.
+    delivery_embed_keys = {
+        "menu_ticket_embed", "uber_eats_ticket_embed", "nitro_ticket_embed",
+        "commande_embed", "commande_vp_embed", "commande_finalisee",
+        "cp_order_pending_embed", "cp_delivery_embed",
+    }
+    for embed_key in delivery_embed_keys:
+        embed_data = data.get(embed_key)
+        if isinstance(embed_data, dict):
+            embed_data.pop("image_key", None)
+            embed_data.pop("image_url", None)
 
     tarifs_data = data.get("tarifs_embed")
     if isinstance(tarifs_data, dict):
@@ -2866,9 +2874,14 @@ async def create_private_order_thread(guild, user, parent_channel_id: int, order
     if not isinstance(parent, discord.TextChannel):
         raise RuntimeError("Le salon parent des fils privés est introuvable ou n'est pas un salon textuel")
 
-    safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
+    thread_user = re.sub(r"[\r\n]+", " ", user.display_name).strip() or str(user.id)
+    thread_prefixes = {
+        "commande-carte": "🎀・",
+        "commande-valorant": "💎・",
+    }
+    thread_prefix = thread_prefixes.get(order_kind, f"{order_kind}-")
     thread = await parent.create_thread(
-        name=f"{order_kind}-{safe_user}"[:100],
+        name=f"{thread_prefix}{thread_user}"[:100],
         type=discord.ChannelType.private_thread,
         auto_archive_duration=1440,
         invitable=False,
@@ -7718,7 +7731,6 @@ async def deliver_order_from_panel(order, code):
             updated.add_field(name=field.name, value=field.value, inline=field.inline)
     if not code_found:
         updated.add_field(name=finish_data.get("code_field_name", "Code"), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
-    updated.set_image(url=get_image_url(finish_data.get("image_key", "commande_livree"), finish_data.get("image_url", ORDER_FINISHED_IMAGE_URL)))
     updated.set_footer(text=finish_data.get("footer", "PinkGift — Commande finalisée"))
     await message.edit(embed=updated)
 

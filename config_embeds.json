@@ -178,8 +178,7 @@
       255,
       192,
       203
-    ],
-    "image_key": "ticket_cree"
+    ]
   },
   "valo_ticket_bienvenue_embed": {
     "title": "<:vp:1519915966476320901> Ticket d'achat — VALORANT",
@@ -243,7 +242,6 @@
       204,
       113
     ],
-    "image_key": "commande_confirmee",
     "footer": "PinkGift — Ticket commande"
   },
   "commande_vp_embed": {
@@ -289,7 +287,6 @@
       204,
       113
     ],
-    "image_key": "commande_confirmee",
     "footer": "PinkGift — Ticket Valorant"
   },
   "commande_finalisee": {
@@ -303,7 +300,6 @@
       204,
       113
     ],
-    "image_key": "commande_livree",
     "footer": "PinkGift — Livraison automatique terminée",
     "code_field_name": "Code livré automatiquement"
   },
@@ -449,8 +445,7 @@
       255,
       192,
       203
-    ],
-    "image_key": "ticket_cree"
+    ]
   },
   "nitro_ticket_embed": {
     "title": "<:nitro:1528358484972671096> Commande — DISCORD NITRO",
@@ -482,8 +477,7 @@
       255,
       192,
       203
-    ],
-    "image_key": "ticket_cree"
+    ]
   },
   "invites_embed": {
     "title": "📨 Invitations de {member}",
