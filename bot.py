@@ -539,11 +539,18 @@ def get_invite_tracking_data(guild_id: int) -> dict:
         data = {}
     inviters = data.get("inviters")
     members = data.get("members")
+    reset_blocked_members = data.get("reset_blocked_members")
     if not isinstance(inviters, dict):
         inviters = {}
     if not isinstance(members, dict):
         members = {}
-    return {"inviters": inviters, "members": members}
+    if not isinstance(reset_blocked_members, dict):
+        reset_blocked_members = {}
+    return {
+        "inviters": inviters,
+        "members": members,
+        "reset_blocked_members": reset_blocked_members,
+    }
 
 
 def save_invite_tracking_data(guild_id: int, data: dict) -> None:
@@ -571,7 +578,7 @@ def reset_invite_tracking_data(guild_id: int, inviter_id=None) -> dict:
             previous_active = max(0, int(stats.get("active", 0) or 0))
 
     reset_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    for member_data in data["members"].values():
+    for member_id, member_data in data["members"].items():
         if not isinstance(member_data, dict):
             continue
         try:
@@ -584,6 +591,10 @@ def reset_invite_tracking_data(guild_id: int, inviter_id=None) -> dict:
             affected_members += 1
         member_data["counted"] = False
         member_data["reset_at"] = reset_at
+        data["reset_blocked_members"][str(member_id)] = {
+            "inviter_id": member_inviter_id,
+            "reset_at": reset_at,
+        }
 
     save_invite_tracking_data(guild_id, data)
     return {
@@ -713,6 +724,7 @@ async def register_invited_member(member: discord.Member) -> dict:
         data = get_invite_tracking_data(member.guild.id)
         member_key = str(member.id)
         previous_member_data = data["members"].get(member_key)
+        reset_block = data["reset_blocked_members"].get(member_key)
 
         # Évite un double comptage si Discord renvoie deux événements proches.
         if isinstance(previous_member_data, dict) and previous_member_data.get("active"):
@@ -728,7 +740,7 @@ async def register_invited_member(member: discord.Member) -> dict:
         if isinstance(previous_member_data, dict):
             member_data = dict(previous_member_data)
             original_inviter_id = int(member_data.get("inviter_id") or inviter_id)
-            counted = bool(member_data.get("counted", True))
+            counted = bool(member_data.get("counted", True)) and not isinstance(reset_block, dict)
             if counted:
                 inviter_key = str(original_inviter_id)
                 inviter_stats = data["inviters"].get(inviter_key, {})
@@ -747,6 +759,9 @@ async def register_invited_member(member: discord.Member) -> dict:
                 "account_created_ts": float(member_data.get("account_created_ts") or account_created_ts),
                 "account_age_days_at_first_join": int(member_data.get("account_age_days_at_first_join", account_age_days)),
             })
+            if isinstance(reset_block, dict):
+                member_data["counted"] = False
+                member_data["rejection_reason"] = "Compte déjà invité avant la remise à zéro"
             data["members"][member_key] = member_data
             save_invite_tracking_data(member.guild.id, data)
             return dict(member_data)
@@ -755,7 +770,8 @@ async def register_invited_member(member: discord.Member) -> dict:
         inviter_stats = data["inviters"].get(inviter_key, {})
         if not isinstance(inviter_stats, dict):
             inviter_stats = {}
-        eligible = account_age_days >= MIN_INVITE_ACCOUNT_AGE_DAYS
+        already_blocked_after_reset = isinstance(reset_block, dict)
+        eligible = account_age_days >= MIN_INVITE_ACCOUNT_AGE_DAYS and not already_blocked_after_reset
         if eligible:
             inviter_stats["total"] = max(0, int(inviter_stats.get("total", 0) or 0)) + 1
             inviter_stats["active"] = max(0, int(inviter_stats.get("active", 0) or 0)) + 1
@@ -772,7 +788,11 @@ async def register_invited_member(member: discord.Member) -> dict:
             "account_age_days_at_first_join": account_age_days,
             "eligible": eligible,
             "counted": eligible,
-            "rejection_reason": "Compte Discord trop récent" if not eligible else "",
+            "rejection_reason": (
+                "Compte déjà invité avant la remise à zéro"
+                if already_blocked_after_reset
+                else ("Compte Discord trop récent" if not eligible else "")
+            ),
         }
         data["members"][member_key] = member_data
         save_invite_tracking_data(member.guild.id, data)
@@ -1864,7 +1884,7 @@ DEFAULT_EMBED_DATA.update({
             },
             {
                 "name": "🎉 Giveaways",
-                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] : crée un giveaway ; seules les nouvelles invitations actives de comptes âgés d'au moins 30 jours comptent.\n!reroll <ID ou lien> : tire un nouveau gagnant éligible.\n!reset_invitations [membre] confirmation:Oui : remet les invitations à zéro.",
+                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] [nombre_gagnants] : crée un giveaway ; seules les nouvelles invitations actives de comptes âgés d'au moins 30 jours comptent.\n!reroll <ID ou lien> : refait le tirage avec le même nombre de gagnants.\n!reset_invitations [membre] confirmation:Oui : remet les invitations à zéro sans recomptage des anciens invités.",
                 "inline": False
             },
             {
@@ -4300,20 +4320,50 @@ def normalize_giveaway_participants(participants):
     return normalized
 
 
-def select_giveaway_winner(participants, winner_history=None):
+def select_giveaway_winners(participants, winner_count=1, winner_history=None, current_winners=None):
     participants = normalize_giveaway_participants(participants)
     if not participants:
-        return None
+        return []
+
+    try:
+        winner_count = max(1, int(winner_count or 1))
+    except (TypeError, ValueError):
+        winner_count = 1
+    winner_count = min(winner_count, len(participants))
 
     history = normalize_giveaway_participants(winner_history)
-    already_selected = set(history)
-    candidates = [user_id for user_id in participants if user_id not in already_selected]
-    if not candidates:
-        # Quand tout le monde a déjà gagné, on recommence un cycle en évitant
-        # uniquement de reprendre immédiatement le dernier gagnant.
-        last_winner = history[-1] if history else None
-        candidates = [user_id for user_id in participants if user_id != last_winner]
-    return secrets.choice(candidates or participants)
+    current = set(normalize_giveaway_participants(current_winners))
+    history_set = set(history)
+    selected = []
+    random_source = secrets.SystemRandom()
+
+    fresh_candidates = [
+        user_id for user_id in participants
+        if user_id not in history_set and user_id not in current
+    ]
+    if fresh_candidates:
+        selected.extend(random_source.sample(fresh_candidates, min(winner_count, len(fresh_candidates))))
+
+    if len(selected) < winner_count:
+        previous_candidates = [
+            user_id for user_id in participants
+            if user_id not in current and user_id not in selected
+        ]
+        if previous_candidates:
+            missing = winner_count - len(selected)
+            selected.extend(random_source.sample(previous_candidates, min(missing, len(previous_candidates))))
+
+    if len(selected) < winner_count:
+        remaining = [user_id for user_id in participants if user_id not in selected]
+        if remaining:
+            missing = winner_count - len(selected)
+            selected.extend(random_source.sample(remaining, min(missing, len(remaining))))
+    return selected
+
+
+def select_giveaway_winner(participants, winner_history=None):
+    winners = select_giveaway_winners(participants, 1, winner_history)
+    return winners[0] if winners else None
 
 
 def member_has_server_tag(member, guild_id):
@@ -4426,10 +4476,18 @@ def build_giveaway_embed(
     winner="Aucun gagnant",
     min_invites=0,
     require_server_tag=False,
+    winner_count=1,
 ):
     key = "giveaway_ended_embed" if ended else "giveaway_embed"
     data = load_embed_texts().get(key, DEFAULT_EMBED_DATA[key])
-    variables = {"name": name, "end_ts": end_ts, "count": participants_count, "winner": winner}
+    winner_count = max(1, int(winner_count or 1))
+    variables = {
+        "name": name,
+        "end_ts": end_ts,
+        "count": participants_count,
+        "winner": winner,
+        "winner_count": winner_count,
+    }
     rgb = data.get("color_rgb", [255, 192, 203])
     embed = discord.Embed(
         title=format_embed_text(data.get("title", "🎉 Giveaway"), variables),
@@ -4440,6 +4498,8 @@ def build_giveaway_embed(
     if footer:
         embed.set_footer(text=format_embed_text(footer, variables))
     conditions = giveaway_conditions_text(min_invites, require_server_tag)
+    if not ended:
+        embed.add_field(name="Nombre de gagnants", value=f"**{winner_count}**", inline=True)
     if conditions:
         embed.add_field(name="✅ Conditions de participation", value=conditions, inline=False)
     final_image = image_url or data.get("image_url") or get_image_url(data.get("image_key", ""), "")
@@ -4458,6 +4518,7 @@ def build_saved_giveaway_embed(data, participants_count, ended=False, winner="Au
         winner=winner,
         min_invites=data.get("min_invites", 0),
         require_server_tag=bool(data.get("require_server_tag")),
+        winner_count=data.get("winner_count", 1),
     )
 
 
@@ -4520,11 +4581,13 @@ async def finish_giveaway(message_id):
             raise RuntimeError("Serveur du giveaway introuvable")
         eligible_participants, rejected = await eligible_giveaway_participants(guild, data)
         winner_text = "Aucun participant éligible" if participants else "Aucun participant"
-        winner_id = select_giveaway_winner(eligible_participants)
-        if winner_id is not None:
-            winner_text = f"<@{winner_id}>"
-            data["winner_id"] = winner_id
-            data["winner_history"] = [winner_id]
+        winner_count = max(1, int(data.get("winner_count", 1) or 1))
+        winner_ids = select_giveaway_winners(eligible_participants, winner_count)
+        if winner_ids:
+            winner_text = ", ".join(f"<@{winner_id}>" for winner_id in winner_ids)
+            data["winner_id"] = winner_ids[0]
+            data["winner_ids"] = winner_ids
+            data["winner_history"] = list(winner_ids)
         data["ended"] = True
         data["ineligible_participant_ids"] = rejected
         save_giveaway(message_id, data)
@@ -4536,7 +4599,7 @@ async def finish_giveaway(message_id):
         excluded_text = f" · **{len(rejected)}** participation(s) non éligible(s) écartée(s)" if rejected else ""
         await channel.send(
             f"🎉 Giveaway **{data.get('name', 'Giveaway')}** terminé ! "
-            f"Gagnant : {winner_text}{excluded_text}"
+            f"Gagnant(s) : {winner_text}{excluded_text}"
         )
     except Exception as error:
         print(f"Erreur fin giveaway {message_id}: {error}")
@@ -8057,6 +8120,7 @@ async def cmd_antiraid_stop(ctx):
     nom="Nom du giveaway",
     invitations="Nouvelles invitations actives à obtenir pendant le giveaway",
     tag_serveur="Exiger que le membre affiche le tag de ce serveur",
+    nombre_gagnants="Nombre de gagnants à tirer",
     image_url="Lien direct d'une image optionnelle",
 )
 @commands.guild_only()
@@ -8067,6 +8131,7 @@ async def cmd_giveaway(
     nom: str,
     invitations: int = 0,
     tag_serveur: bool = False,
+    nombre_gagnants: int = 1,
     image_url: str = "",
 ):
     seconds = parse_giveaway_duration(duration)
@@ -8078,6 +8143,9 @@ async def cmd_giveaway(
         return
     if invitations < 0 or invitations > 1000:
         await ctx.send("❌ Le nombre d'invitations requis doit être compris entre 0 et 1000.", ephemeral=True)
+        return
+    if nombre_gagnants < 1 or nombre_gagnants > 25:
+        await ctx.send("❌ Le nombre de gagnants doit être compris entre 1 et 25.", ephemeral=True)
         return
     if tag_serveur and not hasattr(discord.Member, "primary_guild"):
         await ctx.send("❌ La vérification du tag serveur nécessite discord.py 2.6 ou plus récent.", ephemeral=True)
@@ -8094,6 +8162,7 @@ async def cmd_giveaway(
         image_url,
         min_invites=invitations,
         require_server_tag=tag_serveur,
+        winner_count=nombre_gagnants,
     )
     message = await ctx.send(embed=embed, view=GiveawayJoinView())
     save_giveaway(message.id, {
@@ -8106,6 +8175,7 @@ async def cmd_giveaway(
         "min_invites": invitations,
         "min_invite_account_age_days": MIN_INVITE_ACCOUNT_AGE_DAYS,
         "require_server_tag": tag_serveur,
+        "winner_count": nombre_gagnants,
         "participants": [],
         "ended": False,
         "created_at": giveaway_started_at.isoformat(),
@@ -8157,6 +8227,7 @@ async def cmd_reroll(ctx, message_id: str = ""):
         return
 
     winner_history = normalize_giveaway_participants(data.get("winner_history", []))
+    current_winner_ids = normalize_giveaway_participants(data.get("winner_ids", []))
     current_winner_id = data.get("winner_id")
     if current_winner_id is not None:
         try:
@@ -8165,11 +8236,20 @@ async def cmd_reroll(ctx, message_id: str = ""):
             current_winner_id = None
     if current_winner_id and current_winner_id not in winner_history:
         winner_history.append(current_winner_id)
+    if current_winner_id and current_winner_id not in current_winner_ids:
+        current_winner_ids.append(current_winner_id)
 
-    winner_id = select_giveaway_winner(eligible_participants, winner_history)
-    winner_text = f"<@{winner_id}>"
-    data["winner_id"] = winner_id
-    data["winner_history"] = [*winner_history, winner_id]
+    winner_count = max(1, int(data.get("winner_count", 1) or 1))
+    winner_ids = select_giveaway_winners(
+        eligible_participants,
+        winner_count,
+        winner_history,
+        current_winner_ids,
+    )
+    winner_text = ", ".join(f"<@{winner_id}>" for winner_id in winner_ids)
+    data["winner_id"] = winner_ids[0]
+    data["winner_ids"] = winner_ids
+    data["winner_history"] = normalize_giveaway_participants([*winner_history, *winner_ids])
     data["rerolled_at"] = utc_now().isoformat()
     data["rerolled_by"] = ctx.author.id
 
@@ -8185,7 +8265,7 @@ async def cmd_reroll(ctx, message_id: str = ""):
         excluded_text = f" · **{len(rejected)}** participation(s) non éligible(s) écartée(s)" if rejected else ""
         await channel.send(
             f"🔄 Nouveau tirage pour le giveaway **{data.get('name', 'Giveaway')}** ! "
-            f"Nouveau gagnant : {winner_text}{excluded_text}"
+            f"Nouveau(x) gagnant(s) : {winner_text}{excluded_text}"
         )
     except (discord.NotFound, discord.Forbidden, discord.HTTPException) as error:
         print(f"Erreur reroll giveaway {giveaway_message_id}: {error}")
