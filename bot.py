@@ -1448,6 +1448,11 @@ def pinkcoin_number(value):
     return f"{euros_to_pinkcoins(value):,}".replace(",", " ")
 
 
+def pinkcoin_input_value(value):
+    """Retourne un entier sans séparateur, accepté par les champs HTML number."""
+    return str(euros_to_pinkcoins(value))
+
+
 def valid_purchase_cost(value, fallback=0):
     try:
         cost = round(float(value), 2)
@@ -3430,6 +3435,25 @@ def can_manage_cp_order(member):
     )
 
 
+async def send_order_delivery_ghost_ping(channel, user_id):
+    """Notifie discrètement le client dans son fil lorsqu'une livraison est prête."""
+    ping_message = None
+    try:
+        ping_message = await channel.send(
+            f"<@{int(user_id)}>",
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+        await asyncio.sleep(1)
+    except Exception as error:
+        print(f"Erreur ghost ping livraison pour {user_id} dans {getattr(channel, 'id', '?')}: {error}")
+    finally:
+        if ping_message is not None:
+            try:
+                await ping_message.delete()
+            except discord.HTTPException as error:
+                print(f"Erreur suppression ghost ping livraison {ping_message.id}: {error}")
+
+
 async def deliver_cp_order_to_discord(order, code):
     code = normalize_cp_code(code)
     if not code:
@@ -3452,6 +3476,7 @@ async def deliver_cp_order_to_discord(order, code):
         embed=embed,
         view=CloseTicketView(int(order["user_id"])),
     )
+    await send_order_delivery_ghost_ping(channel, order["user_id"])
     mark_order_delivered(int(order["id"]), code)
 
 
@@ -7524,11 +7549,11 @@ def panel_prices():
     pricing = get_pricing_config()
     purchase_costs = get_purchase_cost_config()
     gift_cards = [
-        {"amount": amount, "price": pinkcoin_number(pricing["gift_cards"][str(amount)])}
+        {"amount": amount, "price": pinkcoin_input_value(pricing["gift_cards"][str(amount)])}
         for amount in GIFT_CARD_AMOUNTS
     ]
     uber_eats = [
-        {"key": pack_key, "drop": pack["drop"], "price": pinkcoin_number(pricing["uber_eats"][pack_key]), "cost": format_price(purchase_costs["uber_eats"][pack_key])}
+        {"key": pack_key, "drop": pack["drop"], "price": pinkcoin_input_value(pricing["uber_eats"][pack_key]), "cost": format_price(purchase_costs["uber_eats"][pack_key])}
         for pack_key, pack in UBEREATS_PACKS.items()
     ]
     gift_cost_products = [
@@ -7550,7 +7575,7 @@ def panel_prices():
                 "region": region["label"],
                 "pack_key": pack_key,
                 "pack": pack["label"],
-                "price": pinkcoin_number(pricing["valorant"][region_key][pack_key]),
+                "price": pinkcoin_input_value(pricing["valorant"][region_key][pack_key]),
                 "official": format_price(pricing["valorant_original"][region_key][pack_key]),
                 "cost": format_price(purchase_costs["valorant"][region_key][pack_key]),
             })
@@ -7559,7 +7584,7 @@ def panel_prices():
         gift_cards=gift_cards,
         gift_cost_products=gift_cost_products,
         uber_eats=uber_eats,
-        discord_nitro=pinkcoin_number(pricing["discord_nitro"]),
+        discord_nitro=pinkcoin_input_value(pricing["discord_nitro"]),
         discord_nitro_cost=format_price(purchase_costs["discord_nitro"]),
         valorant=valorant,
     )
@@ -7733,6 +7758,7 @@ async def deliver_order_from_panel(order, code):
         updated.add_field(name=finish_data.get("code_field_name", "Code"), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
     updated.set_footer(text=finish_data.get("footer", "PinkGift — Commande finalisée"))
     await message.edit(embed=updated)
+    await send_order_delivery_ghost_ping(channel, order["user_id"])
 
 
 def valid_panel_csrf():
