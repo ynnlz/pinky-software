@@ -228,7 +228,7 @@ def stored_discord_bot_user_id():
 
 
 def get_customer_deposit_totals(guild_id):
-    """Additionne uniquement les crédits staff, en excluant les remboursements du bot."""
+    """Calcule les dépôts staff nets, retraits compris, sans les achats/remboursements du bot."""
     guild_id = int(guild_id)
     bot_user_id = stored_discord_bot_user_id()
     totals_cents = {}
@@ -238,14 +238,14 @@ def get_customer_deposit_totals(guild_id):
         while True:
             rows = supabase_request(
                 "GET",
-                f"balance_history?guild_id=eq.{guild_id}&delta_cents=gt.0"
+                f"balance_history?guild_id=eq.{guild_id}"
                 f"&select=id,user_id,delta_cents,staff_id&order=id.asc&limit={page_size}&offset={offset}",
             ) or []
             for row in rows:
                 try:
                     user_id = int(row.get("user_id") or 0)
                     staff_id = int(row.get("staff_id") or 0)
-                    delta_cents = max(0, int(row.get("delta_cents") or 0))
+                    delta_cents = int(row.get("delta_cents") or 0)
                 except (TypeError, ValueError):
                     continue
                 if user_id <= 0 or (bot_user_id and staff_id == bot_user_id):
@@ -255,7 +255,7 @@ def get_customer_deposit_totals(guild_id):
                 break
             offset += page_size
     else:
-        query = "SELECT user_id, SUM(delta_cents) AS total_cents FROM balance_history WHERE guild_id=? AND delta_cents>0"
+        query = "SELECT user_id, SUM(delta_cents) AS total_cents FROM balance_history WHERE guild_id=?"
         params = [guild_id]
         if bot_user_id:
             query += " AND (staff_id IS NULL OR staff_id<>?)"
@@ -268,13 +268,49 @@ def get_customer_deposit_totals(guild_id):
                 totals_cents[int(row["user_id"])] = max(0, int(row["total_cents"] or 0))
             except (TypeError, ValueError):
                 continue
-    return {user_id: round(cents / 100, 2) for user_id, cents in totals_cents.items() if cents > 0}
+    return {
+        user_id: round(max(0, cents) / 100, 2)
+        for user_id, cents in totals_cents.items()
+        if cents > 0
+    }
 
 
-def customer_top_user_id(guild, deposit_totals):
+NON_REVENUE_ORDER_STATUSES = {
+    "cancelled", "canceled", "annule", "annulé",
+    "refunded", "refunding", "rembourse", "remboursé",
+    "failed", "rejected", "void",
+}
+
+
+def order_counts_as_purchase(order):
+    status = str(order.get("status") or "pending").strip().lower()
+    if status in NON_REVENUE_ORDER_STATUSES:
+        return False
+    try:
+        return float(order.get("paid") or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def get_customer_spending_totals(guild_id, orders=None):
+    totals = {}
+    for order in orders if orders is not None else load_orders_for_stats():
+        try:
+            if int(order.get("guild_id") or 0) != int(guild_id) or not order_counts_as_purchase(order):
+                continue
+            user_id = int(order.get("user_id") or 0)
+            paid = float(order.get("paid") or 0)
+        except (TypeError, ValueError):
+            continue
+        if user_id > 0:
+            totals[user_id] = round(totals.get(user_id, 0.0) + paid, 2)
+    return totals
+
+
+def customer_top_user_id(guild, spending_totals):
     candidates = [
         (float(total), int(user_id))
-        for user_id, total in (deposit_totals or {}).items()
+        for user_id, total in (spending_totals or {}).items()
         if float(total or 0) > 0 and guild.get_member(int(user_id)) is not None
     ]
     if not candidates:
@@ -283,16 +319,21 @@ def customer_top_user_id(guild, deposit_totals):
     return min(user_id for total, user_id in candidates if total == highest_total)
 
 
-async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None):
-    """Synchronise les paliers cumulés et garantit un seul rôle de meilleur client."""
+async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None, spending_totals=None):
+    """Synchronise les paliers de dépôts nets et le rôle du meilleur acheteur."""
     if guild is None:
-        return {"total_added": 0.0, "tier": customer_highest_tier(0), "is_top": False}
+        return {"total_added": 0.0, "total_spent": 0.0, "tier": customer_highest_tier(0), "is_top": False}
     deposit_totals = deposit_totals if isinstance(deposit_totals, dict) else get_customer_deposit_totals(guild.id)
-    leader_id = customer_top_user_id(guild, deposit_totals)
+    spending_totals = spending_totals if isinstance(spending_totals, dict) else get_customer_spending_totals(guild.id)
+    leader_id = customer_top_user_id(guild, spending_totals)
     managed_tier_ids = {CUSTOMER_ROLE_ID, *(role_id for _, role_id in CUSTOMER_SPENDING_ROLE_THRESHOLDS)}
 
     if target_user_id is None:
         target_ids = set(deposit_totals)
+        for role_id in managed_tier_ids:
+            role = guild.get_role(role_id)
+            if role is not None:
+                target_ids.update(member.id for member in role.members)
     else:
         target_ids = {int(target_user_id)}
     if leader_id:
@@ -327,7 +368,7 @@ async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None):
         leader = guild.get_member(leader_id) if leader_id else None
         if leader is not None and top_role not in leader.roles:
             try:
-                await leader.add_roles(top_role, reason="Meilleur total de dépôts PinkGift")
+                await leader.add_roles(top_role, reason="Meilleur total d'achats PinkGift")
             except discord.HTTPException as error:
                 print(f"Erreur attribution rôle meilleur client {leader.id}: {error}")
 
@@ -335,9 +376,32 @@ async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None):
     total_added = float(deposit_totals.get(target_id, 0) or 0)
     return {
         "total_added": total_added,
+        "total_spent": float(spending_totals.get(target_id, 0) or 0),
         "tier": customer_highest_tier(total_added),
         "is_top": bool(target_id and target_id == leader_id),
     }
+
+
+def schedule_customer_role_sync(guild_id, target_user_id=None):
+    loop = BOT_LOOP
+    if loop is None or not loop.is_running():
+        return None
+
+    async def run_sync():
+        guild = bot.get_guild(int(guild_id))
+        if guild is not None:
+            await sync_customer_roles(guild, target_user_id)
+
+    future = asyncio.run_coroutine_threadsafe(run_sync(), loop)
+
+    def log_sync_error(done):
+        try:
+            done.result()
+        except Exception as error:
+            print(f"Erreur recalcul automatique des rôles clients : {error}")
+
+    future.add_done_callback(log_sync_error)
+    return future
 
 
 def decode_setting_value(value, default=None):
@@ -1371,10 +1435,13 @@ def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid,
     values = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "user_id": user_id, "service": service, "amount": amount, "paid": paid, "user_name": user_name, "received_label": received_label}
     if USE_SUPABASE:
         rows = supabase_request("POST", "orders", values, "return=representation")
-        return rows[0]["id"]
-    with db_connect() as db:
-        cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid,user_name,received_label) VALUES(?,?,?,?,?,?,?,?,?)", tuple(values.values()))
-        return cursor.lastrowid
+        order_id = rows[0]["id"]
+    else:
+        with db_connect() as db:
+            cursor = db.execute("INSERT INTO orders(guild_id,channel_id,message_id,user_id,service,amount,paid,user_name,received_label) VALUES(?,?,?,?,?,?,?,?,?)", tuple(values.values()))
+            order_id = cursor.lastrowid
+    schedule_customer_role_sync(guild_id, user_id)
+    return order_id
 
 
 
@@ -1778,6 +1845,7 @@ def refund_pending_order(order, staff_id):
             remove_referral_purchase(order["guild_id"], order["user_id"], order["message_id"])
         except Exception as error:
             print(f"Erreur retrait parrainage remboursement commande #{order['id']}: {error}")
+        schedule_customer_role_sync(order["guild_id"], order["user_id"])
         return new_balance
 
 
@@ -2830,8 +2898,7 @@ def build_client_totals(orders, month_only=False):
     month_start = datetime.datetime(now.year, now.month, 1, tzinfo=datetime.timezone.utc)
     totals = {}
     for order in orders:
-        status = str(order.get("status") or "").lower()
-        if status not in ("done", "livre", "livré", "delivered"):
+        if not order_counts_as_purchase(order):
             continue
         if month_only:
             created_at = parse_datetime_value(order.get("created_at"))
@@ -2853,7 +2920,6 @@ def build_client_totals(orders, month_only=False):
     return sorted(totals.values(), key=lambda item: item["total"], reverse=True)
 
 
-DELIVERED_ORDER_STATUSES = {"done", "livre", "livré", "delivered"}
 FRENCH_MONTH_NAMES = (
     "janvier", "février", "mars", "avril", "mai", "juin",
     "juillet", "août", "septembre", "octobre", "novembre", "décembre",
@@ -2950,7 +3016,7 @@ def infer_order_purchase_cost(order, costs=None):
 
 
 def calculate_month_finances(orders, month_key, purchase_cost_snapshots=None, purchase_costs=None):
-    """Calcule le CA sur les commandes livrées pendant le mois demandé."""
+    """Calcule le CA dès l'achat, sans attendre la livraison."""
     month_key = normalize_finance_month(month_key)
     start, end = finance_month_bounds(month_key)
     revenue = 0.0
@@ -2961,13 +3027,13 @@ def calculate_month_finances(orders, month_key, purchase_cost_snapshots=None, pu
     purchase_cost_snapshots = purchase_cost_snapshots or {}
     purchase_costs = purchase_costs or get_purchase_cost_config()
     for order in orders:
-        if str(order.get("status") or "").lower() not in DELIVERED_ORDER_STATUSES:
+        if not order_counts_as_purchase(order):
             continue
-        delivered_at = parse_datetime_value(order.get("updated_at") or order.get("created_at"))
-        if delivered_at is None:
+        purchased_at = parse_datetime_value(order.get("created_at"))
+        if purchased_at is None:
             continue
-        delivered_at = delivered_at.astimezone(datetime.timezone.utc)
-        if not start <= delivered_at < end:
+        purchased_at = purchased_at.astimezone(datetime.timezone.utc)
+        if not start <= purchased_at < end:
             continue
         try:
             paid = round(float(order.get("paid") or 0), 2)
@@ -6021,7 +6087,7 @@ async def add_pinkcoins_from_euros(ctx, member, montant_euros):
     tier_text = ""
     if role_summary:
         tier_text = (
-            f" Dépôts cumulés : **{role_summary['total_added']:.2f} €** · "
+            f" Dépôts nets : **{role_summary['total_added']:.2f} €** · "
             f"palier **{role_summary['tier']['label']}**"
             + (" · **meilleur client du serveur**" if role_summary["is_top"] else "")
             + "."
@@ -6046,10 +6112,21 @@ async def remove_pinkcoins(ctx, member, montant_pinkcoins):
         reconcile_referral_balance(ctx.guild.id, member.id, wallet)
     except Exception as error:
         print(f"Erreur réconciliation PinkCoins parrainés de {member}: {error}")
+    role_summary = None
+    try:
+        role_summary = await sync_customer_roles(ctx.guild, member.id)
+    except Exception as error:
+        print(f"Erreur recalcul rôles client après retrait pour {member}: {error}")
     amount_text = f"{int(montant_pinkcoins):,}".replace(",", " ")
+    tier_text = ""
+    if role_summary:
+        tier_text = (
+            f" Dépôts nets : **{role_summary['total_added']:.2f} €** · "
+            f"palier **{role_summary['tier']['label']}**."
+        )
     await ctx.send(
         f"✅ **{amount_text} PinkCoins** retirés à {member.mention}. "
-        f"PinkWallet : **{format_pinkcoins(wallet)}**."
+        f"PinkWallet : **{format_pinkcoins(wallet)}**.{tier_text}"
     )
 
 
@@ -6250,7 +6327,7 @@ PANEL_TEMPLATE = """
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
 <nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab" href="{{ url_for('panel_cp') }}">CP</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_finances') }}">Statistiques</a><a class="tab" href="{{ url_for('panel_referrals') }}">Parrainage</a><a class="tab" href="{{ url_for('panel_prices') }}">Prix</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
-{% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th><th>Dépôts cumulés</th><th>Palier Discord</th><th>Statut</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td><td><strong>{{ '%.2f'|format(client.total_added) }} €</strong></td><td><strong>{{ client.tier_label }}</strong>{% if client.tier_role_id %}<div class="muted">{{ client.tier_role_name }} · {{ client.tier_role_id }}</div>{% endif %}</td><td>{% if client.is_top %}<strong class="done">🏆 Meilleur client</strong>{% elif client.total_added > 0 %}<span class="done">✓ Client</span>{% else %}<span class="muted">Aucun dépôt</span>{% endif %}</td></tr>{% else %}<tr><td colspan="7">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
+{% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th><th>Dépôts nets</th><th>Palier Discord</th><th>Statut</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td><td><strong>{{ '%.2f'|format(client.total_added) }} €</strong></td><td><strong>{{ client.tier_label }}</strong>{% if client.tier_role_id %}<div class="muted">{{ client.tier_role_name }} · {{ client.tier_role_id }}</div>{% endif %}</td><td>{% if client.is_top %}<strong class="done">🏆 Meilleur client</strong>{% elif client.total_added > 0 %}<span class="done">✓ Client</span>{% else %}<span class="muted">Aucun dépôt</span>{% endif %}</td></tr>{% else %}<tr><td colspan="7">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
 {% else %}{% if tab == 'orders' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="orders"><label for="service-filter">Service</label><select id="service-filter" name="service" onchange="this.form.submit()"><option value="">Tous les services</option>{% for service in service_options %}<option value="{{ service }}" {% if service == service_filter %}selected{% endif %}>{{ service }}</option>{% endfor %}</select><label for="amount-filter">Montant</label><select id="amount-filter" name="amount" onchange="this.form.submit()"><option value="">Tous les montants</option>{% for amount in amount_options %}<option value="{{ amount }}" {% if amount == amount_filter %}selected{% endif %}>{{ amount }}</option>{% endfor %}</select></form>{% elif tab == 'valorant' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="valorant"><label for="region-filter">Région</label><select id="region-filter" name="region" onchange="this.form.submit()"><option value="">Toutes les régions</option>{% for region in region_options %}<option value="{{ region }}" {% if region == region_filter %}selected{% endif %}>{{ region }}</option>{% endfor %}</select><label for="pack-filter">Pack VP</label><select id="pack-filter" name="pack" onchange="this.form.submit()"><option value="">Tous les packs</option>{% for pack in pack_options %}<option value="{{ pack }}" {% if pack == pack_filter %}selected{% endif %}>{{ pack }}</option>{% endfor %}</select></form>{% endif %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
@@ -6259,13 +6336,13 @@ PANEL_STOCK_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="ut
 
 PANEL_PRICES_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Prix</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1000px}h1{color:#ff8fc8}.card{background:#171419;border:1px solid #332630;padding:16px;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field span{color:#ff9dce;font-weight:bold}.field small,.muted{color:#aa98a4}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:11px;font-size:16px}button{background:#e8509a;color:#fff;border:0;padding:13px 18px;cursor:pointer;font-weight:bold}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Prix</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Les nouveaux prix sont utilisés immédiatement dans les menus, les embeds et le débit du solde. Aucun redémarrage du bot n'est nécessaire.</p><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><section class="card"><h2>Cartes cadeaux — toutes les marques</h2><div class="grid">{% for item in gift_cards %}<label class="field"><span>{{ item.amount }} € reçus</span><input type="number" name="gift_{{ item.amount }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label>{% endfor %}</div></section><section class="card"><h2>Uber Eats</h2><div class="grid">{% for item in uber_eats %}<label class="field"><span>{{ item.drop }} € estimés</span><input type="number" name="uber_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label>{% endfor %}</div></section><section class="card"><h2>Discord Nitro</h2><div class="grid"><label class="field"><span>Discord Nitro</span><input type="number" name="discord_nitro" value="{{ discord_nitro }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label></div></section><section class="card"><h2>Valorant Points</h2><div class="grid">{% for item in valorant %}<label class="field"><span>{{ item.region }} — {{ item.pack }}</span><input type="number" name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Montant débité en euros</small></label>{% endfor %}</div></section><button type="submit">Enregistrer tous les prix</button></form></main></body></html>"""
 
-PANEL_FINANCES_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Statistiques</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:20px}.toolbar label,.cost-form label{display:flex;flex-direction:column;gap:6px;color:#ff9dce;font-weight:bold}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}.card{background:#171419;border:1px solid #332630;padding:18px}.card span{display:block;color:#aa98a4;font-size:13px}.card strong{display:block;margin-top:8px;color:#fff;font-size:30px}.card.profit strong.positive{color:#74d99f}.card.profit strong.negative{color:#ff718f}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-size:15px}button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}table{width:100%;border-collapse:collapse;background:#171419;margin-top:18px}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}.cost-form{display:flex;flex-wrap:wrap;gap:10px;align-items:end;background:#171419;border:1px solid #332630;padding:16px}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Statistiques</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<form class="toolbar" method="get"><label>Mois<input type="month" name="month" value="{{ stats.month }}" required></label><button type="submit">Afficher</button></form><h2>{{ month_label }}</h2><div class="cards"><article class="card"><span>Chiffre d'affaires</span><strong>{{ '%.2f'|format(stats.revenue) }} €</strong></article><article class="card"><span>Coûts renseignés</span><strong>{{ '%.2f'|format(stats.costs) }} €</strong></article><article class="card profit"><span>Bénéfice</span><strong class="{{ 'positive' if stats.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.profit) }} €</strong></article><article class="card"><span>Commandes livrées</span><strong>{{ stats.orders }}</strong></article><article class="card"><span>Panier moyen</span><strong>{{ '%.2f'|format(stats.average_order) }} €</strong></article></div><form class="cost-form" method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="month" value="{{ stats.month }}"><label>Coûts d'achat et dépenses du mois<input type="number" name="costs" value="{{ stats.costs }}" min="0" max="100000" step="0.01" required></label><button type="submit">Recalculer le bénéfice</button><span class="muted">Bénéfice = chiffre d'affaires des commandes livrées − coûts renseignés.</span></form><h2>Détail par produit</h2><table><thead><tr><th>Produit</th><th>Commandes livrées</th><th>Chiffre d'affaires</th></tr></thead><tbody>{% for item in stats.breakdown %}<tr><td>{{ item.service }}</td><td>{{ item.orders }}</td><td>{{ '%.2f'|format(item.revenue) }} €</td></tr>{% else %}<tr><td colspan="3">Aucune commande livrée pendant ce mois.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
+PANEL_FINANCES_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Statistiques</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:20px}.toolbar label,.cost-form label{display:flex;flex-direction:column;gap:6px;color:#ff9dce;font-weight:bold}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}.card{background:#171419;border:1px solid #332630;padding:18px}.card span{display:block;color:#aa98a4;font-size:13px}.card strong{display:block;margin-top:8px;color:#fff;font-size:30px}.card.profit strong.positive{color:#74d99f}.card.profit strong.negative{color:#ff718f}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-size:15px}button{background:#e8509a;border:0;cursor:pointer;font-weight:bold}table{width:100%;border-collapse:collapse;background:#171419;margin-top:18px}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}.cost-form{display:flex;flex-wrap:wrap;gap:10px;align-items:end;background:#171419;border:1px solid #332630;padding:16px}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Statistiques</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<form class="toolbar" method="get"><label>Mois<input type="month" name="month" value="{{ stats.month }}" required></label><button type="submit">Afficher</button></form><h2>{{ month_label }}</h2><div class="cards"><article class="card"><span>Chiffre d'affaires</span><strong>{{ '%.2f'|format(stats.revenue) }} €</strong></article><article class="card"><span>Coûts renseignés</span><strong>{{ '%.2f'|format(stats.costs) }} €</strong></article><article class="card profit"><span>Bénéfice</span><strong class="{{ 'positive' if stats.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.profit) }} €</strong></article><article class="card"><span>Achats comptabilisés</span><strong>{{ stats.orders }}</strong></article><article class="card"><span>Panier moyen</span><strong>{{ '%.2f'|format(stats.average_order) }} €</strong></article></div><form class="cost-form" method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="month" value="{{ stats.month }}"><label>Coûts d'achat et dépenses du mois<input type="number" name="costs" value="{{ stats.costs }}" min="0" max="100000" step="0.01" required></label><button type="submit">Recalculer le bénéfice</button><span class="muted">Bénéfice = chiffre d'affaires comptabilisé dès l'achat − coûts renseignés.</span></form><h2>Détail par produit</h2><table><thead><tr><th>Produit</th><th>Achats</th><th>Chiffre d'affaires</th></tr></thead><tbody>{% for item in stats.breakdown %}<tr><td>{{ item.service }}</td><td>{{ item.orders }}</td><td>{{ '%.2f'|format(item.revenue) }} €</td></tr>{% else %}<tr><td colspan="3">Aucun achat comptabilisé pendant ce mois.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
 
 PANEL_PRICES_COSTS_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Prix et coûts</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.card,details{background:#171419;border:1px solid #332630;padding:16px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field span,summary{color:#ff9dce;font-weight:bold}.field small,.muted{color:#aa98a4}summary{cursor:pointer}details .grid{margin-top:15px}input{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px;font-size:15px}button{background:#e8509a;color:#fff;border:0;padding:13px 18px;cursor:pointer;font-weight:bold}.notice{padding:12px;background:#241821;border-left:3px solid #ff78bb;margin-bottom:18px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Prix et coûts d'achat</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main>{% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}<p class="muted">Le prix de vente détermine le débit client. Le coût d'achat est enregistré avec chaque nouvelle commande pour calculer le bénéfice sans modifier l'historique.</p><form method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><section class="card"><h2>Prix de vente des cartes cadeaux</h2><div class="grid">{% for item in gift_cards %}<label class="field"><span>{{ item.amount }} € reçus</span><input type="number" name="gift_{{ item.amount }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required><small>Débit client</small></label>{% endfor %}</div></section><h2>Coûts d'achat des cartes par marque</h2>{% for product in gift_cost_products %}<details><summary>{{ product.display }}</summary><div class="grid">{% for item in product.amounts %}<label class="field"><span>Carte {{ item.amount }} €</span><input type="number" name="cost_gift_{{ product.key }}_{{ item.amount }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required><small>Coût d'achat</small></label>{% endfor %}</div></details>{% endfor %}<section class="card"><h2>Uber Eats</h2><div class="grid">{% for item in uber_eats %}<label class="field"><span>{{ item.drop }} € estimés — prix de vente</span><input type="number" name="uber_{{ item.key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>{{ item.drop }} € estimés — coût d'achat</span><input type="number" name="cost_uber_{{ item.key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required></label>{% endfor %}</div></section><section class="card"><h2>Discord Nitro</h2><div class="grid"><label class="field"><span>Prix de vente</span><input type="number" name="discord_nitro" value="{{ discord_nitro }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>Coût d'achat</span><input type="number" name="cost_discord_nitro" value="{{ discord_nitro_cost }}" min="0" max="100000" step="0.01" required></label></div></section><section class="card"><h2>Valorant Points</h2><div class="grid">{% for item in valorant %}<label class="field"><span>{{ item.region }} — {{ item.pack }} — prix de vente</span><input type="number" name="valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.price }}" min="0.01" max="100000" step="0.01" required></label><label class="field"><span>{{ item.region }} — {{ item.pack }} — coût d'achat</span><input type="number" name="cost_valo_{{ item.region_key }}_{{ item.pack_key }}" value="{{ item.cost }}" min="0" max="100000" step="0.01" required></label>{% endfor %}</div></section><button type="submit">Enregistrer les prix et les coûts</button></form></main></body></html>"""
 
-PANEL_FINANCES_PRODUCT_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Statistiques</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.toolbar{display:flex;gap:10px;align-items:end;margin-bottom:20px}.toolbar label{display:flex;flex-direction:column;gap:6px;color:#ff9dce;font-weight:bold}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}.card{background:#171419;border:1px solid #332630;padding:18px}.card span{display:block;color:#aa98a4;font-size:13px}.card strong{display:block;margin-top:8px;font-size:30px}.positive{color:#74d99f}.negative{color:#ff718f}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px}button{background:#e8509a;border:0;cursor:pointer}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Statistiques</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main><form class="toolbar" method="get"><label>Mois<input type="month" name="month" value="{{ stats.month }}" required></label><button>Afficher</button></form><h2>{{ month_label }}</h2><div class="cards"><article class="card"><span>Chiffre d'affaires</span><strong>{{ '%.2f'|format(stats.revenue) }} €</strong></article><article class="card"><span>Coûts d'achat</span><strong>{{ '%.2f'|format(stats.costs) }} €</strong></article><article class="card"><span>Bénéfice</span><strong class="{{ 'positive' if stats.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.profit) }} €</strong></article><article class="card"><span>Commandes livrées</span><strong>{{ stats.orders }}</strong></article><article class="card"><span>Panier moyen</span><strong>{{ '%.2f'|format(stats.average_order) }} €</strong></article></div><p class="muted">Le bénéfice utilise le coût d'achat enregistré au moment de chaque commande. <a href="{{ url_for('panel_prices') }}">Modifier les coûts d'achat</a>.</p><h2>Détail par produit</h2><table><thead><tr><th>Produit</th><th>Ventes</th><th>CA</th><th>Coûts</th><th>Bénéfice</th></tr></thead><tbody>{% for item in stats.breakdown %}<tr><td>{{ item.service }}</td><td>{{ item.orders }}</td><td>{{ '%.2f'|format(item.revenue) }} €</td><td>{{ '%.2f'|format(item.costs) }} €</td><td class="{{ 'positive' if item.profit >= 0 else 'negative' }}">{{ '%.2f'|format(item.profit) }} €</td></tr>{% else %}<tr><td colspan="5">Aucune commande livrée pendant ce mois.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
+PANEL_FINANCES_PRODUCT_TEMPLATE = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PinkGift — Statistiques</title><style>body{margin:0;background:#0e0d11;color:#f7edf3;font-family:Arial,sans-serif}header{padding:18px 5%;border-bottom:1px solid #352632;display:flex;justify-content:space-between;align-items:center}main{padding:22px 5%;max-width:1100px}h1{color:#ff8fc8}.toolbar{display:flex;gap:10px;align-items:end;margin-bottom:20px}.toolbar label{display:flex;flex-direction:column;gap:6px;color:#ff9dce;font-weight:bold}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}.card{background:#171419;border:1px solid #332630;padding:18px}.card span{display:block;color:#aa98a4;font-size:13px}.card strong{display:block;margin-top:8px;font-size:30px}.positive{color:#74d99f}.negative{color:#ff718f}input,button{background:#0e0d11;color:#fff;border:1px solid #5a3a4d;padding:10px}button{background:#e8509a;border:0;cursor:pointer}table{width:100%;border-collapse:collapse;background:#171419}th,td{text-align:left;padding:11px;border-bottom:1px solid #332630}th{color:#ff9dce}.muted{color:#aa98a4;font-size:13px}a{color:#ff9dce}</style></head><body><header><h1>PinkGift — Statistiques</h1><a href="{{ url_for('panel_orders') }}">Retour panel</a></header><main><form class="toolbar" method="get"><label>Mois<input type="month" name="month" value="{{ stats.month }}" required></label><button>Afficher</button></form><h2>{{ month_label }}</h2><div class="cards"><article class="card"><span>Chiffre d'affaires</span><strong>{{ '%.2f'|format(stats.revenue) }} €</strong></article><article class="card"><span>Coûts d'achat</span><strong>{{ '%.2f'|format(stats.costs) }} €</strong></article><article class="card"><span>Bénéfice</span><strong class="{{ 'positive' if stats.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.profit) }} €</strong></article><article class="card"><span>Achats comptabilisés</span><strong>{{ stats.orders }}</strong></article><article class="card"><span>Panier moyen</span><strong>{{ '%.2f'|format(stats.average_order) }} €</strong></article></div><p class="muted">Le bénéfice utilise le coût d'achat enregistré dès la création de la commande. Une commande remboursée ou supprimée est retirée des statistiques. <a href="{{ url_for('panel_prices') }}">Modifier les coûts d'achat</a>.</p><h2>Détail par produit</h2><table><thead><tr><th>Produit</th><th>Ventes</th><th>CA</th><th>Coûts</th><th>Bénéfice</th></tr></thead><tbody>{% for item in stats.breakdown %}<tr><td>{{ item.service }}</td><td>{{ item.orders }}</td><td>{{ '%.2f'|format(item.revenue) }} €</td><td>{{ '%.2f'|format(item.costs) }} €</td><td class="{{ 'positive' if item.profit >= 0 else 'negative' }}">{{ '%.2f'|format(item.profit) }} €</td></tr>{% else %}<tr><td colspan="5">Aucun achat comptabilisé pendant ce mois.</td></tr>{% endfor %}</tbody></table></main></body></html>"""
 
-NITRO_FINANCE_BLOCK = """<h2>Discord Nitro — ventes du tiers</h2><div class="cards"><article class="card"><span>Nitro livrés</span><strong>{{ stats.nitro.orders }}</strong></article><article class="card"><span>Chiffre d'affaires Nitro</span><strong>{{ '%.2f'|format(stats.nitro.revenue) }} €</strong></article><article class="card"><span>Coûts d'achat Nitro</span><strong>{{ '%.2f'|format(stats.nitro.costs) }} €</strong></article><article class="card"><span>Bénéfice Nitro généré</span><strong class="{{ 'positive' if stats.nitro.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.nitro.profit) }} €</strong></article></div>"""
+NITRO_FINANCE_BLOCK = """<h2>Discord Nitro — ventes du tiers</h2><div class="cards"><article class="card"><span>Nitro achetés</span><strong>{{ stats.nitro.orders }}</strong></article><article class="card"><span>Chiffre d'affaires Nitro</span><strong>{{ '%.2f'|format(stats.nitro.revenue) }} €</strong></article><article class="card"><span>Coûts d'achat Nitro</span><strong>{{ '%.2f'|format(stats.nitro.costs) }} €</strong></article><article class="card"><span>Bénéfice Nitro généré</span><strong class="{{ 'positive' if stats.nitro.profit >= 0 else 'negative' }}">{{ '%.2f'|format(stats.nitro.profit) }} €</strong></article></div>"""
 PANEL_FINANCES_NITRO_TEMPLATE = PANEL_FINANCES_PRODUCT_TEMPLATE.replace(
     "</div><p class=\"muted\">",
     f"</div>{NITRO_FINANCE_BLOCK}<p class=\"muted\">",
@@ -7520,8 +7597,9 @@ def panel_orders():
         })
         if order.get("user_name"):
             client["user_name"] = order["user_name"]
-        client["order_count"] += 1
-        client["total_spent"] += float(order.get("paid") or 0)
+        if order_counts_as_purchase(order):
+            client["order_count"] += 1
+            client["total_spent"] += float(order.get("paid") or 0)
     for guild_id, deposit_totals in deposit_totals_by_guild.items():
         guild = bot.get_guild(guild_id)
         for user_id, total_added in deposit_totals.items():
@@ -7539,15 +7617,19 @@ def panel_orders():
                 client["user_name"] = member.name
             client["total_added"] = float(total_added or 0)
 
+    spending_totals_by_guild = {
+        guild_id: get_customer_spending_totals(guild_id, all_orders)
+        for guild_id in guild_ids
+    }
     leaders_by_guild = {}
-    for guild_id, deposit_totals in deposit_totals_by_guild.items():
+    for guild_id, spending_totals in spending_totals_by_guild.items():
         guild = bot.get_guild(guild_id)
         if guild:
-            leaders_by_guild[guild_id] = customer_top_user_id(guild, deposit_totals)
-        elif deposit_totals:
-            highest = max(float(value or 0) for value in deposit_totals.values())
+            leaders_by_guild[guild_id] = customer_top_user_id(guild, spending_totals)
+        elif spending_totals:
+            highest = max(float(value or 0) for value in spending_totals.values())
             leaders_by_guild[guild_id] = min(
-                int(user_id) for user_id, value in deposit_totals.items() if float(value or 0) == highest
+                int(user_id) for user_id, value in spending_totals.items() if float(value or 0) == highest
             )
     for client in clients_by_id.values():
         tier = customer_highest_tier(client.get("total_added", 0))
@@ -7559,7 +7641,7 @@ def panel_orders():
         client["is_top"] = client["user_id"] == leaders_by_guild.get(client["guild_id"])
     clients = sorted(
         clients_by_id.values(),
-        key=lambda item: (item["total_added"], item["total_spent"], item["order_count"]),
+        key=lambda item: (item["total_spent"], item["total_added"], item["order_count"]),
         reverse=True,
     )
     return render_template_string(PANEL_TEMPLATE, orders=orders, clients=clients, tab=tab, service_options=service_options, service_filter=service_filter, amount_options=amount_options, amount_filter=amount_filter, region_options=region_options, region_filter=region_filter, pack_options=pack_options, pack_filter=pack_filter)
@@ -8156,6 +8238,7 @@ def panel_delete_order(order_id):
     except Exception as error:
         print(f"Erreur synchronisation parrainage après suppression commande {order_id}: {error}")
         flash("Commande supprimée, mais la synchronisation du parrainage a échoué.")
+    schedule_customer_role_sync(order["guild_id"], order["user_id"])
     return panel_filter_redirect()
 
 
