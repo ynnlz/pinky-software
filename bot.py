@@ -17,6 +17,7 @@ import hashlib
 import io
 import traceback
 import unicodedata
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 app = Flask('')
@@ -1689,6 +1690,27 @@ def euros_to_pinkcoins(value):
 def pinkcoins_to_euros(value):
     """Convertit un montant saisi en PinkCoins vers le stockage historique en euros."""
     return round(float(value) / PINKCOINS_PER_EURO, 2)
+
+
+def parse_pinkcoin_amount(value):
+    """Accepte les formats usuels Discord : 1250, 1 250, 2.500 ou 1,25k."""
+    text = unicodedata.normalize("NFKC", str(value or "")).strip().lower()
+    text = re.sub(r"\s*(?:pink\s*coins?|pinkcoins?|pcs?)\s*$", "", text).strip()
+    multiplier = Decimal("1000") if text.endswith("k") else Decimal("1")
+    if text.endswith("k"):
+        text = text[:-1].strip()
+    text = re.sub(r"[\s_]", "", text)
+    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", text):
+        text = re.sub(r"[.,]", "", text)
+    else:
+        text = text.replace(",", ".")
+    try:
+        amount = Decimal(text) * multiplier
+    except (InvalidOperation, ValueError):
+        raise ValueError("Montant de PinkCoins invalide")
+    if not amount.is_finite() or amount <= 0 or amount != amount.to_integral_value():
+        raise ValueError("Le montant doit contenir un nombre entier positif de PinkCoins")
+    return int(amount)
 
 
 def format_pinkcoins(value, short=False):
@@ -6099,8 +6121,13 @@ async def add_pinkcoins_from_euros(ctx, member, montant_euros):
 
 
 async def remove_pinkcoins(ctx, member, montant_pinkcoins):
-    if montant_pinkcoins <= 0 or round(float(montant_pinkcoins), 2) != int(montant_pinkcoins):
-        await ctx.send("❌ Indique un nombre entier positif de PinkCoins.", delete_after=5)
+    try:
+        montant_pinkcoins = parse_pinkcoin_amount(montant_pinkcoins)
+    except ValueError:
+        await ctx.send(
+            "❌ Montant invalide. Exemples acceptés : `1250`, `1 250`, `2.500` ou `1,25k` PinkCoins.",
+            delete_after=8,
+        )
         return
     euros = pinkcoins_to_euros(montant_pinkcoins)
     try:
@@ -6140,9 +6167,9 @@ async def cmd_ajouter_pinkcoins(ctx, member: discord.Member, montant_euros: floa
 
 @bot.hybrid_command(name="retirer_pinkcoins", description="Retirer des PinkCoins du PinkWallet d'un client")
 @discord.app_commands.default_permissions(manage_messages=True)
-@discord.app_commands.describe(member="Client concerné", montant_pinkcoins="Nombre entier de PinkCoins à retirer")
+@discord.app_commands.describe(member="Client concerné", montant_pinkcoins="Exemple : 1250, 1 250 ou 1,25k PC")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_retirer_pinkcoins(ctx, member: discord.Member, montant_pinkcoins: int):
+async def cmd_retirer_pinkcoins(ctx, member: discord.Member, montant_pinkcoins: str):
     await remove_pinkcoins(ctx, member, montant_pinkcoins)
 
 
@@ -6154,12 +6181,12 @@ async def cmd_ajouter_solde(ctx, member: discord.Member, montant: float):
     await add_pinkcoins_from_euros(ctx, member, montant)
 
 
-@bot.hybrid_command(name="retirer_solde", description="Ancien alias : retirer une valeur en euros du PinkWallet")
+@bot.hybrid_command(name="retirer_solde", description="Ancien alias : retirer des PinkCoins du PinkWallet")
 @discord.app_commands.default_permissions(manage_messages=True)
-@discord.app_commands.describe(member="Client concerné", montant="Montant à retirer en euros")
+@discord.app_commands.describe(member="Client concerné", montant="Montant à retirer en PinkCoins")
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_retirer_solde(ctx, member: discord.Member, montant: float):
-    await remove_pinkcoins(ctx, member, euros_to_pinkcoins(montant))
+async def cmd_retirer_solde(ctx, member: discord.Member, montant: str):
+    await remove_pinkcoins(ctx, member, montant)
 
 
 
