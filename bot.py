@@ -276,6 +276,39 @@ def get_customer_deposit_totals(guild_id):
     }
 
 
+def remove_customer_net_deposit(guild_id, user_id, amount, staff_id):
+    """Corrige les dépôts nets historiques sans modifier le PinkWallet."""
+    guild_id = int(guild_id)
+    user_id = int(user_id)
+    staff_id = int(staff_id)
+    amount_cents = round(float(amount) * 100)
+    if amount_cents <= 0:
+        raise ValueError("Le montant à retirer doit être positif")
+
+    current_amount = get_customer_deposit_totals(guild_id).get(user_id, 0.0)
+    current_cents = round(float(current_amount) * 100)
+    if amount_cents > current_cents:
+        raise ValueError(
+            f"Le client possède seulement {current_amount:.2f} € de dépôts nets"
+        )
+
+    values = {
+        "guild_id": guild_id,
+        "user_id": user_id,
+        "delta_cents": -amount_cents,
+        "staff_id": staff_id,
+    }
+    if USE_SUPABASE:
+        supabase_request("POST", "balance_history", values, "return=minimal")
+    else:
+        with db_connect() as db:
+            db.execute(
+                "INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)",
+                (guild_id, user_id, -amount_cents, staff_id),
+            )
+    return round((current_cents - amount_cents) / 100, 2)
+
+
 NON_REVENUE_ORDER_STATUSES = {
     "cancelled", "canceled", "annule", "annulé",
     "refunded", "refunding", "rembourse", "remboursé",
@@ -6263,6 +6296,62 @@ async def cmd_retirer_solde(ctx, member: discord.Member, montant: str):
     await remove_pinkcoins(ctx, member, montant)
 
 
+@bot.tree.command(name="corriger_depots", description="Retirer un montant des dépôts nets sans toucher au PinkWallet")
+@discord.app_commands.guild_only()
+@discord.app_commands.default_permissions(manage_messages=True)
+@discord.app_commands.checks.has_role(STAFF_ROLE_ID)
+@discord.app_commands.describe(
+    user="Client concerné",
+    montant_euros="Montant historique à retirer des dépôts nets",
+)
+async def cmd_corriger_depots(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    montant_euros: float,
+):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        amount = Decimal(str(montant_euros)).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        await interaction.followup.send("❌ Montant invalide.", ephemeral=True)
+        return
+    if not amount.is_finite() or amount <= 0 or amount > Decimal("100000"):
+        await interaction.followup.send(
+            "❌ Le montant à retirer doit être compris entre 0,01 € et 100 000 €.",
+            ephemeral=True,
+        )
+        return
+
+    try:
+        remaining = remove_customer_net_deposit(
+            interaction.guild_id,
+            user.id,
+            float(amount),
+            interaction.user.id,
+        )
+    except ValueError as error:
+        await interaction.followup.send(f"❌ {error}.", ephemeral=True)
+        return
+    except Exception as error:
+        print(f"Erreur correction dépôts nets de {user} par {interaction.user}: {error}")
+        await interaction.followup.send(
+            "❌ La correction des dépôts nets a échoué.",
+            ephemeral=True,
+        )
+        return
+
+    try:
+        await sync_customer_roles(interaction.guild, user.id)
+    except Exception as error:
+        print(f"Erreur rôles après correction dépôts nets de {user}: {error}")
+    await interaction.followup.send(
+        f"✅ **{float(amount):.2f} €** retirés des dépôts nets de {user.mention}.\n"
+        f"Dépôts nets restants : **{remaining:.2f} €**.\n"
+        "Le PinkWallet n’a pas été modifié.",
+        ephemeral=True,
+    )
+
+
 @bot.tree.command(name="vente", description="Enregistrer une vente manuelle dans le panel")
 @discord.app_commands.guild_only()
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -7662,6 +7751,13 @@ PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
     "<button type=\"submit\">Livrer</button></form>{% if order.status == 'pending' %}",
     "<button type=\"submit\">Livrer</button></form>{% endif %}{% if order.status == 'pending' %}",
 )
+PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
+    "<th>Statut</th></tr></thead><tbody>",
+    "<th>Statut</th><th>Correction</th></tr></thead><tbody>",
+).replace(
+    '''</span>{% endif %}</td></tr>{% else %}<tr><td colspan="7">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>''',
+    '''</span>{% endif %}</td><td>{% if client.total_added > 0 %}<form method="post" action="{{ url_for('panel_remove_client_deposit', guild_id=client.guild_id, user_id=client.user_id) }}" style="display:flex;gap:6px;align-items:center" onsubmit="return confirm('Retirer ce montant des dépôts nets ? Le PinkWallet restera inchangé.')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="number" name="amount" min="0.01" max="{{ '%.2f'|format(client.total_added) }}" step="0.01" required placeholder="Montant €" style="min-width:105px;width:105px"><button class="delete" type="submit">Retirer</button></form>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% else %}<tr><td colspan="8">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>''',
+)
 PANEL_STOCK_TEMPLATE = apply_panel_theme(PANEL_STOCK_TEMPLATE)
 PANEL_CP_TEMPLATE = apply_panel_theme(PANEL_CP_TEMPLATE)
 PANEL_PRICES_TEMPLATE = apply_panel_theme(PANEL_PRICES_TEMPLATE)
@@ -8389,6 +8485,41 @@ def valid_panel_csrf():
     expected = session.get("csrf", "")
     received = request.form.get("csrf", "")
     return bool(expected and secrets.compare_digest(expected, received))
+
+
+@app.post("/panel/clients/<int:guild_id>/<int:user_id>/deposits/remove")
+@panel_required
+def panel_remove_client_deposit(guild_id, user_id):
+    if not valid_panel_csrf():
+        flash("Session invalide. Recharge la page.")
+        return redirect(url_for("panel_orders", tab="clients"))
+    try:
+        amount = Decimal(request.form.get("amount", "")).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        flash("Montant de correction invalide.")
+        return redirect(url_for("panel_orders", tab="clients"))
+    if not amount.is_finite() or amount <= 0 or amount > Decimal("100000"):
+        flash("Le montant doit être compris entre 0,01 € et 100 000 €.")
+        return redirect(url_for("panel_orders", tab="clients"))
+
+    try:
+        remaining = remove_customer_net_deposit(
+            guild_id,
+            user_id,
+            float(amount),
+            0,
+        )
+        schedule_customer_role_sync(guild_id, user_id)
+        flash(
+            f"{float(amount):.2f} € retirés des dépôts nets du client {user_id}. "
+            f"Reste : {remaining:.2f} €. Le PinkWallet n'a pas été modifié."
+        )
+    except ValueError as error:
+        flash(f"Correction impossible : {error}.")
+    except Exception as error:
+        print(f"Erreur correction dépôts nets panel pour {user_id}: {error}")
+        flash("La correction des dépôts nets a échoué.")
+    return redirect(url_for("panel_orders", tab="clients"))
 
 
 @app.post("/panel/orders/<int:order_id>/refund")
