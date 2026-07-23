@@ -83,6 +83,17 @@ SERVER_COUNTER_RATE_LIMIT_BACKOFF_SECONDS = 900
 SERVER_COUNTER_BACKOFF_UNTIL = 0.0
 SERVER_COUNTER_CATEGORY_NAME = "📊・STATISTIQUES"
 MUTED_ROLE_ID = 1525614378580312165
+CUSTOMER_ROLE_ID = 1517607603323011152
+TOP_CUSTOMER_ROLE_ID = 1525605483648516207
+CUSTOMER_SPENDING_ROLE_THRESHOLDS = (
+    (50.0, 1525604775947927832),
+    (150.0, 1525604775146553486),
+    (300.0, 1517580949532053735),
+    (500.0, 1525604774341513296),
+    (1000.0, 1525604773854970027),
+    (2000.0, 1525604772487630858),
+)
+CUSTOMER_ROLES_SYNCED = False
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:1517582297736413284>")
 VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
@@ -173,6 +184,160 @@ def change_balance(guild_id, user_id, delta, staff_id):
         db.execute("INSERT INTO balances(guild_id,user_id,cents) VALUES(?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET cents=excluded.cents", (guild_id, user_id, updated))
         db.execute("INSERT INTO balance_history(guild_id,user_id,delta_cents,staff_id) VALUES(?,?,?,?)", (guild_id, user_id, delta_cents, staff_id))
         return updated / 100
+
+
+def customer_deposit_role_ids(total_added):
+    """Rôles cumulés correspondant aux euros réellement déposés par le client."""
+    try:
+        total_added = max(0.0, float(total_added or 0))
+    except (TypeError, ValueError):
+        total_added = 0.0
+    role_ids = {CUSTOMER_ROLE_ID} if total_added > 0 else set()
+    role_ids.update(
+        role_id
+        for threshold, role_id in CUSTOMER_SPENDING_ROLE_THRESHOLDS
+        if total_added >= threshold
+    )
+    return role_ids
+
+
+def customer_highest_tier(total_added):
+    try:
+        total_added = max(0.0, float(total_added or 0))
+    except (TypeError, ValueError):
+        total_added = 0.0
+    reached = [
+        (threshold, role_id)
+        for threshold, role_id in CUSTOMER_SPENDING_ROLE_THRESHOLDS
+        if total_added >= threshold
+    ]
+    if not reached:
+        return {"threshold": 0.0, "role_id": CUSTOMER_ROLE_ID if total_added > 0 else 0, "label": "Client" if total_added > 0 else "Aucun"}
+    threshold, role_id = reached[-1]
+    return {"threshold": threshold, "role_id": role_id, "label": f"{threshold:,.0f} €+".replace(",", " ")}
+
+
+def stored_discord_bot_user_id():
+    current_id = int(getattr(getattr(bot, "user", None), "id", 0) or 0)
+    if current_id:
+        return current_id
+    try:
+        return int(get_panel_setting("discord_bot_user_id", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def get_customer_deposit_totals(guild_id):
+    """Additionne uniquement les crédits staff, en excluant les remboursements du bot."""
+    guild_id = int(guild_id)
+    bot_user_id = stored_discord_bot_user_id()
+    totals_cents = {}
+    if USE_SUPABASE:
+        offset = 0
+        page_size = 1000
+        while True:
+            rows = supabase_request(
+                "GET",
+                f"balance_history?guild_id=eq.{guild_id}&delta_cents=gt.0"
+                f"&select=id,user_id,delta_cents,staff_id&order=id.asc&limit={page_size}&offset={offset}",
+            ) or []
+            for row in rows:
+                try:
+                    user_id = int(row.get("user_id") or 0)
+                    staff_id = int(row.get("staff_id") or 0)
+                    delta_cents = max(0, int(row.get("delta_cents") or 0))
+                except (TypeError, ValueError):
+                    continue
+                if user_id <= 0 or (bot_user_id and staff_id == bot_user_id):
+                    continue
+                totals_cents[user_id] = totals_cents.get(user_id, 0) + delta_cents
+            if len(rows) < page_size:
+                break
+            offset += page_size
+    else:
+        query = "SELECT user_id, SUM(delta_cents) AS total_cents FROM balance_history WHERE guild_id=? AND delta_cents>0"
+        params = [guild_id]
+        if bot_user_id:
+            query += " AND (staff_id IS NULL OR staff_id<>?)"
+            params.append(bot_user_id)
+        query += " GROUP BY user_id"
+        with db_connect() as db:
+            rows = db.execute(query, params).fetchall()
+        for row in rows:
+            try:
+                totals_cents[int(row["user_id"])] = max(0, int(row["total_cents"] or 0))
+            except (TypeError, ValueError):
+                continue
+    return {user_id: round(cents / 100, 2) for user_id, cents in totals_cents.items() if cents > 0}
+
+
+def customer_top_user_id(guild, deposit_totals):
+    candidates = [
+        (float(total), int(user_id))
+        for user_id, total in (deposit_totals or {}).items()
+        if float(total or 0) > 0 and guild.get_member(int(user_id)) is not None
+    ]
+    if not candidates:
+        return None
+    highest_total = max(total for total, _ in candidates)
+    return min(user_id for total, user_id in candidates if total == highest_total)
+
+
+async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None):
+    """Synchronise les paliers cumulés et garantit un seul rôle de meilleur client."""
+    if guild is None:
+        return {"total_added": 0.0, "tier": customer_highest_tier(0), "is_top": False}
+    deposit_totals = deposit_totals if isinstance(deposit_totals, dict) else get_customer_deposit_totals(guild.id)
+    leader_id = customer_top_user_id(guild, deposit_totals)
+    managed_tier_ids = {CUSTOMER_ROLE_ID, *(role_id for _, role_id in CUSTOMER_SPENDING_ROLE_THRESHOLDS)}
+
+    if target_user_id is None:
+        target_ids = set(deposit_totals)
+    else:
+        target_ids = {int(target_user_id)}
+    if leader_id:
+        target_ids.add(leader_id)
+
+    for user_id in target_ids:
+        member = guild.get_member(int(user_id))
+        if member is None or member.bot:
+            continue
+        desired_ids = customer_deposit_role_ids(deposit_totals.get(int(user_id), 0))
+        current_ids = {role.id for role in member.roles}
+        roles_to_add = [guild.get_role(role_id) for role_id in desired_ids - current_ids]
+        roles_to_remove = [guild.get_role(role_id) for role_id in (current_ids & managed_tier_ids) - desired_ids]
+        roles_to_add = [role for role in roles_to_add if role is not None]
+        roles_to_remove = [role for role in roles_to_remove if role is not None]
+        try:
+            if roles_to_add:
+                await member.add_roles(*roles_to_add, reason="Palier de dépôts PinkGift atteint")
+            if roles_to_remove:
+                await member.remove_roles(*roles_to_remove, reason="Synchronisation des paliers PinkGift")
+        except discord.HTTPException as error:
+            print(f"Erreur synchronisation rôles client {user_id}: {error}")
+
+    top_role = guild.get_role(TOP_CUSTOMER_ROLE_ID)
+    if top_role is not None:
+        for member in list(top_role.members):
+            if member.id != leader_id:
+                try:
+                    await member.remove_roles(top_role, reason="Nouveau meilleur client PinkGift")
+                except discord.HTTPException as error:
+                    print(f"Erreur retrait rôle meilleur client {member.id}: {error}")
+        leader = guild.get_member(leader_id) if leader_id else None
+        if leader is not None and top_role not in leader.roles:
+            try:
+                await leader.add_roles(top_role, reason="Meilleur total de dépôts PinkGift")
+            except discord.HTTPException as error:
+                print(f"Erreur attribution rôle meilleur client {leader.id}: {error}")
+
+    target_id = int(target_user_id or 0)
+    total_added = float(deposit_totals.get(target_id, 0) or 0)
+    return {
+        "total_added": total_added,
+        "tier": customer_highest_tier(total_added),
+        "is_top": bool(target_id and target_id == leader_id),
+    }
 
 
 def decode_setting_value(value, default=None):
@@ -4903,8 +5068,13 @@ async def sync_commands_to_guilds():
 
 @bot.event
 async def on_ready():
-    global BOT_LOOP, COMMAND_SYNC_DONE, PUBLIC_VIEWS_REPAIRED, DECORATION_ACCESS_REPAIRED, SERVER_COUNTER_REFRESH_TASK
+    global BOT_LOOP, COMMAND_SYNC_DONE, PUBLIC_VIEWS_REPAIRED, DECORATION_ACCESS_REPAIRED, SERVER_COUNTER_REFRESH_TASK, CUSTOMER_ROLES_SYNCED
     BOT_LOOP = asyncio.get_running_loop()
+    if bot.user:
+        try:
+            set_panel_setting("discord_bot_user_id", bot.user.id)
+        except Exception as error:
+            print(f"Erreur mémorisation ID du bot : {error}")
     if not COMMAND_SYNC_DONE:
         await sync_commands_to_guilds()
         COMMAND_SYNC_DONE = True
@@ -4929,6 +5099,13 @@ async def on_ready():
 
     await schedule_active_giveaways()
     await initialize_invite_tracking()
+    if not CUSTOMER_ROLES_SYNCED:
+        for guild in bot.guilds:
+            try:
+                await sync_customer_roles(guild)
+            except Exception as error:
+                print(f"Erreur synchronisation initiale rôles clients pour {guild.id}: {error}")
+        CUSTOMER_ROLES_SYNCED = True
     for guild in bot.guilds:
         if not guild_is_authorized(guild.id):
             await warn_unauthorized_guild(guild)
@@ -5831,14 +6008,27 @@ async def add_pinkcoins_from_euros(ctx, member, montant_euros):
     except Exception as error:
         print(f"Erreur tracking PinkCoins parrainés pour {member}: {error}")
     await mark_balance_ticket_credited(ctx.guild, member.id)
+    role_summary = None
+    try:
+        role_summary = await sync_customer_roles(ctx.guild, member.id)
+    except Exception as error:
+        print(f"Erreur attribution rôles client après recharge pour {member}: {error}")
     if referral_lot:
         try:
             await send_referral_tracking_notification(ctx.guild, member, ctx.author, referral_lot, wallet)
         except Exception as error:
             print(f"Erreur notification recharge parrainée pour {member}: {error}")
+    tier_text = ""
+    if role_summary:
+        tier_text = (
+            f" Dépôts cumulés : **{role_summary['total_added']:.2f} €** · "
+            f"palier **{role_summary['tier']['label']}**"
+            + (" · **meilleur client du serveur**" if role_summary["is_top"] else "")
+            + "."
+        )
     await ctx.send(
         f"✅ **{montant_euros:.2f} €** convertis en **{format_pinkcoins(montant_euros)}** pour {member.mention}. "
-        f"PinkWallet : **{format_pinkcoins(wallet)}**."
+        f"PinkWallet : **{format_pinkcoins(wallet)}**.{tier_text}"
     )
 
 
@@ -6060,7 +6250,7 @@ PANEL_TEMPLATE = """
 <header><h1>PinkGift — Panel staff</h1><a href="{{ url_for('panel_logout') }}" style="color:#ff9dce">Déconnexion</a></header><main>
 <nav><a class="tab {{ 'active' if tab == 'orders' else '' }}" href="{{ url_for('panel_orders', tab='orders') }}">Commandes</a><a class="tab {{ 'active' if tab == 'valorant' else '' }}" href="{{ url_for('panel_orders', tab='valorant') }}">Valorant</a><a class="tab" href="{{ url_for('panel_cp') }}">CP</a><a class="tab {{ 'active' if tab == 'clients' else '' }}" href="{{ url_for('panel_orders', tab='clients') }}">Clients</a><a class="tab" href="{{ url_for('panel_finances') }}">Statistiques</a><a class="tab" href="{{ url_for('panel_referrals') }}">Parrainage</a><a class="tab" href="{{ url_for('panel_prices') }}">Prix</a><a class="tab" href="{{ url_for('panel_stock') }}">Stock</a><a class="tab" href="{{ url_for('panel_embeds') }}">Embeds</a></nav>
 {% with messages=get_flashed_messages() %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endwith %}
-{% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td></tr>{% else %}<tr><td colspan="4">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
+{% if tab == 'clients' %}<table><thead><tr><th>Client</th><th>ID Discord</th><th>Commandes</th><th>Total dépensé</th><th>Dépôts cumulés</th><th>Palier Discord</th><th>Statut</th></tr></thead><tbody>{% for client in clients %}<tr><td><a href="https://discord.com/users/{{ client.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none"><strong>@{{ client.user_name }}</strong></a></td><td class="muted">{{ client.user_id }}</td><td>{{ client.order_count }}</td><td><strong>{{ '%.2f'|format(client.total_spent) }} €</strong></td><td><strong>{{ '%.2f'|format(client.total_added) }} €</strong></td><td><strong>{{ client.tier_label }}</strong>{% if client.tier_role_id %}<div class="muted">{{ client.tier_role_name }} · {{ client.tier_role_id }}</div>{% endif %}</td><td>{% if client.is_top %}<strong class="done">🏆 Meilleur client</strong>{% elif client.total_added > 0 %}<span class="done">✓ Client</span>{% else %}<span class="muted">Aucun dépôt</span>{% endif %}</td></tr>{% else %}<tr><td colspan="7">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>
 {% else %}{% if tab == 'orders' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="orders"><label for="service-filter">Service</label><select id="service-filter" name="service" onchange="this.form.submit()"><option value="">Tous les services</option>{% for service in service_options %}<option value="{{ service }}" {% if service == service_filter %}selected{% endif %}>{{ service }}</option>{% endfor %}</select><label for="amount-filter">Montant</label><select id="amount-filter" name="amount" onchange="this.form.submit()"><option value="">Tous les montants</option>{% for amount in amount_options %}<option value="{{ amount }}" {% if amount == amount_filter %}selected{% endif %}>{{ amount }}</option>{% endfor %}</select></form>{% elif tab == 'valorant' %}<form class="filters" method="get" action="{{ url_for('panel_orders') }}"><input type="hidden" name="tab" value="valorant"><label for="region-filter">Région</label><select id="region-filter" name="region" onchange="this.form.submit()"><option value="">Toutes les régions</option>{% for region in region_options %}<option value="{{ region }}" {% if region == region_filter %}selected{% endif %}>{{ region }}</option>{% endfor %}</select><label for="pack-filter">Pack VP</label><select id="pack-filter" name="pack" onchange="this.form.submit()"><option value="">Tous les packs</option>{% for pack in pack_options %}<option value="{{ pack }}" {% if pack == pack_filter %}selected{% endif %}>{{ pack }}</option>{% endfor %}</select></form>{% endif %}<table><thead><tr><th>ID</th><th>Client</th><th>Service</th><th>Reçu</th><th>Payé</th><th>État</th><th>Actions</th></tr></thead><tbody>{% for order in orders %}<tr><td>#{{ loop.index }}</td><td><a href="https://discord.com/users/{{ order.user_id }}" target="_blank" style="color:#ff9dce;text-decoration:none">@{{ order.user_name or order.user_id }}</a></td><td>{{ order.service }}</td><td>{{ order.received_label or ((order.amount|string) + " €") }}</td><td>{{ order.paid }} €</td><td class="{{ order.status }}">{{ order.status }}</td><td><form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><input name="code" required placeholder="Code cadeau" value="{{ order.code or '' }}"><button type="submit">Livrer</button></form><form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline" onsubmit="return confirm('Supprimer cette commande du panel ?')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="return_tab" value="{{ tab }}"><input type="hidden" name="return_service" value="{{ service_filter }}"><input type="hidden" name="return_amount" value="{{ amount_filter }}"><input type="hidden" name="return_region" value="{{ region_filter }}"><input type="hidden" name="return_pack" value="{{ pack_filter }}"><button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">Aucune commande enregistrée.</td></tr>{% endfor %}</tbody></table>{% endif %}
 </main></body></html>"""
 
@@ -7299,15 +7489,79 @@ def panel_orders():
             member = guild.get_member(int(order.get("user_id") or 0)) if guild else None
             if member:
                 order["user_name"] = member.name
+    guild_ids = {
+        int(order.get("guild_id") or 0)
+        for order in all_orders
+        if int(order.get("guild_id") or 0) > 0
+    }
+    guild_ids.update(guild.id for guild in bot.guilds)
+    deposit_totals_by_guild = {}
+    for guild_id in guild_ids:
+        try:
+            deposit_totals_by_guild[guild_id] = get_customer_deposit_totals(guild_id)
+        except Exception as error:
+            print(f"Erreur chargement dépôts clients pour {guild_id}: {error}")
+            deposit_totals_by_guild[guild_id] = {}
+
     clients_by_id = {}
     for order in all_orders:
-        user_id = order.get("user_id")
-        client = clients_by_id.setdefault(user_id, {"user_id": user_id, "user_name": order.get("user_name") or str(user_id), "order_count": 0, "total_spent": 0.0})
+        user_id = int(order.get("user_id") or 0)
+        guild_id = int(order.get("guild_id") or 0)
+        if user_id <= 0:
+            continue
+        client_key = (guild_id, user_id)
+        client = clients_by_id.setdefault(client_key, {
+            "guild_id": guild_id,
+            "user_id": user_id,
+            "user_name": order.get("user_name") or str(user_id),
+            "order_count": 0,
+            "total_spent": 0.0,
+            "total_added": 0.0,
+        })
         if order.get("user_name"):
             client["user_name"] = order["user_name"]
         client["order_count"] += 1
         client["total_spent"] += float(order.get("paid") or 0)
-    clients = sorted(clients_by_id.values(), key=lambda item: item["total_spent"], reverse=True)
+    for guild_id, deposit_totals in deposit_totals_by_guild.items():
+        guild = bot.get_guild(guild_id)
+        for user_id, total_added in deposit_totals.items():
+            client_key = (guild_id, int(user_id))
+            member = guild.get_member(int(user_id)) if guild else None
+            client = clients_by_id.setdefault(client_key, {
+                "guild_id": guild_id,
+                "user_id": int(user_id),
+                "user_name": member.name if member else str(user_id),
+                "order_count": 0,
+                "total_spent": 0.0,
+                "total_added": 0.0,
+            })
+            if member:
+                client["user_name"] = member.name
+            client["total_added"] = float(total_added or 0)
+
+    leaders_by_guild = {}
+    for guild_id, deposit_totals in deposit_totals_by_guild.items():
+        guild = bot.get_guild(guild_id)
+        if guild:
+            leaders_by_guild[guild_id] = customer_top_user_id(guild, deposit_totals)
+        elif deposit_totals:
+            highest = max(float(value or 0) for value in deposit_totals.values())
+            leaders_by_guild[guild_id] = min(
+                int(user_id) for user_id, value in deposit_totals.items() if float(value or 0) == highest
+            )
+    for client in clients_by_id.values():
+        tier = customer_highest_tier(client.get("total_added", 0))
+        client["tier_label"] = tier["label"]
+        client["tier_role_id"] = tier["role_id"]
+        guild = bot.get_guild(client["guild_id"])
+        tier_role = guild.get_role(tier["role_id"]) if guild and tier["role_id"] else None
+        client["tier_role_name"] = tier_role.name if tier_role else "Rôle client"
+        client["is_top"] = client["user_id"] == leaders_by_guild.get(client["guild_id"])
+    clients = sorted(
+        clients_by_id.values(),
+        key=lambda item: (item["total_added"], item["total_spent"], item["order_count"]),
+        reverse=True,
+    )
     return render_template_string(PANEL_TEMPLATE, orders=orders, clients=clients, tab=tab, service_options=service_options, service_filter=service_filter, amount_options=amount_options, amount_filter=amount_filter, region_options=region_options, region_filter=region_filter, pack_options=pack_options, pack_filter=pack_filter)
 
 
