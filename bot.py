@@ -1445,6 +1445,80 @@ def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid,
     return order_id
 
 
+MANUAL_SALE_CODE_PREFIX = "manual_sale:"
+
+
+def delete_order_record(order_id):
+    order_id = int(order_id)
+    if USE_SUPABASE:
+        deleted = supabase_request("DELETE", f"orders?id=eq.{order_id}", prefer="return=representation")
+        if not deleted:
+            raise RuntimeError(
+                "Aucune ligne supprimée. Vérifie que SUPABASE_SECRET_KEY est bien une clé secrète "
+                "et non la clé publishable/anon."
+            )
+        return
+    with db_connect() as db:
+        cursor = db.execute("DELETE FROM orders WHERE id=?", (order_id,))
+        if cursor.rowcount == 0:
+            raise RuntimeError("Commande introuvable")
+
+
+def manual_sale_staff_id(order):
+    code = str((order or {}).get("code") or "")
+    if not code.startswith(MANUAL_SALE_CODE_PREFIX):
+        return None
+    try:
+        staff_id = int(code[len(MANUAL_SALE_CODE_PREFIX):])
+    except (TypeError, ValueError):
+        return None
+    return staff_id if staff_id > 0 else None
+
+
+def apply_manual_sale_deposit(guild_id, user_id, amount, staff_id):
+    """Ajoute un dépôt client consommé immédiatement, sans modifier son PinkWallet."""
+    guild_id = int(guild_id)
+    user_id = int(user_id)
+    staff_id = int(staff_id)
+    amount = round(float(amount), 2)
+    bot_user_id = stored_discord_bot_user_id()
+    if bot_user_id <= 0:
+        raise RuntimeError("L'identité Discord du bot n'est pas encore disponible")
+    change_balance(guild_id, user_id, amount, staff_id)
+    try:
+        wallet = change_balance(guild_id, user_id, -amount, bot_user_id)
+    except Exception:
+        try:
+            change_balance(guild_id, user_id, -amount, staff_id)
+        except Exception as rollback_error:
+            print(f"ERREUR rollback dépôt vente manuelle {user_id}: {rollback_error}")
+        raise
+    return wallet
+
+
+def reverse_manual_sale_deposit(order):
+    """Retire le dépôt synthétique lié à une vente manuelle, sans toucher au PinkWallet."""
+    staff_id = manual_sale_staff_id(order)
+    if staff_id is None:
+        return False
+    guild_id = int(order["guild_id"])
+    user_id = int(order["user_id"])
+    amount = round(float(order.get("paid") or 0), 2)
+    bot_user_id = stored_discord_bot_user_id()
+    if amount <= 0 or bot_user_id <= 0:
+        raise RuntimeError("Vente manuelle invalide ou bot Discord indisponible")
+    change_balance(guild_id, user_id, amount, bot_user_id)
+    try:
+        change_balance(guild_id, user_id, -amount, staff_id)
+    except Exception:
+        try:
+            change_balance(guild_id, user_id, -amount, bot_user_id)
+        except Exception as rollback_error:
+            print(f"ERREUR rollback suppression vente manuelle {user_id}: {rollback_error}")
+        raise
+    return True
+
+
 
 init_database()
 
@@ -6189,6 +6263,130 @@ async def cmd_retirer_solde(ctx, member: discord.Member, montant: str):
     await remove_pinkcoins(ctx, member, montant)
 
 
+@bot.tree.command(name="vente", description="Enregistrer une vente manuelle dans le panel")
+@discord.app_commands.guild_only()
+@discord.app_commands.default_permissions(manage_messages=True)
+@discord.app_commands.checks.has_role(STAFF_ROLE_ID)
+@discord.app_commands.describe(
+    user="Client concerné",
+    produit="Nom du produit ou du service vendu",
+    prix="Prix payé par le client en euros",
+    cout_achat="Coût d'achat réel en euros",
+)
+async def cmd_vente(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    produit: str,
+    prix: float,
+    cout_achat: float,
+):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    produit = re.sub(r"\s+", " ", str(produit or "")).strip()
+    try:
+        prix_decimal = Decimal(str(prix)).quantize(Decimal("0.01"))
+        cout_decimal = Decimal(str(cout_achat)).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        await interaction.followup.send("❌ Prix ou coût d'achat invalide.", ephemeral=True)
+        return
+    if not 1 <= len(produit) <= 100:
+        await interaction.followup.send("❌ Le nom du produit doit contenir entre 1 et 100 caractères.", ephemeral=True)
+        return
+    if (
+        not prix_decimal.is_finite()
+        or not cout_decimal.is_finite()
+        or prix_decimal <= 0
+        or cout_decimal < 0
+        or prix_decimal > Decimal("100000")
+        or cout_decimal > Decimal("100000")
+    ):
+        await interaction.followup.send(
+            "❌ Le prix doit être positif et le coût d'achat ne peut pas être négatif.",
+            ephemeral=True,
+        )
+        return
+
+    guild = interaction.guild
+    if guild is None:
+        await interaction.followup.send("❌ Cette commande doit être utilisée sur le serveur.", ephemeral=True)
+        return
+    if user.bot:
+        await interaction.followup.send("❌ Une vente ne peut pas être attribuée à un bot.", ephemeral=True)
+        return
+    prix_value = float(prix_decimal)
+    cout_value = float(cout_decimal)
+    staff_id = interaction.user.id
+    message_id = -time.time_ns()
+    order_id = None
+    deposit_applied = False
+    try:
+        wallet = apply_manual_sale_deposit(guild.id, user.id, prix_value, staff_id)
+        deposit_applied = True
+        order_id = save_order(
+            guild.id,
+            interaction.channel_id or 0,
+            message_id,
+            user.id,
+            produit,
+            prix_value,
+            prix_value,
+            user.name,
+            "Vente manuelle",
+        )
+        save_order_purchase_cost(message_id, cout_value)
+        mark_order_delivered(order_id, f"{MANUAL_SALE_CODE_PREFIX}{staff_id}")
+    except Exception as error:
+        if order_id is not None:
+            try:
+                delete_order_record(order_id)
+                delete_panel_setting(f"order_cost:{message_id}")
+            except Exception as cleanup_error:
+                print(f"Erreur nettoyage vente manuelle #{order_id}: {cleanup_error}")
+        if deposit_applied:
+            try:
+                reverse_manual_sale_deposit({
+                    "guild_id": guild.id,
+                    "user_id": user.id,
+                    "paid": prix_value,
+                    "code": f"{MANUAL_SALE_CODE_PREFIX}{staff_id}",
+                })
+            except Exception as rollback_error:
+                print(f"ERREUR rollback complet vente manuelle de {user}: {rollback_error}")
+        print(f"Erreur création vente manuelle par {interaction.user}: {error}")
+        await interaction.followup.send(
+            "❌ La vente n'a pas pu être enregistrée. Le PinkWallet du client n'a pas été modifié.",
+            ephemeral=True,
+        )
+        return
+
+    try:
+        role_summary = await sync_customer_roles(guild, user.id)
+    except Exception as error:
+        print(f"Erreur rôles après vente manuelle pour {user}: {error}")
+        try:
+            total_added = get_customer_deposit_totals(guild.id).get(user.id, 0)
+            total_spent = get_customer_spending_totals(guild.id).get(user.id, 0)
+        except Exception as totals_error:
+            print(f"Erreur totaux après vente manuelle pour {user}: {totals_error}")
+            total_added = total_spent = 0
+        role_summary = {
+            "total_added": total_added,
+            "total_spent": total_spent,
+            "tier": customer_highest_tier(0),
+            "is_top": False,
+        }
+    profit = round(prix_value - cout_value, 2)
+    await interaction.followup.send(
+        f"✅ Vente **#{order_id}** enregistrée pour {user.mention}.\n"
+        f"**Produit :** {discord.utils.escape_markdown(produit)}\n"
+        f"**Prix :** {prix_value:.2f} € · **Coût :** {cout_value:.2f} € · "
+        f"**Bénéfice :** {profit:.2f} €\n"
+        f"**Total dépensé :** {role_summary['total_spent']:.2f} € · "
+        f"**Dépôts nets :** {role_summary['total_added']:.2f} €\n"
+        f"Le PinkWallet reste à **{format_pinkcoins(wallet)}**.",
+        ephemeral=True,
+    )
+
+
 
 @bot.hybrid_command(name="commandes", description="Afficher le répertoire des commandes réservées au staff")
 @discord.app_commands.default_permissions(manage_messages=True)
@@ -8229,29 +8427,31 @@ def panel_delete_order(order_id):
     if existing_order and str(existing_order.get("status") or "pending").lower() == "pending":
         flash("Commande en attente : utilise « Rembourser » pour recréditer le client avant de la supprimer.")
         return panel_filter_redirect()
-    order = None
+    order = existing_order
+    manual_deposit_reversed = False
     try:
-        if USE_SUPABASE:
-            rows = supabase_request("GET", f"orders?id=eq.{order_id}&select=guild_id,user_id,message_id") or []
-            order = rows[0] if rows else None
-            if order is None:
-                raise RuntimeError("Commande introuvable")
-            deleted = supabase_request("DELETE", f"orders?id=eq.{order_id}", prefer="return=representation")
-            if not deleted:
-                raise RuntimeError("Aucune ligne supprimée. Vérifie que SUPABASE_SECRET_KEY est bien une clé secrète et non la clé publishable/anon.")
-        else:
-            with db_connect() as db:
-                row = db.execute("SELECT guild_id,user_id,message_id FROM orders WHERE id=?", (order_id,)).fetchone()
-                order = dict(row) if row else None
-                if order is None:
-                    raise RuntimeError("Commande introuvable")
-                cursor = db.execute("DELETE FROM orders WHERE id=?", (order_id,))
-                if cursor.rowcount == 0:
-                    raise RuntimeError("Commande introuvable")
+        if order is None:
+            raise RuntimeError("Commande introuvable")
+        manual_deposit_reversed = reverse_manual_sale_deposit(order)
+        delete_order_record(order_id)
     except Exception as error:
+        if manual_deposit_reversed:
+            try:
+                apply_manual_sale_deposit(
+                    order["guild_id"],
+                    order["user_id"],
+                    order["paid"],
+                    manual_sale_staff_id(order),
+                )
+            except Exception as rollback_error:
+                print(f"ERREUR restauration vente manuelle #{order_id}: {rollback_error}")
         print(f"Erreur suppression commande {order_id}: {error}")
         flash("La suppression a échoué.")
         return panel_filter_redirect()
+    try:
+        delete_panel_setting(f"order_cost:{int(order['message_id'])}")
+    except Exception as error:
+        print(f"Erreur nettoyage coût commande {order_id}: {error}")
     try:
         referral_sync = remove_referral_purchase(order["guild_id"], order["user_id"], order["message_id"])
         removed_commission = referral_sync["commission"]
