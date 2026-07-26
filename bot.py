@@ -2294,6 +2294,35 @@ DEFAULT_EMBED_DATA.update({
         "color_rgb": [255, 192, 203],
         "footer": "PinkGift — Programme de parrainage",
         "image_url": ""
+    },
+    "privileges_embed": {
+        "title": "✨ PRIVILÈGES PINKGIFT",
+        "description": [
+            "Bienvenue dans l’espace **Privilèges PinkGift**.",
+            "",
+            "Retrouve ici les avantages et offres réservés aux membres de la communauté.",
+            "Ce contenu est provisoire : il peut être entièrement modifié depuis le panel."
+        ],
+        "fields": [
+            {
+                "name": "💎 Avantages exclusifs",
+                "value": "Des avantages spéciaux seront bientôt présentés ici.",
+                "inline": False
+            },
+            {
+                "name": "🎁 Offres réservées",
+                "value": "Des offres privées pourront être ajoutées pour les membres éligibles.",
+                "inline": False
+            },
+            {
+                "name": "🚀 Accès prioritaire",
+                "value": "Les conditions d’accès seront annoncées prochainement.",
+                "inline": False
+            }
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Privilèges",
+        "image_url": ""
     }
 })
 
@@ -5808,6 +5837,7 @@ def public_embed_builders():
         (["AUTRES SERVICES", "ABONNEMENTS"], lambda: build_json_embed("autres_embed"), OtherServicesView()),
         (["PinkWallet", "PinkCoins", "Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
+        (["PRIVILÈGES PINKGIFT", "PRIVILEGES PINKGIFT"], lambda: build_json_embed("privileges_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
         (["FAQ PinkGift", "FAQ"], lambda: build_json_embed("faq_embed"), None),
         (["Classement", "CLASSEMENT"], build_leaderboard_embed, None),
@@ -8435,6 +8465,7 @@ def panel_embeds():
         "tarifs_embed": "La liste des marques est modifiable ici. Les prix restent synchronisés avec l'onglet Prix et le parcours de commande.",
         "valo_embed": "Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
         "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit de PinkCoins.",
+        "privileges_embed": "Publié avec /privilèges. Le titre, les textes, les champs, la couleur, le footer et l'image sont entièrement modifiables ici.",
     }
     embeds = []
     for key in sorted(
@@ -8986,6 +9017,13 @@ async def cmd_faq(ctx):
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_parrainages(ctx):
     await ctx.send(embed=build_json_embed("parrainages_embed"))
+
+
+@bot.hybrid_command(name="privilèges", aliases=["privileges"], description="Publier les privilèges PinkGift")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_privileges(ctx):
+    await ctx.send(embed=build_json_embed("privileges_embed"))
 
 
 @bot.hybrid_command(name="classement", description="Publier le classement clients PinkGift")

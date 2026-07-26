@@ -395,6 +395,39 @@
     "footer": "PinkGift — Programme de parrainage",
     "image_url": ""
   },
+  "privileges_embed": {
+    "title": "✨ PRIVILÈGES PINKGIFT",
+    "description": [
+      "Bienvenue dans l’espace **Privilèges PinkGift**.",
+      "",
+      "Retrouve ici les avantages et offres réservés aux membres de la communauté.",
+      "Ce contenu est provisoire : il peut être entièrement modifié depuis le panel."
+    ],
+    "fields": [
+      {
+        "name": "💎 Avantages exclusifs",
+        "value": "Des avantages spéciaux seront bientôt présentés ici.",
+        "inline": false
+      },
+      {
+        "name": "🎁 Offres réservées",
+        "value": "Des offres privées pourront être ajoutées pour les membres éligibles.",
+        "inline": false
+      },
+      {
+        "name": "🚀 Accès prioritaire",
+        "value": "Les conditions d’accès seront annoncées prochainement.",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "footer": "PinkGift — Privilèges",
+    "image_url": ""
+  },
   "balance_ticket_embed": {
     "title": "➕ Recharge du PinkWallet",
     "description": [
