@@ -100,7 +100,8 @@ AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:151758229
 VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 REFERRAL_TRACKING_CHANNEL_ID = 1525601870561935391
 MEMBER_ACTIVITY_CHANNEL_ID = 1525601870561935391
-DISCORD_DECORATION_ACCESS_USER_IDS = {1518303260178649328}
+DISCORD_DECORATION_ACCESS_USER_IDS = set()
+DISCORD_DECORATION_REVOKED_USER_IDS = {1518303260178649328}
 ANTI_RAID_CONFIG_CACHE = {}
 ANTI_RAID_RECENT_JOINS = {}
 ANTI_RAID_LOCKS = {}
@@ -2246,7 +2247,7 @@ DEFAULT_EMBED_DATA.update({
             },
             {
                 "name": "🎉 Giveaways",
-                "value": "!giveaway <durée> <nom> [invitations] [tag_serveur] [nombre_gagnants] : crée un giveaway ; seules les nouvelles invitations actives de comptes âgés d'au moins 30 jours comptent.\n!reroll <ID ou lien> : refait le tirage avec le même nombre de gagnants.\n!reset_invitations [membre] confirmation:Oui : remet les invitations à zéro sans recomptage des anciens invités.",
+                "value": "!giveaway <durée> <nom> [invitations] [chances_invitations] [tag_serveur] [nombre_gagnants] : crée un giveaway ; les conditions sont vérifiées au tirage et les chances peuvent augmenter avec les invitations valides.\n!reroll <ID ou lien> : refait le tirage avec le même nombre de gagnants.\n!reset_invitations [membre] confirmation:Oui : remet les invitations à zéro sans recomptage des anciens invités.",
                 "inline": False
             },
             {
@@ -3401,7 +3402,7 @@ async def create_product_ticket(interaction, product_key, amount):
             "amount": amount, "paid": pinkcoin_number(paid_amount), "drop": received_display, "balance": pinkcoin_number(remaining_balance)
         })
         try:
-            order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
+            order_message = await ticket_channel.send(content=user.mention, embed=embed)
             await pin_first_bot_ticket_message(ticket_channel, order_message)
         except Exception as error:
             try:
@@ -3555,7 +3556,7 @@ async def create_valo_order(interaction, region_key, pack_key):
             "code": code_pending, "balance": pinkcoin_number(remaining_balance)
         })
         try:
-            order_message = await ticket_channel.send(content=user.mention, embed=embed, view=PendingOrderActionsView(user.id))
+            order_message = await ticket_channel.send(content=user.mention, embed=embed)
             await pin_first_bot_ticket_message(ticket_channel, order_message)
         except Exception as error:
             try:
@@ -3907,7 +3908,7 @@ async def show_order_refund_on_discord(order, new_balance):
     await message.edit(
         content=f"<@{int(order['user_id'])}>",
         embed=cancelled,
-        view=CloseTicketView(int(order["user_id"])),
+        view=None if isinstance(channel, discord.Thread) else CloseTicketView(int(order["user_id"])),
     )
 
 
@@ -4029,6 +4030,19 @@ async def resolve_discord_decoration_access_members(guild):
     return members
 
 
+async def resolve_discord_decoration_revoked_members(guild):
+    members = []
+    for user_id in DISCORD_DECORATION_REVOKED_USER_IDS:
+        member = guild.get_member(user_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                continue
+        members.append(member)
+    return members
+
+
 async def grant_discord_decoration_ticket_access(ticket_channel, members):
     updated = 0
     for member in members:
@@ -4061,7 +4075,8 @@ async def repair_discord_decoration_ticket_access():
         if not isinstance(category, discord.CategoryChannel):
             continue
         members = await resolve_discord_decoration_access_members(guild)
-        if not members:
+        revoked_members = await resolve_discord_decoration_revoked_members(guild)
+        if not members and not revoked_members:
             continue
         for channel in category.text_channels:
             if not str(channel.topic or "").startswith("pinkgift-special:autres:"):
@@ -4084,6 +4099,22 @@ async def repair_discord_decoration_ticket_access():
                 continue
             if is_decoration_ticket:
                 updated += await grant_discord_decoration_ticket_access(channel, members)
+                try:
+                    ticket_owner_id = int(str(channel.topic or "").rsplit(":", 1)[-1])
+                except (TypeError, ValueError):
+                    ticket_owner_id = 0
+                for revoked_member in revoked_members:
+                    if revoked_member.id == ticket_owner_id or revoked_member not in channel.overwrites:
+                        continue
+                    try:
+                        await channel.set_permissions(
+                            revoked_member,
+                            overwrite=None,
+                            reason="Retrait de l'accès spécial aux tickets Décorations Discord/Nitro",
+                        )
+                        updated += 1
+                    except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
+                        print(f"Erreur retrait accès décoration pour {revoked_member} dans {channel}: {error}")
     return updated
 
 
@@ -4131,12 +4162,6 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
                 overwrites[me] = bot_ticket_permission_overwrite()
             if staff_role:
                 overwrites[staff_role] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                )
-            for access_member in decoration_access_members:
-                overwrites[access_member] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True,
                     read_message_history=True,
@@ -4553,6 +4578,9 @@ class CloseTicketView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         channel = interaction.channel
+        if isinstance(channel, discord.Thread):
+            await interaction.response.edit_message(view=None)
+            return
         client = guild.get_member(self.client_id) if guild and self.client_id else None
         staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
         is_staff = staff_role in interaction.user.roles if hasattr(interaction.user, "roles") and staff_role else False
@@ -4709,7 +4737,42 @@ def normalize_giveaway_participants(participants):
     return normalized
 
 
-def select_giveaway_winners(participants, winner_count=1, winner_history=None, current_winners=None):
+def weighted_giveaway_sample(candidates, count, participant_weights=None, random_source=None):
+    pool = list(candidates)
+    selected = []
+    weights = participant_weights if isinstance(participant_weights, dict) else {}
+    random_source = random_source or secrets.SystemRandom()
+    count = min(max(0, int(count or 0)), len(pool))
+
+    while pool and len(selected) < count:
+        candidate_weights = []
+        for user_id in pool:
+            raw_weight = weights.get(user_id, weights.get(str(user_id), 1))
+            try:
+                weight = max(1.0, float(raw_weight or 1))
+            except (TypeError, ValueError):
+                weight = 1.0
+            candidate_weights.append(weight)
+        total_weight = sum(candidate_weights)
+        target = random_source.random() * total_weight
+        cumulative = 0.0
+        selected_index = len(pool) - 1
+        for index, weight in enumerate(candidate_weights):
+            cumulative += weight
+            if target < cumulative:
+                selected_index = index
+                break
+        selected.append(pool.pop(selected_index))
+    return selected
+
+
+def select_giveaway_winners(
+    participants,
+    winner_count=1,
+    winner_history=None,
+    current_winners=None,
+    participant_weights=None,
+):
     participants = normalize_giveaway_participants(participants)
     if not participants:
         return []
@@ -4731,7 +4794,12 @@ def select_giveaway_winners(participants, winner_count=1, winner_history=None, c
         if user_id not in history_set and user_id not in current
     ]
     if fresh_candidates:
-        selected.extend(random_source.sample(fresh_candidates, min(winner_count, len(fresh_candidates))))
+        selected.extend(weighted_giveaway_sample(
+            fresh_candidates,
+            min(winner_count, len(fresh_candidates)),
+            participant_weights,
+            random_source,
+        ))
 
     if len(selected) < winner_count:
         previous_candidates = [
@@ -4740,13 +4808,23 @@ def select_giveaway_winners(participants, winner_count=1, winner_history=None, c
         ]
         if previous_candidates:
             missing = winner_count - len(selected)
-            selected.extend(random_source.sample(previous_candidates, min(missing, len(previous_candidates))))
+            selected.extend(weighted_giveaway_sample(
+                previous_candidates,
+                min(missing, len(previous_candidates)),
+                participant_weights,
+                random_source,
+            ))
 
     if len(selected) < winner_count:
         remaining = [user_id for user_id in participants if user_id not in selected]
         if remaining:
             missing = winner_count - len(selected)
-            selected.extend(random_source.sample(remaining, min(missing, len(remaining))))
+            selected.extend(weighted_giveaway_sample(
+                remaining,
+                min(missing, len(remaining)),
+                participant_weights,
+                random_source,
+            ))
     return selected
 
 
@@ -4822,6 +4900,8 @@ def giveaway_requirement_failures(guild, member, data):
 async def eligible_giveaway_participants(guild, data):
     eligible = []
     rejected = []
+    participant_weights = {}
+    weighted_by_invites = bool(data.get("weighted_by_invites"))
     for user_id in normalize_giveaway_participants(data.get("participants", [])):
         member = guild.get_member(user_id)
         if member is None:
@@ -4834,10 +4914,15 @@ async def eligible_giveaway_participants(guild, data):
             rejected.append(user_id)
         else:
             eligible.append(user_id)
-    return eligible, rejected
+            participant_weights[user_id] = (
+                1 + giveaway_new_active_invites(guild.id, user_id, data)
+                if weighted_by_invites
+                else 1
+            )
+    return eligible, rejected, participant_weights
 
 
-def giveaway_conditions_text(min_invites=0, require_server_tag=False):
+def giveaway_conditions_text(min_invites=0, require_server_tag=False, weighted_by_invites=False):
     conditions = []
     min_invites = max(0, int(min_invites or 0))
     if min_invites:
@@ -4847,6 +4932,12 @@ def giveaway_conditions_text(min_invites=0, require_server_tag=False):
         )
     if require_server_tag:
         conditions.append("• Afficher le **tag de ce serveur** sur son profil Discord")
+    if weighted_by_invites:
+        conditions.append(
+            "• **Chances bonus activées :** 1 chance de base + 1 chance par nouvelle invitation active et valide"
+        )
+    if conditions:
+        conditions.append("• Les conditions sont vérifiées uniquement au moment du tirage")
     return "\n".join(conditions)
 
 
@@ -4866,6 +4957,7 @@ def build_giveaway_embed(
     min_invites=0,
     require_server_tag=False,
     winner_count=1,
+    weighted_by_invites=False,
 ):
     key = "giveaway_ended_embed" if ended else "giveaway_embed"
     data = load_embed_texts().get(key, DEFAULT_EMBED_DATA[key])
@@ -4886,7 +4978,7 @@ def build_giveaway_embed(
     footer = data.get("footer")
     if footer:
         embed.set_footer(text=format_embed_text(footer, variables))
-    conditions = giveaway_conditions_text(min_invites, require_server_tag)
+    conditions = giveaway_conditions_text(min_invites, require_server_tag, weighted_by_invites)
     if not ended:
         embed.add_field(name="Nombre de gagnants", value=f"**{winner_count}**", inline=True)
     if conditions:
@@ -4908,6 +5000,7 @@ def build_saved_giveaway_embed(data, participants_count, ended=False, winner="Au
         min_invites=data.get("min_invites", 0),
         require_server_tag=bool(data.get("require_server_tag")),
         winner_count=data.get("winner_count", 1),
+        weighted_by_invites=bool(data.get("weighted_by_invites")),
     )
 
 
@@ -4932,14 +5025,6 @@ class GiveawayJoinView(discord.ui.View):
         if guild is None or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message("❌ Cette participation doit être faite sur le serveur.", ephemeral=True)
             return
-        failures = giveaway_requirement_failures(guild, interaction.user, data)
-        if failures:
-            details = "\n".join(f"• {failure}" for failure in failures)
-            await interaction.response.send_message(
-                f"❌ Tu ne remplis pas encore les conditions :\n{details}",
-                ephemeral=True,
-            )
-            return
         participants = normalize_giveaway_participants(data.get("participants", []))
         if interaction.user.id in participants:
             await interaction.response.send_message("✅ Tu participes déjà à ce giveaway.", ephemeral=True)
@@ -4954,7 +5039,10 @@ class GiveawayJoinView(discord.ui.View):
             )
         except discord.HTTPException as error:
             print(f"Erreur mise à jour giveaway {message.id}: {error}")
-        await interaction.response.send_message("✅ Participation enregistrée.", ephemeral=True)
+        await interaction.response.send_message(
+            "✅ Participation enregistrée. Les conditions seront vérifiées au moment du tirage.",
+            ephemeral=True,
+        )
 
 
 async def finish_giveaway(message_id):
@@ -4968,10 +5056,14 @@ async def finish_giveaway(message_id):
         guild = getattr(channel, "guild", None) or bot.get_guild(int(data.get("guild_id") or 0))
         if guild is None:
             raise RuntimeError("Serveur du giveaway introuvable")
-        eligible_participants, rejected = await eligible_giveaway_participants(guild, data)
+        eligible_participants, rejected, participant_weights = await eligible_giveaway_participants(guild, data)
         winner_text = "Aucun participant éligible" if participants else "Aucun participant"
         winner_count = max(1, int(data.get("winner_count", 1) or 1))
-        winner_ids = select_giveaway_winners(eligible_participants, winner_count)
+        winner_ids = select_giveaway_winners(
+            eligible_participants,
+            winner_count,
+            participant_weights=participant_weights,
+        )
         if winner_ids:
             winner_text = ", ".join(f"<@{winner_id}>" for winner_id in winner_ids)
             data["winner_id"] = winner_ids[0]
@@ -5316,7 +5408,7 @@ async def on_ready():
     if not DECORATION_ACCESS_REPAIRED:
         try:
             repaired = await repair_discord_decoration_ticket_access()
-            print(f"✅ Accès ajouté à {repaired} ticket(s) Décorations Discord/Nitro.")
+            print(f"✅ Accès synchronisé sur {repaired} ticket(s) Décorations Discord/Nitro.")
         except Exception as error:
             print(f"Erreur réparation accès tickets Décorations Discord/Nitro : {error}")
         DECORATION_ACCESS_REPAIRED = True
@@ -8489,10 +8581,19 @@ async def deliver_order_from_panel(order, code):
     if not message.embeds:
         raise RuntimeError("Embed Discord introuvable")
     old = message.embeds[0]
+    is_nitro_order = (
+        str(order.get("service") or "").strip().upper()
+        == PRODUCT_CONFIG["DISCORD_NITRO"]["display"].upper()
+    )
     finish_data = load_embed_texts().get("commande_finalisee", DEFAULT_EMBED_DATA["commande_finalisee"])
     rgb = finish_data.get("color_rgb", [46, 204, 113])
     finish_description_raw = finish_data.get("description", [])
     finish_description = "\n".join(finish_description_raw) if isinstance(finish_description_raw, list) else str(finish_description_raw or "")
+    if is_nitro_order:
+        finish_description = (
+            "Ta commande Discord Nitro a été livrée automatiquement.\n"
+            "Ton lien Nitro est envoyé dans un message séparé ci-dessous."
+        )
     updated = discord.Embed(
         title=finish_data.get("title", old.title),
         description=finish_description or old.description,
@@ -8501,14 +8602,20 @@ async def deliver_order_from_panel(order, code):
     code_found = False
     for field in old.fields:
         if "code" in field.name.lower():
-            updated.add_field(name=finish_data.get("code_field_name", field.name), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
+            if not is_nitro_order:
+                updated.add_field(name=finish_data.get("code_field_name", field.name), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
             code_found = True
         else:
             updated.add_field(name=field.name, value=field.value, inline=field.inline)
-    if not code_found:
+    if not code_found and not is_nitro_order:
         updated.add_field(name=finish_data.get("code_field_name", "Code"), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
     updated.set_footer(text=finish_data.get("footer", "PinkGift — Commande finalisée"))
-    await message.edit(embed=updated)
+    await message.edit(embed=updated, view=None)
+    if is_nitro_order:
+        await channel.send(
+            f"<@{int(order['user_id'])}> voici ton lien Discord Nitro :\n{str(code).strip()}",
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
     await send_order_delivery_ghost_ping(channel, order["user_id"])
 
 
@@ -8845,6 +8952,7 @@ async def cmd_antiraid_stop(ctx):
     duration="Durée, par exemple 30m, 2h ou 1d",
     nom="Nom du giveaway",
     invitations="Nouvelles invitations actives à obtenir pendant le giveaway",
+    chances_invitations="Donner une chance supplémentaire par invitation valide",
     tag_serveur="Exiger que le membre affiche le tag de ce serveur",
     nombre_gagnants="Nombre de gagnants à tirer",
     image_url="Lien direct d'une image optionnelle",
@@ -8856,6 +8964,7 @@ async def cmd_giveaway(
     duration: str,
     nom: str,
     invitations: int = 0,
+    chances_invitations: bool = False,
     tag_serveur: bool = False,
     nombre_gagnants: int = 1,
     image_url: str = "",
@@ -8889,6 +8998,7 @@ async def cmd_giveaway(
         min_invites=invitations,
         require_server_tag=tag_serveur,
         winner_count=nombre_gagnants,
+        weighted_by_invites=chances_invitations,
     )
     message = await ctx.send(embed=embed, view=GiveawayJoinView())
     save_giveaway(message.id, {
@@ -8901,6 +9011,7 @@ async def cmd_giveaway(
         "min_invites": invitations,
         "min_invite_account_age_days": MIN_INVITE_ACCOUNT_AGE_DAYS,
         "require_server_tag": tag_serveur,
+        "weighted_by_invites": chances_invitations,
         "winner_count": nombre_gagnants,
         "participants": [],
         "ended": False,
@@ -8944,7 +9055,7 @@ async def cmd_reroll(ctx, message_id: str = ""):
     if not participants:
         await ctx.send("❌ Impossible de reroll : aucun participant enregistré.", ephemeral=True)
         return
-    eligible_participants, rejected = await eligible_giveaway_participants(ctx.guild, data)
+    eligible_participants, rejected, participant_weights = await eligible_giveaway_participants(ctx.guild, data)
     if not eligible_participants:
         await ctx.send(
             "❌ Impossible de reroll : aucun participant ne remplit encore toutes les conditions.",
@@ -8971,6 +9082,7 @@ async def cmd_reroll(ctx, message_id: str = ""):
         winner_count,
         winner_history,
         current_winner_ids,
+        participant_weights,
     )
     winner_text = ", ".join(f"<@{winner_id}>" for winner_id in winner_ids)
     data["winner_id"] = winner_ids[0]
