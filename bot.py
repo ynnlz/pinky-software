@@ -50,6 +50,7 @@ class PinkGiftBot(commands.Bot):
             CPPendingOrderView(),
             PendingOrderActionsView(),
             BalanceView(),
+            PrivilegesLauncherView(),
             OpenTicketView(),
             ValoTicketButton(),
             CloseTicketView(),
@@ -2232,7 +2233,7 @@ DEFAULT_EMBED_DATA.update({
         "fields": [
             {
                 "name": "🎫 Tickets",
-                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!cp : publie les COD Points avec commande et livraison automatiques.\n!maj_embed : met à jour tous les embeds publics du serveur sans ping.\n!close_button : ajoute un bouton Close persistant.\n!faq : publie la FAQ PinkGift.",
+                "value": "!tarifs : affiche les cartes cadeaux et les menus de commande.\n!valo : envoie l'embed Valorant avec son bouton ticket.\n!cp : publie les COD Points avec commande et livraison automatiques.\n!teams : publie l’embed de l’équipe et des grades.\n!maj_embed : met à jour uniquement l’embed public du salon actuel, sans ping.\n!close_button : ajoute un bouton Close persistant.\n!faq : publie la FAQ PinkGift.",
                 "inline": False
             },
             {
@@ -2323,6 +2324,57 @@ DEFAULT_EMBED_DATA.update({
         ],
         "color_rgb": [255, 192, 203],
         "footer": "PinkGift — Privilèges",
+        "image_url": "",
+        "menu_button_label": "Découvrir les privilèges",
+        "menu_button_emoji": "✨",
+        "menu_placeholder": "Choisis une catégorie",
+        "menu_categories": [
+            {
+                "label": "Avantages exclusifs",
+                "value": "avantages-exclusifs",
+                "emoji": "💎",
+                "description": "Voir les avantages réservés",
+                "options": [
+                    {"label": "Option à configurer", "value": "option-1", "emoji": "✨"}
+                ]
+            },
+            {
+                "label": "Offres réservées",
+                "value": "offres-reservees",
+                "emoji": "🎁",
+                "description": "Voir les offres disponibles",
+                "options": [
+                    {"label": "Option à configurer", "value": "option-1", "emoji": "✨"}
+                ]
+            }
+        ]
+    },
+    "team_embed": {
+        "title": "👥 ÉQUIPE PINKGIFT",
+        "description": [
+            "Découvre les membres qui font vivre **PinkGift**.",
+            "",
+            "La composition de l’équipe et les différents grades peuvent être modifiés depuis le panel."
+        ],
+        "fields": [
+            {
+                "name": "👑 Direction",
+                "value": "Ajoute ici les membres de la direction.",
+                "inline": False
+            },
+            {
+                "name": "🛡️ Administration",
+                "value": "Ajoute ici les administrateurs.",
+                "inline": False
+            },
+            {
+                "name": "🎫 Support",
+                "value": "Ajoute ici les membres du support.",
+                "inline": False
+            }
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Notre équipe",
         "image_url": ""
     }
 })
@@ -4556,6 +4608,184 @@ class OrderLauncherView(discord.ui.View):
             pass
 
 
+def get_privileges_menu_config():
+    data = load_embed_texts().get("privileges_embed", DEFAULT_EMBED_DATA["privileges_embed"])
+    raw_categories = data.get("menu_categories", [])
+    categories = []
+    used_category_values = set()
+    if isinstance(raw_categories, list):
+        for category_index, raw_category in enumerate(raw_categories[:25], start=1):
+            if not isinstance(raw_category, dict):
+                continue
+            label = str(raw_category.get("label") or f"Catégorie {category_index}")[:100]
+            value = str(raw_category.get("value") or f"categorie-{category_index}")[:100]
+            if value in used_category_values:
+                value = f"{value[:90]}-{category_index}"
+            used_category_values.add(value)
+            raw_options = raw_category.get("options", [])
+            options = []
+            used_option_values = set()
+            if isinstance(raw_options, list):
+                for option_index, raw_option in enumerate(raw_options[:25], start=1):
+                    if not isinstance(raw_option, dict):
+                        continue
+                    option_label = str(raw_option.get("label") or f"Option {option_index}")[:100]
+                    option_value = str(raw_option.get("value") or f"option-{option_index}")[:100]
+                    if option_value in used_option_values:
+                        option_value = f"{option_value[:90]}-{option_index}"
+                    used_option_values.add(option_value)
+                    options.append({
+                        "label": option_label,
+                        "value": option_value,
+                        "emoji": str(raw_option.get("emoji") or "✨"),
+                        "description": str(raw_option.get("description") or "")[:100],
+                        "response": str(raw_option.get("response") or ""),
+                    })
+            if not options:
+                options.append({
+                    "label": "Option à configurer",
+                    "value": "option-1",
+                    "emoji": "✨",
+                    "description": "",
+                    "response": "",
+                })
+            categories.append({
+                "label": label,
+                "value": value,
+                "emoji": str(raw_category.get("emoji") or "📁"),
+                "description": str(raw_category.get("description") or f"Ouvrir {label}")[:100],
+                "placeholder": str(raw_category.get("placeholder") or f"Choisis une option — {label}")[:150],
+                "options": options,
+            })
+    if not categories:
+        categories = [{
+            "label": "Catégorie à configurer",
+            "value": "categorie-1",
+            "emoji": "📁",
+            "description": "Configuration disponible depuis le panel",
+            "placeholder": "Choisis une option",
+            "options": [{
+                "label": "Option à configurer",
+                "value": "option-1",
+                "emoji": "✨",
+                "description": "",
+                "response": "",
+            }],
+        }]
+    return {
+        "button_label": str(data.get("menu_button_label") or "Découvrir les privilèges")[:80],
+        "button_emoji": str(data.get("menu_button_emoji") or "✨"),
+        "placeholder": str(data.get("menu_placeholder") or "Choisis une catégorie")[:150],
+        "categories": categories,
+    }
+
+
+class PrivilegeItemSelect(discord.ui.Select):
+    def __init__(self, category):
+        self.category = category
+        options = [
+            discord.SelectOption(
+                label=option["label"],
+                value=option["value"],
+                emoji=safe_component_emoji(option.get("emoji"), "✨"),
+                description=option.get("description") or None,
+            )
+            for option in category["options"]
+        ]
+        super().__init__(
+            placeholder=category["placeholder"],
+            options=options,
+            custom_id=f"pinkgift_privilege_items_{category['value']}"[:100],
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        option = next(
+            (item for item in self.category["options"] if item["value"] == self.values[0]),
+            None,
+        )
+        if option is None:
+            await interaction.response.send_message("❌ Cette option n’existe plus.", ephemeral=True)
+            return
+        response = option.get("response") or (
+            f"✨ Tu as sélectionné **{option['label']}** dans **{self.category['label']}**.\n"
+            "Le contenu de cette option peut être configuré depuis le panel."
+        )
+        await interaction.response.send_message(response, ephemeral=True)
+
+
+class PrivilegeItemView(discord.ui.View):
+    def __init__(self, category):
+        super().__init__(timeout=300)
+        self.add_item(PrivilegeItemSelect(category))
+
+    @discord.ui.button(label="Retour aux catégories", emoji="↩️", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            content="Choisis une catégorie de privilèges :",
+            view=PrivilegeCategoryView(),
+        )
+
+
+class PrivilegeCategorySelect(discord.ui.Select):
+    def __init__(self):
+        menu = get_privileges_menu_config()
+        self.categories = menu["categories"]
+        options = [
+            discord.SelectOption(
+                label=category["label"],
+                value=category["value"],
+                emoji=safe_component_emoji(category.get("emoji"), "📁"),
+                description=category.get("description") or None,
+            )
+            for category in self.categories
+        ]
+        super().__init__(
+            placeholder=menu["placeholder"],
+            options=options,
+            custom_id="pinkgift_privilege_categories",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        category = next(
+            (item for item in self.categories if item["value"] == self.values[0]),
+            None,
+        )
+        if category is None:
+            await interaction.response.send_message("❌ Cette catégorie n’existe plus.", ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            content=f"{category['emoji']} **{category['label']}** — choisis une option :",
+            view=PrivilegeItemView(category),
+        )
+
+
+class PrivilegeCategoryView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+        self.add_item(PrivilegeCategorySelect())
+
+
+class PrivilegesLauncherView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        menu = get_privileges_menu_config()
+        button = discord.ui.Button(
+            label=menu["button_label"],
+            emoji=safe_component_emoji(menu["button_emoji"], "✨"),
+            style=discord.ButtonStyle.primary,
+            custom_id="pinkgift_open_privileges_menu",
+        )
+        button.callback = self.open_privileges_menu
+        self.add_item(button)
+
+    async def open_privileges_menu(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            "Choisis une catégorie de privilèges :",
+            view=PrivilegeCategoryView(),
+            ephemeral=True,
+        )
+
+
 async def create_balance_recharge_ticket(interaction, referral=None):
     guild = interaction.guild
     user = interaction.user
@@ -6025,7 +6255,8 @@ def public_embed_builders():
         (["AUTRES SERVICES", "ABONNEMENTS"], lambda: build_json_embed("autres_embed"), OtherServicesView()),
         (["PinkWallet", "PinkCoins", "Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
         (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
-        (["PRIVILÈGES PINKGIFT", "PRIVILEGES PINKGIFT"], lambda: build_json_embed("privileges_embed"), None),
+        (["PRIVILÈGES PINKGIFT", "PRIVILEGES PINKGIFT"], lambda: build_json_embed("privileges_embed"), PrivilegesLauncherView()),
+        (["ÉQUIPE PINKGIFT", "EQUIPE PINKGIFT"], lambda: build_json_embed("team_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
         (["FAQ PinkGift", "FAQ"], lambda: build_json_embed("faq_embed"), None),
         (["Classement", "CLASSEMENT"], build_leaderboard_embed, None),
@@ -6041,6 +6272,7 @@ async def repair_public_launcher_views():
         (("call of duty points", "cod points"), build_cp_embed, CPOrderLauncherView),
         (("autres services", "abonnements"), lambda: build_json_embed("autres_embed"), OtherServicesView),
         (("solde & paiements", "solde pinkgift", "pinkwallet", "pinkcoins"), lambda: build_json_embed("balance_embed"), BalanceView),
+        (("privilèges pinkgift", "privileges pinkgift"), lambda: build_json_embed("privileges_embed"), PrivilegesLauncherView),
     )
 
     for guild in bot.guilds:
@@ -6068,36 +6300,32 @@ async def repair_public_launcher_views():
     return repaired
 
 
-async def update_public_embeds_without_ping(ctx):
+async def update_public_embeds_in_current_channel(ctx):
     builders = public_embed_builders()
     updated_count = 0
-    scanned_channels = 0
-    for channel in ctx.guild.text_channels:
-        # Un ticket de recharge contient lui aussi le mot « solde » : il ne doit
-        # jamais être traité comme le panneau public publié avec /solde.
-        if is_balance_ticket(channel):
-            continue
-        permissions = channel.permissions_for(ctx.guild.me or ctx.guild.default_role)
-        if not permissions.read_message_history or not permissions.view_channel:
-            continue
-        scanned_channels += 1
-        try:
-            async for msg in channel.history(limit=150):
-                if msg.author == bot.user and msg.embeds:
-                    title = msg.embeds[0].title or ""
-                    for keywords, builder, view in builders:
-                        if any(keyword.lower() in title.lower() for keyword in keywords):
-                            if view is None:
-                                await msg.edit(embed=builder())
-                            else:
-                                await msg.edit(embed=builder(), view=view)
-                            updated_count += 1
-                            break
-        except discord.Forbidden:
-            continue
-        except discord.HTTPException as error:
-            print(f"Erreur mise à jour embeds dans {channel}: {error}")
-    return updated_count, scanned_channels
+    channel = ctx.channel
+    if is_balance_ticket(channel):
+        return 0
+    permissions = channel.permissions_for(ctx.guild.me or ctx.guild.default_role)
+    if not permissions.read_message_history or not permissions.view_channel:
+        return 0
+    try:
+        async for msg in channel.history(limit=150):
+            if msg.author == bot.user and msg.embeds:
+                title = msg.embeds[0].title or ""
+                for keywords, builder, view in builders:
+                    if any(keyword.lower() in title.lower() for keyword in keywords):
+                        if view is None:
+                            await msg.edit(embed=builder())
+                        else:
+                            await msg.edit(embed=builder(), view=view)
+                        updated_count += 1
+                        break
+    except discord.Forbidden:
+        return 0
+    except discord.HTTPException as error:
+        print(f"Erreur mise à jour embeds dans {channel}: {error}")
+    return updated_count
 
 
 async def refresh_price_embeds_from_panel():
@@ -6133,19 +6361,19 @@ async def refresh_price_embeds_from_panel():
     return updated
 
 
-@bot.hybrid_command(name="maj_embed", description="Mettre à jour tous les embeds publics du serveur")
+@bot.hybrid_command(name="maj_embed", description="Mettre à jour l’embed public du salon actuel")
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def update_all_embeds(ctx):
     if ctx.guild is None:
         await ctx.send("❌ Cette commande doit être utilisée dans un serveur.", delete_after=6)
         return
-    status = await ctx.send("🔄 Mise à jour des embeds du serveur en cours...")
-    updated_count, scanned_channels = await update_public_embeds_without_ping(ctx)
+    status = await ctx.send("🔄 Mise à jour de l’embed de ce salon en cours...")
+    updated_count = await update_public_embeds_in_current_channel(ctx)
     if updated_count:
-        await status.edit(content=f"✅ {updated_count} embed(s) mis à jour dans {scanned_channels} salon(s), sans ping.")
+        await status.edit(content=f"✅ {updated_count} embed(s) mis à jour dans ce salon, sans ping.")
     else:
-        await status.edit(content=f"❌ Aucun embed public trouvé dans les {scanned_channels} salon(s) vérifiés.")
+        await status.edit(content="❌ Aucun embed public reconnu n’a été trouvé dans ce salon.")
     await asyncio.sleep(10)
     try:
         await status.delete()
@@ -7075,6 +7303,11 @@ PANEL_EMBEDS_TEMPLATE = (
         '<div class="embed-editor-grid"><div class="embed-controls"><textarea name="embed_json">{{ item.json }}</textarea><div class="embed-actions"><input type="file" name="image_file" accept="image/*"><button>Enregistrer</button></div></div><aside class="discord-preview" aria-label="Aperçu Discord" aria-live="polite"></aside></div>',
         1,
     )
+    .replace(
+        '<div class="embed-editor-grid">',
+        '''{% if item.key == "privileges_embed" %}<section class="privilege-menu-editor"><h3>Menus sous l’embed Privilèges</h3><div class="privilege-menu-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Texte du premier menu<input name="menu_placeholder" maxlength="150" value="{{ item.menu_placeholder }}"></label></div><div class="privilege-menu-list"></div><button class="privilege-add-category" type="button">＋ Ajouter une catégorie</button><textarea class="privilege-menu-config" name="menu_config_json" hidden>{{ item.menu_config_json }}</textarea><p class="muted">Chaque catégorie et chaque option peut être ajoutée, modifiée ou supprimée ici. Le message d’une option est envoyé en privé après sa sélection.</p></section>{% endif %}<div class="embed-editor-grid">''',
+        1,
+    )
 )
 
 PANEL_EMBEDS_PREVIEW_CSS = r"""
@@ -7084,6 +7317,73 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   gap: 20px;
   align-items: start;
 }
+.privilege-menu-editor {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid rgba(255,143,200,.24);
+  border-radius: 12px;
+  background: rgba(255,143,200,.05);
+}
+.privilege-menu-editor h3 { margin: 0 0 12px; color: #ff9dce; }
+.privilege-menu-settings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.privilege-menu-settings label, .privilege-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #f7edf3;
+  font-size: 13px;
+  font-weight: 700;
+}
+.privilege-menu-settings input { box-sizing: border-box; width: 100%; margin: 0; }
+.privilege-menu-list { display: grid; gap: 14px; margin-top: 16px; }
+.privilege-category-card {
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 11px;
+  background: rgba(10,10,14,.44);
+}
+.privilege-category-head, .privilege-option-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.privilege-category-head strong { color: #ffb6da; }
+.privilege-option-head strong { color: #e4d6de; font-size: 12px; }
+.privilege-category-grid, .privilege-option-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(85px, .35fr) minmax(180px, 1.25fr);
+  gap: 10px;
+}
+.privilege-option-grid { grid-template-columns: minmax(150px, 1fr) minmax(80px, .3fr) minmax(180px, 1.2fr); }
+.privilege-field input, .privilege-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  min-height: 40px;
+}
+.privilege-field textarea { min-height: 72px !important; resize: vertical; }
+.privilege-options { display: grid; gap: 10px; margin-top: 12px; }
+.privilege-option-card {
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 9px;
+  background: rgba(255,255,255,.025);
+}
+.privilege-remove, .privilege-add-option, .privilege-add-category {
+  margin: 0 !important;
+  border-radius: 8px;
+  font-weight: 750;
+}
+.privilege-remove { padding: 7px 10px; background: rgba(255,88,120,.16); color: #ff9fb2; border: 1px solid rgba(255,88,120,.3); }
+.privilege-add-option { margin-top: 10px !important; background: rgba(88,101,242,.18); color: #c9ceff; border: 1px solid rgba(88,101,242,.32); }
+.privilege-add-category { margin-top: 14px !important; background: linear-gradient(135deg,#e8509a,#9e4dff); }
+.privilege-menu-empty { padding: 18px; border: 1px dashed rgba(255,255,255,.14); border-radius: 10px; color: #aa98a4; text-align: center; }
 .embed-controls { min-width: 0; }
 .embed-controls textarea { width: 100%; min-height: 440px !important; resize: vertical; }
 .embed-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
@@ -7173,6 +7473,8 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
 .preview-error { color: #ff9aaa; border-color: rgba(255,100,129,.28); background: rgba(255,100,129,.06); }
 @media (max-width: 950px) {
   .embed-editor-grid { grid-template-columns: minmax(0, 1fr); }
+  .privilege-menu-settings { grid-template-columns: minmax(0, 1fr); }
+  .privilege-category-grid, .privilege-option-grid { grid-template-columns: minmax(0, 1fr); }
   .discord-preview { position: static; }
   .embed-controls textarea { min-height: 340px !important; }
 }
@@ -7491,6 +7793,138 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       else localImagePreviews.delete(form);
       render(form);
     });
+  });
+})();
+</script>
+"""
+
+PANEL_PRIVILEGE_MENU_EDITOR_SCRIPT = r"""
+<script>
+(() => {
+  const editors = [...document.querySelectorAll(".privilege-menu-editor")];
+  const create = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const field = (label, value, onInput, multiline = false, maxLength = 0) => {
+    const wrapper = create("label", "privilege-field");
+    wrapper.appendChild(create("span", "", label));
+    const input = create(multiline ? "textarea" : "input");
+    input.value = value || "";
+    if (maxLength) input.maxLength = maxLength;
+    input.addEventListener("input", () => onInput(input.value));
+    wrapper.appendChild(input);
+    return wrapper;
+  };
+  const newOption = () => ({
+    label: "Nouvelle option",
+    emoji: "✨",
+    description: "",
+    response: "",
+  });
+  const newCategory = () => ({
+    label: "Nouvelle catégorie",
+    emoji: "📁",
+    description: "",
+    placeholder: "Choisis une option",
+    options: [newOption()],
+  });
+
+  editors.forEach(editor => {
+    const list = editor.querySelector(".privilege-menu-list");
+    const storage = editor.querySelector(".privilege-menu-config");
+    const addCategoryButton = editor.querySelector(".privilege-add-category");
+    let categories = [];
+    try {
+      const parsed = JSON.parse(storage.value || "[]");
+      categories = Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      categories = [];
+    }
+
+    const sync = () => {
+      storage.value = JSON.stringify(categories);
+    };
+
+    const render = () => {
+      list.replaceChildren();
+      if (!categories.length) {
+        list.appendChild(create("div", "privilege-menu-empty", "Aucune catégorie. Clique sur « Ajouter une catégorie »."));
+      }
+      categories.forEach((category, categoryIndex) => {
+        if (!Array.isArray(category.options)) category.options = [];
+        if (!category.options.length) category.options.push(newOption());
+        const card = create("section", "privilege-category-card");
+        const head = create("div", "privilege-category-head");
+        head.appendChild(create("strong", "", `Catégorie ${categoryIndex + 1}`));
+        const removeCategory = create("button", "privilege-remove", "Supprimer la catégorie");
+        removeCategory.type = "button";
+        removeCategory.addEventListener("click", () => {
+          categories.splice(categoryIndex, 1);
+          sync();
+          render();
+        });
+        head.appendChild(removeCategory);
+        card.appendChild(head);
+
+        const categoryGrid = create("div", "privilege-category-grid");
+        categoryGrid.appendChild(field("Nom", category.label, value => { category.label = value; sync(); }, false, 100));
+        categoryGrid.appendChild(field("Emoji", category.emoji, value => { category.emoji = value; sync(); }));
+        categoryGrid.appendChild(field("Description du menu", category.description, value => { category.description = value; sync(); }, false, 100));
+        categoryGrid.appendChild(field("Texte du second menu", category.placeholder, value => { category.placeholder = value; sync(); }, false, 150));
+        card.appendChild(categoryGrid);
+
+        const options = create("div", "privilege-options");
+        category.options.forEach((option, optionIndex) => {
+          const optionCard = create("section", "privilege-option-card");
+          const optionHead = create("div", "privilege-option-head");
+          optionHead.appendChild(create("strong", "", `Option ${optionIndex + 1}`));
+          const removeOption = create("button", "privilege-remove", "Supprimer");
+          removeOption.type = "button";
+          removeOption.disabled = category.options.length <= 1;
+          removeOption.addEventListener("click", () => {
+            category.options.splice(optionIndex, 1);
+            sync();
+            render();
+          });
+          optionHead.appendChild(removeOption);
+          optionCard.appendChild(optionHead);
+
+          const optionGrid = create("div", "privilege-option-grid");
+          optionGrid.appendChild(field("Nom", option.label, value => { option.label = value; sync(); }, false, 100));
+          optionGrid.appendChild(field("Emoji", option.emoji, value => { option.emoji = value; sync(); }));
+          optionGrid.appendChild(field("Description dans le menu", option.description, value => { option.description = value; sync(); }, false, 100));
+          optionGrid.appendChild(field("Message envoyé après sélection", option.response, value => { option.response = value; sync(); }, true));
+          optionCard.appendChild(optionGrid);
+          options.appendChild(optionCard);
+        });
+        card.appendChild(options);
+
+        const addOption = create("button", "privilege-add-option", "＋ Ajouter une option");
+        addOption.type = "button";
+        addOption.disabled = category.options.length >= 25;
+        addOption.addEventListener("click", () => {
+          if (category.options.length >= 25) return;
+          category.options.push(newOption());
+          sync();
+          render();
+        });
+        card.appendChild(addOption);
+        list.appendChild(card);
+      });
+      addCategoryButton.disabled = categories.length >= 25;
+      sync();
+    };
+
+    addCategoryButton.addEventListener("click", () => {
+      if (categories.length >= 25) return;
+      categories.push(newCategory());
+      render();
+    });
+    editor.closest("form")?.addEventListener("submit", sync);
+    render();
   });
 })();
 </script>
@@ -7990,7 +8424,11 @@ PANEL_REFERRALS_PROFIT_TEMPLATE = apply_panel_theme(PANEL_REFERRALS_PROFIT_TEMPL
 PANEL_EMBEDS_TEMPLATE = (
     apply_panel_theme(PANEL_EMBEDS_TEMPLATE)
     .replace("</style>", PANEL_EMBEDS_PREVIEW_CSS + "</style>", 1)
-    .replace("</body>", PANEL_EMBEDS_PREVIEW_SCRIPT + "</body>", 1)
+    .replace(
+        "</body>",
+        PANEL_EMBEDS_PREVIEW_SCRIPT + PANEL_PRIVILEGE_MENU_EDITOR_SCRIPT + "</body>",
+        1,
+    )
 )
 LOGIN_TEMPLATE = apply_panel_theme(LOGIN_TEMPLATE, include_session_timeout=False)
 PANEL_ACCESS_TEMPLATE = apply_panel_theme(PANEL_ACCESS_TEMPLATE)
@@ -8563,6 +9001,79 @@ PANEL_HIDDEN_EMBED_KEYS = {
 }
 
 
+def privilege_component_value(label, fallback):
+    normalized = unicodedata.normalize("NFD", str(label or "").lower())
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return (normalized or fallback)[:100]
+
+
+def parse_privilege_menu_config(raw_text):
+    try:
+        raw_categories = json.loads(str(raw_text or "[]"))
+    except json.JSONDecodeError as error:
+        raise ValueError("La configuration visuelle des menus est invalide") from error
+    if not isinstance(raw_categories, list):
+        raise ValueError("La configuration des menus doit contenir une liste de catégories")
+    if not raw_categories:
+        raise ValueError("Ajoute au moins une catégorie au menu Privilèges")
+    if len(raw_categories) > 25:
+        raise ValueError("Le menu Privilèges accepte au maximum 25 catégories")
+
+    categories = []
+    used_category_values = set()
+    for category_index, raw_category in enumerate(raw_categories, start=1):
+        if not isinstance(raw_category, dict):
+            raise ValueError(f"La catégorie {category_index} est invalide")
+        label = str(raw_category.get("label") or "").strip()[:100]
+        if not label:
+            raise ValueError(f"La catégorie {category_index} doit avoir un nom")
+        emoji = str(raw_category.get("emoji") or "📁").strip()
+        description = str(raw_category.get("description") or f"Ouvrir {label}").strip()[:100]
+        placeholder = str(
+            raw_category.get("placeholder") or f"Choisis une option — {label}"
+        ).strip()[:150]
+        category_value = privilege_component_value(label, f"categorie-{category_index}")
+        if category_value in used_category_values:
+            category_value = f"{category_value[:90]}-{category_index}"
+        used_category_values.add(category_value)
+
+        raw_options = raw_category.get("options", [])
+        if not isinstance(raw_options, list) or not raw_options:
+            raise ValueError(f"Ajoute au moins une option à la catégorie {label}")
+        if len(raw_options) > 25:
+            raise ValueError(f"La catégorie {label} accepte au maximum 25 options")
+        options = []
+        used_option_values = set()
+        for option_index, raw_option in enumerate(raw_options, start=1):
+            if not isinstance(raw_option, dict):
+                raise ValueError(f"L’option {option_index} de {label} est invalide")
+            option_label = str(raw_option.get("label") or "").strip()[:100]
+            if not option_label:
+                raise ValueError(f"L’option {option_index} de {label} doit avoir un nom")
+            option_emoji = str(raw_option.get("emoji") or "✨").strip()
+            option_value = privilege_component_value(option_label, f"option-{option_index}")
+            if option_value in used_option_values:
+                option_value = f"{option_value[:90]}-{option_index}"
+            used_option_values.add(option_value)
+            options.append({
+                "label": option_label,
+                "value": option_value,
+                "emoji": option_emoji,
+                "description": str(raw_option.get("description") or "").strip()[:100],
+                "response": str(raw_option.get("response") or "").strip(),
+            })
+        categories.append({
+            "label": label,
+            "value": category_value,
+            "emoji": emoji,
+            "description": description,
+            "placeholder": placeholder,
+            "options": options,
+        })
+    return categories
+
+
 @app.route("/panel/embeds", methods=["GET", "POST"])
 @panel_required
 def panel_embeds():
@@ -8578,6 +9089,22 @@ def panel_embeds():
             embed_data = json.loads(request.form.get("embed_json", "{}"))
             if not isinstance(embed_data, dict):
                 raise ValueError("Le contenu doit être un objet JSON")
+            if embed_key == "privileges_embed":
+                embed_data["menu_button_label"] = (
+                    request.form.get("menu_button_label", "").strip()
+                    or "Découvrir les privilèges"
+                )[:80]
+                embed_data["menu_button_emoji"] = (
+                    request.form.get("menu_button_emoji", "").strip()
+                    or "✨"
+                )
+                embed_data["menu_placeholder"] = (
+                    request.form.get("menu_placeholder", "").strip()
+                    or "Choisis une catégorie"
+                )[:150]
+                embed_data["menu_categories"] = parse_privilege_menu_config(
+                    request.form.get("menu_config_json", "[]")
+                )
             image_file = request.files.get("image_file")
             if image_file and image_file.filename:
                 if BOT_LOOP is None:
@@ -8592,7 +9119,9 @@ def panel_embeds():
                 overrides = {}
             overrides[embed_key] = embed_data
             set_panel_setting("embed_overrides", overrides)
-            flash(f"Embed {embed_key} enregistré. Utilise /maj_embed pour mettre à jour les messages déjà postés.")
+            flash(
+                f"Embed {embed_key} enregistré. Exécute /maj_embed dans le salon de l’embed à actualiser."
+            )
         except Exception as error:
             print(f"Erreur sauvegarde embed {embed_key}: {error}")
             flash(f"Sauvegarde impossible : {error}")
@@ -8653,7 +9182,8 @@ def panel_embeds():
         "tarifs_embed": "La liste des marques est modifiable ici. Les prix restent synchronisés avec l'onglet Prix et le parcours de commande.",
         "valo_embed": "Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
         "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit de PinkCoins.",
-        "privileges_embed": "Publié avec /privilèges. Le titre, les textes, les champs, la couleur, le footer et l'image sont entièrement modifiables ici.",
+        "privileges_embed": "Publié avec /privilèges. L’embed, le bouton, les catégories et les sous-options se configurent ici sans redémarrer le bot.",
+        "team_embed": "Publié avec /teams. Ajoute les membres du staff dans les champs correspondant à leurs grades.",
     }
     embeds = []
     for key in sorted(
@@ -8665,6 +9195,13 @@ def panel_embeds():
             "json": json.dumps(data[key], ensure_ascii=False, indent=2),
             "preview_context": json.dumps(preview_contexts.get(key, {}), ensure_ascii=False),
             "help": embed_help.get(key, ""),
+            "menu_button_label": data[key].get("menu_button_label", "") if key == "privileges_embed" else "",
+            "menu_button_emoji": data[key].get("menu_button_emoji", "") if key == "privileges_embed" else "",
+            "menu_placeholder": data[key].get("menu_placeholder", "") if key == "privileges_embed" else "",
+            "menu_config_json": json.dumps(
+                data[key].get("menu_categories", []),
+                ensure_ascii=False,
+            ) if key == "privileges_embed" else "[]",
         })
     return render_template_string(PANEL_EMBEDS_TEMPLATE, embeds=embeds)
 
@@ -8688,7 +9225,9 @@ async def deliver_order_from_panel(order, code):
     if is_nitro_order:
         finish_description = (
             "Ta commande Discord Nitro a été livrée automatiquement.\n"
-            "Ton lien Nitro est envoyé dans un message séparé ci-dessous."
+            "Ton lien Nitro est envoyé dans un message séparé ci-dessous.\n\n"
+            "⚠️ **Un avis est obligatoire après la livraison dans <#1517525842111234088>.**\n"
+            "Sans avis, tu seras **banni des commandes** et ta commande sera **révoquée**."
         )
     updated = discord.Embed(
         title=finish_data.get("title", old.title),
@@ -9231,7 +9770,14 @@ async def cmd_parrainages(ctx):
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_privileges(ctx):
-    await ctx.send(embed=build_json_embed("privileges_embed"))
+    await ctx.send(embed=build_json_embed("privileges_embed"), view=PrivilegesLauncherView())
+
+
+@bot.hybrid_command(name="teams", description="Publier la présentation de l’équipe PinkGift")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_teams(ctx):
+    await ctx.send(embed=build_json_embed("team_embed"))
 
 
 @bot.hybrid_command(name="classement", description="Publier le classement clients PinkGift")

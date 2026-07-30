@@ -326,7 +326,7 @@
       },
       {
         "name": "🎁 Commandes et livraisons",
-        "value": "Les commandes sont créées depuis les menus et débitées automatiquement.\nLes codes cadeaux et suppressions sont gérés depuis le panneau web.\n!giveaway durée nom [invitations] [chances_invitations] [tag_serveur] [nombre_gagnants] — les conditions sont vérifiées au tirage et les chances peuvent augmenter avec les invitations valides\n!reroll ID_ou_lien — refaire le tirage avec le même nombre de gagnants\n!reset_invitations [membre] confirmation:Oui — remettre les invitations à zéro sans recomptage des anciens invités\n!config_compteurs #salon-avis — configurer le compteur d'avis vérifiés",
+        "value": "Les commandes sont créées depuis les menus et débitées automatiquement.\nLes codes cadeaux et suppressions sont gérés depuis le panneau web.\n!teams — publier l’embed de l’équipe et des grades\n!maj_embed — actualiser uniquement l’embed public du salon actuel\n!giveaway durée nom [invitations] [chances_invitations] [tag_serveur] [nombre_gagnants] — les conditions sont vérifiées au tirage et les chances peuvent augmenter avec les invitations valides\n!reroll ID_ou_lien — refaire le tirage avec le même nombre de gagnants\n!reset_invitations [membre] confirmation:Oui — remettre les invitations à zéro sans recomptage des anciens invités\n!config_compteurs #salon-avis — configurer le compteur d'avis vérifiés",
         "inline": false
       },
       {
@@ -426,6 +426,69 @@
       203
     ],
     "footer": "PinkGift — Privilèges",
+    "image_url": "",
+    "menu_button_label": "Découvrir les privilèges",
+    "menu_button_emoji": "✨",
+    "menu_placeholder": "Choisis une catégorie",
+    "menu_categories": [
+      {
+        "label": "Avantages exclusifs",
+        "value": "avantages-exclusifs",
+        "emoji": "💎",
+        "description": "Voir les avantages réservés",
+        "options": [
+          {
+            "label": "Option à configurer",
+            "value": "option-1",
+            "emoji": "✨"
+          }
+        ]
+      },
+      {
+        "label": "Offres réservées",
+        "value": "offres-reservees",
+        "emoji": "🎁",
+        "description": "Voir les offres disponibles",
+        "options": [
+          {
+            "label": "Option à configurer",
+            "value": "option-1",
+            "emoji": "✨"
+          }
+        ]
+      }
+    ]
+  },
+  "team_embed": {
+    "title": "👥 ÉQUIPE PINKGIFT",
+    "description": [
+      "Découvre les membres qui font vivre **PinkGift**.",
+      "",
+      "La composition de l’équipe et les différents grades peuvent être modifiés depuis le panel."
+    ],
+    "fields": [
+      {
+        "name": "👑 Direction",
+        "value": "Ajoute ici les membres de la direction.",
+        "inline": false
+      },
+      {
+        "name": "🛡️ Administration",
+        "value": "Ajoute ici les administrateurs.",
+        "inline": false
+      },
+      {
+        "name": "🎫 Support",
+        "value": "Ajoute ici les membres du support.",
+        "inline": false
+      }
+    ],
+    "color_rgb": [
+      255,
+      192,
+      203
+    ],
+    "footer": "PinkGift — Notre équipe",
     "image_url": ""
   },
   "balance_ticket_embed": {
