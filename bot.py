@@ -2483,6 +2483,7 @@ DEFAULT_EMBED_DATA.update({
         "pack_line_template": "<:cp:1528128623117205624> **{points} CP** — **{price} €** · officiel ≈ ~~{official} €~~",
         "dynamic_fields_inline": False,
         "color_rgb": [255, 103, 174],
+        "image_url": "https://web-production-d686c.up.railway.app/static/cod-standard_v2-1x.webp",
         "footer": "PinkGift — COD Points"
     },
     "cp_manual_ticket_embed": {
@@ -3278,8 +3279,98 @@ def build_leaderboard_embed():
     return embed
 
 
+def private_order_thread_setting_key(guild_id: int, user_id: int, parent_channel_id: int) -> str:
+    return f"private_order_thread:{int(guild_id)}:{int(user_id)}:{int(parent_channel_id)}"
+
+
+def save_private_order_thread_reference(guild_id: int, user_id: int, parent_channel_id: int, channel_id: int):
+    try:
+        set_panel_setting(
+            private_order_thread_setting_key(guild_id, user_id, parent_channel_id),
+            {"channel_id": int(channel_id), "updated_at": utc_now().isoformat()},
+        )
+    except Exception as error:
+        print(f"Erreur sauvegarde fil privé de commande {channel_id}: {error}")
+
+
+def recent_private_order_thread_ids(guild_id: int, user_id: int, parent_channel_id: int, limit=25):
+    candidate_ids = []
+    setting_key = private_order_thread_setting_key(guild_id, user_id, parent_channel_id)
+    saved = get_panel_setting(setting_key, {}) or {}
+    try:
+        saved_channel_id = int(saved.get("channel_id") if isinstance(saved, dict) else saved)
+    except (TypeError, ValueError):
+        saved_channel_id = 0
+    if saved_channel_id:
+        candidate_ids.append(saved_channel_id)
+
+    try:
+        if USE_SUPABASE:
+            rows = supabase_request(
+                "GET",
+                f"orders?guild_id=eq.{int(guild_id)}&user_id=eq.{int(user_id)}"
+                f"&select=channel_id&order=id.desc&limit={max(1, int(limit))}",
+            ) or []
+        else:
+            with db_connect() as db:
+                rows = [
+                    dict(row)
+                    for row in db.execute(
+                        "SELECT channel_id FROM orders WHERE guild_id=? AND user_id=? "
+                        "ORDER BY id DESC LIMIT ?",
+                        (int(guild_id), int(user_id), max(1, int(limit))),
+                    ).fetchall()
+                ]
+        for row in rows:
+            try:
+                channel_id = int(row.get("channel_id") or 0)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if channel_id and channel_id not in candidate_ids:
+                candidate_ids.append(channel_id)
+    except Exception as error:
+        print(f"Erreur recherche ancien fil de commande pour {user_id}: {error}")
+    return candidate_ids
+
+
+async def reusable_private_order_thread(guild, user, parent):
+    setting_key = private_order_thread_setting_key(guild.id, user.id, parent.id)
+    for channel_id in recent_private_order_thread_ids(guild.id, user.id, parent.id):
+        thread = bot.get_channel(channel_id)
+        if thread is None:
+            try:
+                thread = await bot.fetch_channel(channel_id)
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                continue
+        if (
+            not isinstance(thread, discord.Thread)
+            or thread.guild.id != guild.id
+            or thread.parent_id != parent.id
+        ):
+            continue
+        try:
+            if thread.archived or thread.locked:
+                edit_options = {"archived": False}
+                if thread.locked:
+                    edit_options["locked"] = False
+                await thread.edit(
+                    **edit_options,
+                    reason=f"Nouvelle commande PinkGift de {user}",
+                )
+            await thread.add_user(user)
+            save_private_order_thread_reference(guild.id, user.id, parent.id, thread.id)
+            return thread
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
+            print(f"Fil privé {channel_id} non réutilisable pour {user}: {error}")
+    try:
+        delete_panel_setting(setting_key)
+    except Exception as error:
+        print(f"Erreur nettoyage référence de fil privé pour {user}: {error}")
+    return None
+
+
 async def create_private_order_thread(guild, user, parent_channel_id: int, order_kind: str):
-    """Crée un fil privé dont les seuls membres ajoutés sont le client et le bot."""
+    """Réutilise le fil privé du client dans ce salon ou en crée un nouveau."""
     parent = guild.get_channel(parent_channel_id)
     if parent is None:
         try:
@@ -3288,6 +3379,10 @@ async def create_private_order_thread(guild, user, parent_channel_id: int, order
             parent = None
     if not isinstance(parent, discord.TextChannel):
         raise RuntimeError("Le salon parent des fils privés est introuvable ou n'est pas un salon textuel")
+
+    existing_thread = await reusable_private_order_thread(guild, user, parent)
+    if existing_thread is not None:
+        return existing_thread
 
     thread_user = re.sub(r"[\r\n]+", " ", user.display_name).strip() or str(user.id)
     thread_prefixes = {
@@ -3310,6 +3405,7 @@ async def create_private_order_thread(guild, user, parent_channel_id: int, order
         except discord.HTTPException:
             pass
         raise
+    save_private_order_thread_reference(guild.id, user.id, parent.id, thread.id)
     return thread
 
 async def create_product_ticket(interaction, product_key, amount):
