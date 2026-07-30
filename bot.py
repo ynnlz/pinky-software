@@ -2033,7 +2033,8 @@ DEFAULT_EMBED_DATA = {
         "footer": "PinkGift — Tarifs",
         "menu_button_label": "Commander",
         "menu_button_emoji": "🛍️",
-        "menu_button_style": "success"
+        "menu_button_style": "success",
+        "menu_button_color": "#248046"
     },
     "valo_embed": {
         "title": "<:vp:1519915966476320901> VALORANT POINTS",
@@ -2052,7 +2053,8 @@ DEFAULT_EMBED_DATA = {
         "footer": "PinkGift — Valorant Points",
         "menu_button_label": "Commander des VP",
         "menu_button_emoji": "🎮",
-        "menu_button_style": "success"
+        "menu_button_style": "success",
+        "menu_button_color": "#248046"
     },
     "ticket_bienvenue": {
         "title": "🎫 Ticket d achat",
@@ -2334,6 +2336,7 @@ DEFAULT_EMBED_DATA.update({
         "menu_button_label": "Découvrir les privilèges",
         "menu_button_emoji": "✨",
         "menu_button_style": "primary",
+        "menu_button_color": "#5865F2",
         "menu_placeholder": "Choisis une catégorie",
         "menu_categories": [
             {
@@ -2619,6 +2622,7 @@ DEFAULT_EMBED_DATA.update({
         "menu_button_label": "Voir les services",
         "menu_button_emoji": "✨",
         "menu_button_style": "primary",
+        "menu_button_color": "#5865F2",
         "menu_placeholder": "Choisis une catégorie",
         "menu_categories": [
             {
@@ -3533,10 +3537,13 @@ async def create_product_ticket(interaction, product_key, amount):
     user = interaction.user
     cfg = PRODUCT_CONFIG.get(product_key)
     if guild is None or cfg is None:
-        await interaction.followup.send("❌ Impossible de créer cette commande.", ephemeral=True)
+        await finish_ephemeral_flow(interaction, "❌ Impossible de créer cette commande.")
         return
     if not product_is_available(product_key):
-        await interaction.followup.send(f"{STOCK_KO_EMOJI} **{cfg['display']}** est actuellement en rupture.", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            f"{STOCK_KO_EMOJI} **{cfg['display']}** est actuellement en rupture.",
+        )
         return
     uber_pack_key = None
     if product_key == "UBEREATS":
@@ -3550,7 +3557,7 @@ async def create_product_ticket(interaction, product_key, amount):
                 None
             )
         if uber_pack_key is None:
-            await interaction.followup.send("❌ Pack Uber Eats invalide.", ephemeral=True)
+            await finish_ephemeral_flow(interaction, "❌ Pack Uber Eats invalide.")
             return
     elif product_key != "DISCORD_NITRO":
         try:
@@ -3558,7 +3565,7 @@ async def create_product_ticket(interaction, product_key, amount):
         except (TypeError, ValueError):
             amount = 0
         if amount not in GIFT_CARD_AMOUNTS:
-            await interaction.followup.send("❌ Montant de carte cadeau invalide.", ephemeral=True)
+            await finish_ephemeral_flow(interaction, "❌ Montant de carte cadeau invalide.")
             return
 
     lock = ORDER_LOCKS.setdefault((guild.id, user.id), asyncio.Lock())
@@ -3581,7 +3588,10 @@ async def create_product_ticket(interaction, product_key, amount):
             received_display = f"{amount} €"
         current_balance = get_balance(guild.id, user.id)
         if current_balance < paid_amount:
-            await interaction.followup.send(f"❌ PinkCoins insuffisants. Il faut **{format_pinkcoins(paid_amount)}**, ton PinkWallet contient **{format_pinkcoins(current_balance)}**. Utilise le panneau `/pinkcoins` pour le recharger.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                f"❌ PinkCoins insuffisants. Il faut **{format_pinkcoins(paid_amount)}**, ton PinkWallet contient **{format_pinkcoins(current_balance)}**. Utilise le panneau `/pinkcoins` pour le recharger.",
+            )
             return
         try:
             ticket_channel = await create_private_order_thread(
@@ -3591,9 +3601,9 @@ async def create_product_ticket(interaction, product_key, amount):
                 "commande-carte",
             )
         except Exception as error:
-            await interaction.followup.send(
+            await finish_ephemeral_flow(
+                interaction,
                 "⏳ Discord ne peut pas créer le fil privé de commande actuellement. Réessaie dans quelques minutes.",
-                ephemeral=True,
             )
             print(f"Erreur création fil privé commande pour {user}: {error}")
             return
@@ -3605,7 +3615,10 @@ async def create_product_ticket(interaction, product_key, amount):
                 await ticket_channel.delete(reason="Débit des PinkCoins impossible")
             except discord.HTTPException:
                 pass
-            await interaction.followup.send("❌ Le débit des PinkCoins a échoué. Aucun PinkCoin n'a été retiré.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                "❌ Le débit des PinkCoins a échoué. Aucun PinkCoin n'a été retiré.",
+            )
             return
         if product_key == "UBEREATS":
             embed_key = "uber_eats_ticket_embed"
@@ -3629,7 +3642,10 @@ async def create_product_ticket(interaction, product_key, amount):
                 await ticket_channel.delete(reason="Commande impossible à publier")
             except discord.HTTPException:
                 pass
-            await interaction.followup.send("❌ L'envoi de la commande a échoué. Le montant a été recrédité.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                "❌ L'envoi de la commande a échoué. Le montant a été recrédité.",
+            )
             print(f"Erreur envoi commande pour {user}: {error}")
             return
         try:
@@ -3641,7 +3657,10 @@ async def create_product_ticket(interaction, product_key, amount):
             record_referral_purchase(guild.id, user.id, order_message.id, paid_amount, purchase_cost, cfg["display"])
         except Exception as error:
             print(f"Erreur calcul parrainage commande de {user}: {error}")
-        await interaction.followup.send(f"✅ Commande ajoutée dans ton fil privé {ticket_channel.mention}. Ton PinkWallet contient maintenant **{format_pinkcoins(remaining_balance)}**.", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            f"✅ Commande ajoutée dans ton fil privé {ticket_channel.mention}. Ton PinkWallet contient maintenant **{format_pinkcoins(remaining_balance)}**.",
+        )
 def default_stock_config():
     return {
         "products": {key: True for key in PRODUCT_CONFIG if key != "VALORANT"},
@@ -3706,13 +3725,122 @@ def discord_button_style(value, fallback=discord.ButtonStyle.primary):
     }.get(str(value or "").strip().lower(), fallback)
 
 
+DISCORD_BUTTON_COLORS = {
+    "primary": "#5865F2",
+    "secondary": "#4E5058",
+    "success": "#248046",
+    "danger": "#DA373C",
+}
+
+
+def normalize_button_hex(value, fallback="#5865F2"):
+    candidate = str(value or "").strip().upper()
+    if not candidate.startswith("#"):
+        candidate = f"#{candidate}"
+    if re.fullmatch(r"#[0-9A-F]{6}", candidate):
+        return candidate
+    return str(fallback or "#5865F2").upper()
+
+
+def closest_discord_button_style_name(value, fallback="primary"):
+    color = normalize_button_hex(value, DISCORD_BUTTON_COLORS.get(fallback, "#5865F2"))
+    red, green, blue = (int(color[index:index + 2], 16) for index in (1, 3, 5))
+    return min(
+        DISCORD_BUTTON_COLORS,
+        key=lambda style: sum(
+            (component - target) ** 2
+            for component, target in zip(
+                (red, green, blue),
+                tuple(
+                    int(DISCORD_BUTTON_COLORS[style][index:index + 2], 16)
+                    for index in (1, 3, 5)
+                ),
+            )
+        ),
+    )
+
+
+def discord_button_style_from_hex(value, fallback="primary"):
+    return discord_button_style(closest_discord_button_style_name(value, fallback))
+
+
 def get_menu_launcher_config(embed_key, label, emoji, style="primary"):
     data = load_embed_texts().get(embed_key, DEFAULT_EMBED_DATA.get(embed_key, {}))
+    fallback_color = DISCORD_BUTTON_COLORS.get(style, "#5865F2")
     return {
         "label": str(data.get("menu_button_label") or label)[:80],
         "emoji": str(data.get("menu_button_emoji") or emoji),
         "style": str(data.get("menu_button_style") or style).lower(),
+        "color": normalize_button_hex(data.get("menu_button_color"), fallback_color),
     }
+
+
+def get_component_button_config(embed_key, button_key, label, emoji="", style="secondary"):
+    data = load_embed_texts().get(embed_key, DEFAULT_EMBED_DATA.get(embed_key, {}))
+    buttons = data.get("component_buttons", {}) if isinstance(data, dict) else {}
+    configured = buttons.get(button_key, {}) if isinstance(buttons, dict) else {}
+    return {
+        "label": str(configured.get("label") or label)[:80],
+        "emoji": str(configured.get("emoji") or emoji),
+        "color": normalize_button_hex(
+            configured.get("color"),
+            DISCORD_BUTTON_COLORS.get(style, "#4E5058"),
+        ),
+    }
+
+
+def apply_component_button_config(button, embed_key, button_key, label, emoji="", style="secondary"):
+    config = get_component_button_config(embed_key, button_key, label, emoji, style)
+    button.label = config["label"]
+    button.emoji = safe_component_emoji(config["emoji"], emoji or "✨")
+    button.style = discord_button_style_from_hex(config["color"], style)
+    return button
+
+
+ACTIVE_EPHEMERAL_RESPONSES = {}
+
+
+def ephemeral_response_key(interaction):
+    guild_id = int(interaction.guild_id or 0)
+    user_id = int(getattr(interaction.user, "id", 0) or 0)
+    return guild_id, user_id
+
+
+async def clear_previous_ephemeral(interaction):
+    key = ephemeral_response_key(interaction)
+    previous_entry = ACTIVE_EPHEMERAL_RESPONSES.pop(key, None)
+    if isinstance(previous_entry, tuple):
+        created_at, previous = previous_entry
+        if time.time() - float(created_at or 0) > 900:
+            return
+    else:
+        previous = previous_entry
+    if previous is None or previous is interaction:
+        return
+    try:
+        await previous.delete_original_response()
+    except (discord.NotFound, discord.HTTPException):
+        pass
+
+
+async def send_single_ephemeral(interaction, content, view=None, embed=None):
+    await clear_previous_ephemeral(interaction)
+    kwargs = {"content": content, "view": view, "ephemeral": True}
+    if embed is not None:
+        kwargs["embed"] = embed
+    await interaction.response.send_message(**kwargs)
+    ACTIVE_EPHEMERAL_RESPONSES[ephemeral_response_key(interaction)] = (time.time(), interaction)
+
+
+async def defer_single_ephemeral(interaction):
+    await clear_previous_ephemeral(interaction)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    ACTIVE_EPHEMERAL_RESPONSES[ephemeral_response_key(interaction)] = (time.time(), interaction)
+
+
+async def finish_ephemeral_flow(interaction, content):
+    """Remplace le message éphémère du parcours au lieu d'en créer un second."""
+    await interaction.edit_original_response(content=content, view=None)
 
 
 def stock_partial_emoji(available):
@@ -3746,10 +3874,13 @@ async def create_valo_order(interaction, region_key, pack_key):
     pack_key = resolve_valo_pack_key(region_key, pack_key)
     pack_data = region["packs"].get(pack_key) if region and pack_key else None
     if guild is None or pack_data is None:
-        await interaction.followup.send("❌ Région ou pack Valorant invalide.", ephemeral=True)
+        await finish_ephemeral_flow(interaction, "❌ Région ou pack Valorant invalide.")
         return
     if not valo_pack_is_available(region_key, pack_key):
-        await interaction.followup.send(f"{STOCK_KO_EMOJI} Ce pack Valorant est actuellement en rupture.", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            f"{STOCK_KO_EMOJI} Ce pack Valorant est actuellement en rupture.",
+        )
         return
     pack = pack_data["label"]
     region_label = region["label"]
@@ -3760,7 +3891,10 @@ async def create_valo_order(interaction, region_key, pack_key):
         purchase_cost = get_purchase_cost_config()["valorant"][region_key][pack_key]
         current_balance = get_balance(guild.id, user.id)
         if current_balance < price:
-            await interaction.followup.send(f"❌ PinkCoins insuffisants. Il faut **{format_pinkcoins(price)}**, ton PinkWallet contient **{format_pinkcoins(current_balance)}**.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                f"❌ PinkCoins insuffisants. Il faut **{format_pinkcoins(price)}**, ton PinkWallet contient **{format_pinkcoins(current_balance)}**.",
+            )
             return
         try:
             ticket_channel = await create_private_order_thread(
@@ -3770,7 +3904,10 @@ async def create_valo_order(interaction, region_key, pack_key):
                 "commande-valorant",
             )
         except Exception as error:
-            await interaction.followup.send("⏳ Discord ne peut pas créer le fil privé Valorant actuellement.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                "⏳ Discord ne peut pas créer le fil privé Valorant actuellement.",
+            )
             print(f"Erreur création fil privé Valorant pour {user}: {error}")
             return
         try:
@@ -3781,7 +3918,10 @@ async def create_valo_order(interaction, region_key, pack_key):
                 await ticket_channel.delete(reason="Débit des PinkCoins Valorant impossible")
             except discord.HTTPException:
                 pass
-            await interaction.followup.send("❌ Le débit des PinkCoins a échoué. Aucun PinkCoin n'a été retiré.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                "❌ Le débit des PinkCoins a échoué. Aucun PinkCoin n'a été retiré.",
+            )
             return
         code_pending = (chr(96) * 3) + "\nEn attente...\n" + (chr(96) * 3)
         embed = build_json_embed("commande_vp_embed", {
@@ -3801,7 +3941,10 @@ async def create_valo_order(interaction, region_key, pack_key):
                 await ticket_channel.delete(reason="Commande Valorant impossible à publier")
             except discord.HTTPException:
                 pass
-            await interaction.followup.send("❌ L'envoi a échoué. Le montant a été recrédité.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                "❌ L'envoi a échoué. Le montant a été recrédité.",
+            )
             return
         try:
             save_order(guild.id, ticket_channel.id, order_message.id, user.id, f"Valorant {region_label} {pack}", price, price, user.name, pack)
@@ -3812,7 +3955,10 @@ async def create_valo_order(interaction, region_key, pack_key):
             record_referral_purchase(guild.id, user.id, order_message.id, price, purchase_cost, f"Valorant {region_label} {pack}")
         except Exception as error:
             print(f"Erreur calcul parrainage Valorant de {user}: {error}")
-        await interaction.followup.send(f"✅ {region_emoji} **{pack} ({region_label})** commandés dans ton fil privé {ticket_channel.mention}. Ton PinkWallet contient maintenant **{format_pinkcoins(remaining_balance)}**.", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            f"✅ {region_emoji} **{pack} ({region_label})** commandés dans ton fil privé {ticket_channel.mention}. Ton PinkWallet contient maintenant **{format_pinkcoins(remaining_balance)}**.",
+        )
 
 
 class ValoRegionSelect(discord.ui.Select):
@@ -3859,7 +4005,7 @@ class ValoPackSelect(discord.ui.Select):
         super().__init__(placeholder="Choisis ton pack Valorant Points", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         await create_valo_order(interaction, self.region_key, self.values[0])
 
 
@@ -3881,7 +4027,7 @@ class ValoOrderLauncherView(discord.ui.View):
         button = discord.ui.Button(
             label=config["label"],
             emoji=safe_component_emoji(config["emoji"], "🎮"),
-            style=discord_button_style(config["style"], discord.ButtonStyle.success),
+            style=discord_button_style_from_hex(config["color"], "success"),
             custom_id="pinkgift_start_valo_order",
         )
         button.callback = self.start_valo_order
@@ -3889,7 +4035,7 @@ class ValoOrderLauncherView(discord.ui.View):
 
     async def start_valo_order(self, interaction: discord.Interaction):
         # Répond immédiatement à Discord avant toute lecture de stock.
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await defer_single_ephemeral(interaction)
         await interaction.edit_original_response(
             content="Choisis d'abord ta région Valorant :",
             view=ValoRegionView()
@@ -3901,12 +4047,15 @@ async def create_cp_manual_ticket(interaction):
     guild = interaction.guild
     user = interaction.user
     if guild is None:
-        await interaction.followup.send("❌ Cette demande doit être faite depuis le serveur.", ephemeral=True)
+        await finish_ephemeral_flow(interaction, "❌ Cette demande doit être faite depuis le serveur.")
         return
 
     category = guild.get_channel(CP_TICKET_CATEGORY_ID)
     if not isinstance(category, discord.CategoryChannel):
-        await interaction.followup.send("❌ La catégorie des tickets CP est introuvable ou mal configurée.", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            "❌ La catégorie des tickets CP est introuvable ou mal configurée.",
+        )
         return
 
     ticket_channel = next(
@@ -3943,13 +4092,16 @@ async def create_cp_manual_ticket(interaction):
             await pin_first_bot_ticket_message(ticket_channel, opening_message)
         except discord.HTTPException as error:
             print(f"Erreur création ticket CP manuel pour {user}: {error}")
-            await interaction.followup.send("⏳ Discord ne peut pas créer le ticket CP actuellement.", ephemeral=True)
+            await finish_ephemeral_flow(
+                interaction,
+                "⏳ Discord ne peut pas créer le ticket CP actuellement.",
+            )
             return
 
-    await interaction.followup.send(
+    await finish_ephemeral_flow(
+        interaction,
         f"✅ Ton ticket CP est ouvert : {ticket_channel.mention}\n"
         "Indique le nombre de CP souhaité et combien tu proposes de payer. **Aucun PinkCoin n'a été débité.**",
-        ephemeral=True,
     )
 
 
@@ -4174,18 +4326,21 @@ class CPCodeDeliveryModal(discord.ui.Modal, title="Livrer la commande COD Points
 
     async def on_submit(self, interaction: discord.Interaction):
         if not can_manage_cp_order(interaction.user):
-            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Ce bouton est réservé au staff.")
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await defer_single_ephemeral(interaction)
         order = get_cp_order(message_id=self.message_id)
         if not order or str(order.get("status") or "pending").lower() != "pending":
-            await interaction.followup.send("❌ Cette commande n'est plus en attente.", ephemeral=True)
+            await finish_ephemeral_flow(interaction, "❌ Cette commande n'est plus en attente.")
             return
         lock = ORDER_LOCKS.setdefault((int(order["guild_id"]), int(order["user_id"])), asyncio.Lock())
         async with lock:
             order = get_cp_order(order_id=order["id"])
             if not order or str(order.get("status") or "pending").lower() != "pending":
-                await interaction.followup.send("❌ Cette commande vient déjà d'être traitée.", ephemeral=True)
+                await finish_ephemeral_flow(
+                    interaction,
+                    "❌ Cette commande vient déjà d'être traitée.",
+                )
                 return
             mark_order_status(order["id"], "delivering")
             try:
@@ -4193,14 +4348,28 @@ class CPCodeDeliveryModal(discord.ui.Modal, title="Livrer la commande COD Points
             except Exception as error:
                 mark_order_status(order["id"], "pending")
                 print(f"Erreur livraison manuelle CP #{order['id']}: {error}")
-                await interaction.followup.send(f"❌ Livraison impossible : {error}", ephemeral=True)
+                await finish_ephemeral_flow(
+                    interaction,
+                    f"❌ Livraison impossible : {error}",
+                )
                 return
-        await interaction.followup.send("✅ Code livré au client et commande marquée comme terminée.", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            "✅ Code livré au client et commande marquée comme terminée.",
+        )
 
 
 class CPPendingOrderView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "cp_order_pending_embed",
+            "deliver_pending",
+            "Livrer le code",
+            "📩",
+            "success",
+        )
 
     @discord.ui.button(
         label="Livrer le code",
@@ -4210,7 +4379,7 @@ class CPPendingOrderView(discord.ui.View):
     )
     async def deliver(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not can_manage_cp_order(interaction.user):
-            await interaction.response.send_message("❌ Ce bouton est réservé au staff.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Ce bouton est réservé au staff.")
             return
         await interaction.response.send_modal(CPCodeDeliveryModal(interaction.message.id))
 
@@ -4229,7 +4398,7 @@ class CPPackSelect(discord.ui.Select):
         super().__init__(placeholder="Choisis ton pack de COD Points", options=options, custom_id="pinkgift_cp_pack")
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         # Compatibilité avec un ancien menu encore ouvert au moment du déploiement :
         # aucune sélection CP ne peut désormais déclencher un débit de solde.
         await create_cp_manual_ticket(interaction)
@@ -4244,6 +4413,14 @@ class CPPackView(discord.ui.View):
 class CPOrderLauncherView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "cp_embed",
+            "start_cp_order",
+            "Commander des COD Points",
+            "<:cp:1528128623117205624>",
+            "success",
+        )
 
     @discord.ui.button(
         label="Commander des COD Points",
@@ -4252,7 +4429,7 @@ class CPOrderLauncherView(discord.ui.View):
         custom_id="pinkgift_start_cp_order",
     )
     async def start_cp_order(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await defer_single_ephemeral(interaction)
         await create_cp_manual_ticket(interaction)
 
 
@@ -4379,14 +4556,14 @@ async def create_special_request_ticket(
         catalog_label = str(catalog_label_override)[:100]
     service = service_override if isinstance(service_override, dict) else services.get(service_key)
     if guild is None or service is None:
-        await interaction.followup.send("❌ Ce service est introuvable. Relance le menu.", ephemeral=True)
+        await finish_ephemeral_flow(interaction, "❌ Ce service est introuvable. Relance le menu.")
         return
 
     category = guild.get_channel(SPECIAL_TICKET_CATEGORY_ID)
     if not isinstance(category, discord.CategoryChannel):
-        await interaction.followup.send(
+        await finish_ephemeral_flow(
+            interaction,
             "❌ La catégorie des tickets Autres et Abonnements est introuvable.",
-            ephemeral=True,
         )
         return
 
@@ -4439,9 +4616,9 @@ async def create_special_request_ticket(
                 )
             except discord.HTTPException as error:
                 print(f"Erreur création ticket {catalog_key} pour {user}: {error}")
-                await interaction.followup.send(
+                await finish_ephemeral_flow(
+                    interaction,
                     "⏳ Discord ne peut pas créer ce ticket actuellement. Réessaie dans quelques minutes.",
-                    ephemeral=True,
                 )
                 return
 
@@ -4472,16 +4649,16 @@ async def create_special_request_ticket(
             await pin_first_bot_ticket_message(ticket_channel, opening_message)
         except discord.HTTPException as error:
             print(f"Erreur envoi demande {catalog_key} pour {user}: {error}")
-            await interaction.followup.send(
+            await finish_ephemeral_flow(
+                interaction,
                 "❌ Le ticket existe mais le message de demande n'a pas pu être envoyé.",
-                ephemeral=True,
             )
             return
 
-    await interaction.followup.send(
+    await finish_ephemeral_flow(
+        interaction,
         f"✅ Ton ticket pour {service['emoji']} **{service['label']}** est ouvert : {ticket_channel.mention}\n"
         "Aucun PinkCoin n'a été débité.",
-        ephemeral=True,
     )
 
 
@@ -4567,6 +4744,7 @@ def get_other_services_menu_config():
         "button_label": str(data.get("menu_button_label") or "Voir les services")[:80],
         "button_emoji": str(data.get("menu_button_emoji") or "✨"),
         "button_style": str(data.get("menu_button_style") or "primary").lower(),
+        "button_color": normalize_button_hex(data.get("menu_button_color"), "#5865F2"),
         "placeholder": str(data.get("menu_placeholder") or "Choisis une catégorie")[:150],
         "categories": categories,
     }
@@ -4596,9 +4774,12 @@ class OtherServiceItemSelect(discord.ui.Select):
             None,
         )
         if option is None:
-            await interaction.response.send_message("❌ Ce service n’existe plus.", ephemeral=True)
+            await interaction.response.edit_message(
+                content="❌ Ce service n’existe plus.",
+                view=None,
+            )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         await create_special_request_ticket(
             interaction,
             self.category["catalog_key"],
@@ -4611,6 +4792,15 @@ class OtherServiceItemSelect(discord.ui.Select):
 class OtherServiceItemView(discord.ui.View):
     def __init__(self, category):
         super().__init__(timeout=300)
+        back_button = next(item for item in self.children if isinstance(item, discord.ui.Button))
+        apply_component_button_config(
+            back_button,
+            "autres_embed",
+            "back_categories",
+            "Retour aux catégories",
+            "↩️",
+            "secondary",
+        )
         self.add_item(OtherServiceItemSelect(category))
 
     @discord.ui.button(label="Retour aux catégories", emoji="↩️", style=discord.ButtonStyle.secondary)
@@ -4646,12 +4836,14 @@ class OtherServicesCategorySelect(discord.ui.Select):
             None,
         )
         if category is None:
-            await interaction.response.send_message("❌ Cette catégorie n’existe plus.", ephemeral=True)
+            await interaction.response.edit_message(
+                content="❌ Cette catégorie n’existe plus.",
+                view=None,
+            )
             return
-        await interaction.response.send_message(
-            f"{category['emoji']} **{category['label']}** — choisis un service :",
+        await interaction.response.edit_message(
+            content=f"{category['emoji']} **{category['label']}** — choisis un service :",
             view=OtherServiceItemView(category),
-            ephemeral=True,
         )
 
 
@@ -4668,17 +4860,17 @@ class OtherServicesView(discord.ui.View):
         button = discord.ui.Button(
             label=menu["button_label"],
             emoji=safe_component_emoji(menu["button_emoji"], "✨"),
-            style=discord_button_style(menu["button_style"]),
+            style=discord_button_style_from_hex(menu["button_color"], menu["button_style"]),
             custom_id="pinkgift_open_other_services_menu",
         )
         button.callback = self.open_other_services_menu
         self.add_item(button)
 
     async def open_other_services_menu(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
+        await send_single_ephemeral(
+            interaction,
             "Choisis une catégorie de services :",
             view=OtherServicesCategoryView(),
-            ephemeral=True,
         )
 
 
@@ -4693,7 +4885,7 @@ class UberEatsAmountSelect(discord.ui.Select):
         super().__init__(placeholder="Choisis ton pack Uber Eats", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         await create_product_ticket(interaction, "UBEREATS", self.values[0])
 
 
@@ -4706,7 +4898,14 @@ class UberEatsAmountView(discord.ui.View):
 class NitroOrderView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
-        self.children[0].label = f"Commander Discord Nitro — {format_pinkcoins(get_pricing_config()['discord_nitro'], short=True)}"
+        apply_component_button_config(
+            self.children[0],
+            "tarifs_embed",
+            "confirm_nitro",
+            f"Commander Discord Nitro — {format_pinkcoins(get_pricing_config()['discord_nitro'], short=True)}",
+            "💎",
+            "success",
+        )
 
     @discord.ui.button(
         label="Commander Discord Nitro",
@@ -4714,7 +4913,7 @@ class NitroOrderView(discord.ui.View):
         style=discord.ButtonStyle.success
     )
     async def confirm_nitro(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         await create_product_ticket(interaction, "DISCORD_NITRO", "nitro")
 
 
@@ -4730,7 +4929,7 @@ class ProductAmountSelect(discord.ui.Select):
         super().__init__(placeholder="Choisis le montant de la carte", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         await create_product_ticket(interaction, self.product_key, int(self.values[0]))
 
 
@@ -4821,9 +5020,15 @@ class ProductSelectView(discord.ui.View):
         traceback.print_exc()
         try:
             if interaction.response.is_done():
-                await interaction.followup.send("❌ Le menu de commande a rencontré une erreur. Relance **Commander**.", ephemeral=True)
+                await interaction.edit_original_response(
+                    content="❌ Le menu de commande a rencontré une erreur. Relance **Commander**.",
+                    view=None,
+                )
             else:
-                await interaction.response.send_message("❌ Le menu de commande a rencontré une erreur. Relance **Commander**.", ephemeral=True)
+                await interaction.response.edit_message(
+                    content="❌ Le menu de commande a rencontré une erreur. Relance **Commander**.",
+                    view=None,
+                )
         except Exception:
             pass
 
@@ -4840,7 +5045,7 @@ class OrderLauncherView(discord.ui.View):
         button = discord.ui.Button(
             label=config["label"],
             emoji=safe_component_emoji(config["emoji"], "🛍️"),
-            style=discord_button_style(config["style"], discord.ButtonStyle.success),
+            style=discord_button_style_from_hex(config["color"], "success"),
             custom_id="pinkgift_start_order",
         )
         button.callback = self.start_order
@@ -4849,24 +5054,24 @@ class OrderLauncherView(discord.ui.View):
     async def start_order(self, interaction: discord.Interaction):
         try:
             # Le menu est désormais entièrement local et peut être envoyé directement.
-            await interaction.response.send_message(
+            await send_single_ephemeral(
+                interaction,
                 "Choisis la marque que tu souhaites commander :",
                 view=ProductSelectView(),
-                ephemeral=True
             )
         except Exception as error:
             print(f"Erreur bouton Commander pour {interaction.user}: {error}")
             traceback.print_exc()
             try:
                 if interaction.response.is_done():
-                    await interaction.followup.send(
-                        "❌ Impossible d'ouvrir le menu de commande. Réessaie dans quelques secondes.",
-                        ephemeral=True
+                    await interaction.edit_original_response(
+                        content="❌ Impossible d'ouvrir le menu de commande. Réessaie dans quelques secondes.",
+                        view=None,
                     )
                 else:
-                    await interaction.response.send_message(
+                    await send_single_ephemeral(
+                        interaction,
                         "❌ Impossible d'ouvrir le menu de commande. Réessaie dans quelques secondes.",
-                        ephemeral=True
                     )
             except Exception:
                 pass
@@ -4876,9 +5081,15 @@ class OrderLauncherView(discord.ui.View):
         traceback.print_exc()
         try:
             if interaction.response.is_done():
-                await interaction.followup.send("❌ Le bouton Commander a rencontré une erreur.", ephemeral=True)
+                await interaction.edit_original_response(
+                    content="❌ Le bouton Commander a rencontré une erreur.",
+                    view=None,
+                )
             else:
-                await interaction.response.send_message("❌ Le bouton Commander a rencontré une erreur.", ephemeral=True)
+                await send_single_ephemeral(
+                    interaction,
+                    "❌ Le bouton Commander a rencontré une erreur.",
+                )
         except Exception:
             pass
 
@@ -4951,6 +5162,7 @@ def get_privileges_menu_config():
         "button_label": str(data.get("menu_button_label") or "Découvrir les privilèges")[:80],
         "button_emoji": str(data.get("menu_button_emoji") or "✨"),
         "button_style": str(data.get("menu_button_style") or "primary").lower(),
+        "button_color": normalize_button_hex(data.get("menu_button_color"), "#5865F2"),
         "placeholder": str(data.get("menu_placeholder") or "Choisis une catégorie")[:150],
         "categories": categories,
     }
@@ -4980,18 +5192,30 @@ class PrivilegeItemSelect(discord.ui.Select):
             None,
         )
         if option is None:
-            await interaction.response.send_message("❌ Cette option n’existe plus.", ephemeral=True)
+            await interaction.response.edit_message(
+                content="❌ Cette option n’existe plus.",
+                view=None,
+            )
             return
         response = option.get("response") or (
             f"✨ Tu as sélectionné **{option['label']}** dans **{self.category['label']}**.\n"
             "Le contenu de cette option peut être configuré depuis le panel."
         )
-        await interaction.response.send_message(response, ephemeral=True)
+        await interaction.response.edit_message(content=response, view=None)
 
 
 class PrivilegeItemView(discord.ui.View):
     def __init__(self, category):
         super().__init__(timeout=300)
+        back_button = next(item for item in self.children if isinstance(item, discord.ui.Button))
+        apply_component_button_config(
+            back_button,
+            "privileges_embed",
+            "back_categories",
+            "Retour aux catégories",
+            "↩️",
+            "secondary",
+        )
         self.add_item(PrivilegeItemSelect(category))
 
     @discord.ui.button(label="Retour aux catégories", emoji="↩️", style=discord.ButtonStyle.secondary)
@@ -5048,17 +5272,17 @@ class PrivilegesLauncherView(discord.ui.View):
         button = discord.ui.Button(
             label=menu["button_label"],
             emoji=safe_component_emoji(menu["button_emoji"], "✨"),
-            style=discord_button_style(menu["button_style"]),
+            style=discord_button_style_from_hex(menu["button_color"], menu["button_style"]),
             custom_id="pinkgift_open_privileges_menu",
         )
         button.callback = self.open_privileges_menu
         self.add_item(button)
 
     async def open_privileges_menu(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
+        await send_single_ephemeral(
+            interaction,
             "Choisis une catégorie de privilèges :",
             view=PrivilegeCategoryView(),
-            ephemeral=True,
         )
 
 
@@ -5067,11 +5291,14 @@ async def create_balance_recharge_ticket(interaction, referral=None):
     user = interaction.user
     category = guild.get_channel(BALANCE_CATEGORY_ID) if guild else None
     if category is None:
-        await interaction.followup.send("❌ Catégorie de recharge introuvable.", ephemeral=True)
+        await finish_ephemeral_flow(interaction, "❌ Catégorie de recharge introuvable.")
         return
     existing = find_balance_ticket(guild, user.id)
     if existing:
-        await interaction.followup.send(f"ℹ️ Ton ticket de recharge existe déjà : {existing.mention}", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            f"ℹ️ Ton ticket de recharge existe déjà : {existing.mention}",
+        )
         return
     staff_role = guild.get_role(STAFF_ROLE_ID)
     overwrites = {
@@ -5094,10 +5321,13 @@ async def create_balance_recharge_ticket(interaction, referral=None):
         embed = build_json_embed("balance_ticket_embed", {"user": user.mention, "balance": pinkcoin_number(get_balance(guild.id, user.id))})
         opening_message = await channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed, view=CloseTicketView(user.id))
         await pin_first_bot_ticket_message(channel, opening_message)
-        await interaction.followup.send(f"✅ Ticket de recharge créé : {channel.mention}", ephemeral=True)
+        await finish_ephemeral_flow(interaction, f"✅ Ticket de recharge créé : {channel.mention}")
     except Exception as error:
         print(f"Erreur création ticket solde pour {user}: {error}")
-        await interaction.followup.send("❌ Impossible de créer le ticket de recharge actuellement.", ephemeral=True)
+        await finish_ephemeral_flow(
+            interaction,
+            "❌ Impossible de créer le ticket de recharge actuellement.",
+        )
 
 
 class ReferralCodeModal(discord.ui.Modal, title="Code de parrainage"):
@@ -5109,22 +5339,34 @@ class ReferralCodeModal(discord.ui.Modal, title="Code de parrainage"):
         required=True,
     )
 
-    def __init__(self, user_id):
+    def __init__(self, user_id, origin_interaction=None):
         super().__init__()
         self.user_id = int(user_id)
+        self.origin_interaction = origin_interaction
 
     async def on_submit(self, interaction: discord.Interaction):
+        if self.origin_interaction is not None:
+            try:
+                await self.origin_interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Ce formulaire ne t'appartient pas.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Ce formulaire ne t'appartient pas.")
             return
         referral = get_active_referral_code(self.code_input.value)
         if referral is None:
-            await interaction.response.send_message("❌ Ce code de parrainage est invalide ou désactivé.", ephemeral=True)
+            await send_single_ephemeral(
+                interaction,
+                "❌ Ce code de parrainage est invalide ou désactivé.",
+            )
             return
         if referral.get("sponsor_id") and referral["sponsor_id"] == str(interaction.user.id):
-            await interaction.response.send_message("❌ Tu ne peux pas utiliser ton propre code de parrainage.", ephemeral=True)
+            await send_single_ephemeral(
+                interaction,
+                "❌ Tu ne peux pas utiliser ton propre code de parrainage.",
+            )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await defer_single_ephemeral(interaction)
         await create_balance_recharge_ticket(interaction, referral)
 
 
@@ -5132,42 +5374,80 @@ class ReferralChoiceView(discord.ui.View):
     def __init__(self, user_id):
         super().__init__(timeout=180)
         self.user_id = int(user_id)
+        apply_component_button_config(
+            self.children[0],
+            "balance_embed",
+            "referral_yes",
+            "Oui, j'ai un code",
+            "✅",
+            "success",
+        )
+        apply_component_button_config(
+            self.children[1],
+            "balance_embed",
+            "referral_no",
+            "Non",
+            "❌",
+            "secondary",
+        )
 
     async def interaction_check(self, interaction: discord.Interaction):
         if interaction.user.id == self.user_id:
             return True
-        await interaction.response.send_message("❌ Ce choix ne t'appartient pas.", ephemeral=True)
+        await send_single_ephemeral(interaction, "❌ Ce choix ne t'appartient pas.")
         return False
 
     @discord.ui.button(label="Oui, j'ai un code", emoji="✅", style=discord.ButtonStyle.success)
     async def yes_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ReferralCodeModal(self.user_id))
+        await interaction.response.send_modal(ReferralCodeModal(self.user_id, interaction))
 
     @discord.ui.button(label="Non", emoji="❌", style=discord.ButtonStyle.secondary)
     async def no_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         await create_balance_recharge_ticket(interaction)
 
 
 class BalanceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "balance_embed",
+            "view_balance",
+            "Voir mes PinkCoins",
+            "💰",
+            "secondary",
+        )
+        apply_component_button_config(
+            self.children[1],
+            "balance_embed",
+            "recharge_balance",
+            "Recharger mon PinkWallet",
+            "➕",
+            "success",
+        )
 
     @discord.ui.button(label="Voir mes PinkCoins", emoji="💰", style=discord.ButtonStyle.secondary, custom_id="pinkgift_view_balance")
     async def view_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         balance = get_balance(interaction.guild.id, interaction.user.id)
-        await interaction.response.send_message(f"💰 Ton PinkWallet contient **{format_pinkcoins(balance)}**.", ephemeral=True)
+        await send_single_ephemeral(
+            interaction,
+            f"💰 Ton PinkWallet contient **{format_pinkcoins(balance)}**.",
+        )
 
     @discord.ui.button(label="Recharger mon PinkWallet", emoji="➕", style=discord.ButtonStyle.success, custom_id="pinkgift_recharge_balance")
     async def recharge_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         existing = find_balance_ticket(interaction.guild, interaction.user.id)
         if existing:
-            await interaction.response.send_message(f"ℹ️ Ton ticket de recharge existe déjà : {existing.mention}", ephemeral=True)
+            await send_single_ephemeral(
+                interaction,
+                f"ℹ️ Ton ticket de recharge existe déjà : {existing.mention}",
+            )
             return
-        await interaction.response.send_message(
+        await send_single_ephemeral(
+            interaction,
             "🤝 As-tu un code de parrainage ?",
             view=ReferralChoiceView(interaction.user.id),
-            ephemeral=True,
         )
 
 
@@ -5175,6 +5455,14 @@ class CloseTicketView(discord.ui.View):
     def __init__(self, client_id: int = 0):
         super().__init__(timeout=None)
         self.client_id = client_id
+        apply_component_button_config(
+            self.children[0],
+            "close_ticket_embed",
+            "close_ticket",
+            "Close",
+            "🔒",
+            "danger",
+        )
 
     @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="pinkgift_close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -5187,7 +5475,7 @@ class CloseTicketView(discord.ui.View):
         staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
         is_staff = staff_role in interaction.user.roles if hasattr(interaction.user, "roles") and staff_role else False
         if not is_staff:
-            await interaction.response.send_message("❌ Seul le staff peut fermer ce ticket.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Seul le staff peut fermer ce ticket.")
             return
         if client:
             await channel.set_permissions(client, view_channel=False, send_messages=False, read_message_history=False)
@@ -5206,7 +5494,10 @@ class CloseTicketView(discord.ui.View):
                 except Exception as error:
                     print(f"Erreur verification credit ticket solde {channel.id}: {error}")
             if not credited:
-                await interaction.response.send_message("🗑️ Ticket fermé sans recharge du PinkWallet : suppression du salon.", ephemeral=True)
+                await send_single_ephemeral(
+                    interaction,
+                    "🗑️ Ticket fermé sans recharge du PinkWallet : suppression du salon.",
+                )
                 await channel.delete(reason=f"Ticket PinkWallet sans recharge fermé par {interaction.user}")
                 return
 
@@ -5230,17 +5521,28 @@ class PendingOrderActionsView(CloseTicketView):
 class OpenTicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "menu_ticket_embed",
+            "open_ticket",
+            "Ouvrir un ticket",
+            "🎫",
+            "success",
+        )
 
     @discord.ui.button(label="Ouvrir un ticket", emoji="🎫", style=discord.ButtonStyle.success, custom_id="pinkgift_open_ticket")
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         user = interaction.user
         if guild is None:
-            await interaction.response.send_message("❌ Cette action doit etre utilisee sur un serveur.", ephemeral=True)
+            await send_single_ephemeral(
+                interaction,
+                "❌ Cette action doit etre utilisee sur un serveur.",
+            )
             return
         category = guild.get_channel(TICKET_CATEGORY_ID)
         if category is None:
-            await interaction.response.send_message("❌ Categorie ticket introuvable.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Categorie ticket introuvable.")
             return
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -5269,7 +5571,10 @@ class OpenTicketView(discord.ui.View):
         embed_ticket.set_image(url=get_image_url("ticket_cree", TICKET_IMAGE_URL))
         opening_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await pin_first_bot_ticket_message(ticket_channel, opening_message)
-        await interaction.response.send_message(f"✅ Ton ticket a ete cree ici : {ticket_channel.mention}", ephemeral=True)
+        await send_single_ephemeral(
+            interaction,
+            f"✅ Ton ticket a ete cree ici : {ticket_channel.mention}",
+        )
 
 class ProductView(OpenTicketView):
     pass
@@ -5278,17 +5583,28 @@ class ProductView(OpenTicketView):
 class ValoTicketButton(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "commande_vp_embed",
+            "open_valo_ticket",
+            "Ouvrir un ticket Valorant",
+            "🎮",
+            "success",
+        )
 
     @discord.ui.button(label="Ouvrir un ticket Valorant", emoji="🎮", style=discord.ButtonStyle.success, custom_id="pinkgift_open_valo_ticket")
     async def open_valo_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         user = interaction.user
         if guild is None:
-            await interaction.response.send_message("❌ Cette action doit etre utilisee sur un serveur.", ephemeral=True)
+            await send_single_ephemeral(
+                interaction,
+                "❌ Cette action doit etre utilisee sur un serveur.",
+            )
             return
         category = guild.get_channel(VALO_TICKET_CATEGORY_ID)
         if category is None:
-            await interaction.response.send_message("❌ Categorie Valorant introuvable.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Categorie Valorant introuvable.")
             return
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -5304,7 +5620,10 @@ class ValoTicketButton(discord.ui.View):
         embed_ticket = build_json_embed("valo_ticket_bienvenue_embed", {"user": user.mention})
         opening_message = await ticket_channel.send(content=f"{user.mention} | <@&{STAFF_ROLE_ID}>", embed=embed_ticket, view=CloseTicketView(user.id))
         await pin_first_bot_ticket_message(ticket_channel, opening_message)
-        await interaction.response.send_message(f"✅ Ton ticket Valorant a ete cree ici : {ticket_channel.mention}", ephemeral=True)
+        await send_single_ephemeral(
+            interaction,
+            f"✅ Ton ticket Valorant a ete cree ici : {ticket_channel.mention}",
+        )
 
 
 def giveaway_storage_key(message_id):
@@ -5609,27 +5928,41 @@ def build_saved_giveaway_embed(data, participants_count, ended=False, winner="Au
 class GiveawayJoinView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "giveaway_embed",
+            "join_giveaway",
+            "Je participe",
+            GIVEAWAY_JOIN_EMOJI,
+            "success",
+        )
 
     @discord.ui.button(label="Je participe", style=discord.ButtonStyle.success, emoji=GIVEAWAY_JOIN_EMOJI, custom_id="pinkgift_giveaway_join")
     async def join_giveaway(self, interaction: discord.Interaction, button: discord.ui.Button):
         message = interaction.message
         if message is None:
-            await interaction.response.send_message("❌ Giveaway introuvable.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Giveaway introuvable.")
             return
         data = load_giveaway(message.id)
         if not data:
-            await interaction.response.send_message("❌ Ce giveaway n'est plus actif.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Ce giveaway n'est plus actif.")
             return
         if data.get("ended"):
-            await interaction.response.send_message("❌ Ce giveaway est déjà terminé.", ephemeral=True)
+            await send_single_ephemeral(interaction, "❌ Ce giveaway est déjà terminé.")
             return
         guild = interaction.guild
         if guild is None or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("❌ Cette participation doit être faite sur le serveur.", ephemeral=True)
+            await send_single_ephemeral(
+                interaction,
+                "❌ Cette participation doit être faite sur le serveur.",
+            )
             return
         participants = normalize_giveaway_participants(data.get("participants", []))
         if interaction.user.id in participants:
-            await interaction.response.send_message("✅ Tu participes déjà à ce giveaway.", ephemeral=True)
+            await send_single_ephemeral(
+                interaction,
+                "✅ Tu participes déjà à ce giveaway.",
+            )
             return
         participants.append(interaction.user.id)
         data["participants"] = participants
@@ -5641,9 +5974,9 @@ class GiveawayJoinView(discord.ui.View):
             )
         except discord.HTTPException as error:
             print(f"Erreur mise à jour giveaway {message.id}: {error}")
-        await interaction.response.send_message(
+        await send_single_ephemeral(
+            interaction,
             "✅ Participation enregistrée. Les conditions seront vérifiées au moment du tirage.",
-            ephemeral=True,
         )
 
 
@@ -7581,12 +7914,17 @@ PANEL_EMBEDS_TEMPLATE = (
     )
     .replace(
         '<div class="embed-editor-grid">',
-        '''{% if item.menu_enabled %}<details class="privilege-menu-editor" data-menu-kind="{{ item.menu_kind }}"><summary><span>Menus sous l’embed {{ item.menu_title }}</span><span class="menu-editor-chevron" aria-hidden="true">›</span></summary><div class="menu-editor-body"><div class="privilege-menu-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Couleur du bouton<select name="menu_button_style"><option value="primary"{% if item.menu_button_style == "primary" %} selected{% endif %}>Bleu</option><option value="secondary"{% if item.menu_button_style == "secondary" %} selected{% endif %}>Gris</option><option value="success"{% if item.menu_button_style == "success" %} selected{% endif %}>Vert</option><option value="danger"{% if item.menu_button_style == "danger" %} selected{% endif %}>Rouge</option></select></label><label>Texte du premier menu<input name="menu_placeholder" maxlength="150" value="{{ item.menu_placeholder }}"></label></div><div class="privilege-menu-list"></div><button class="privilege-add-category" type="button">＋ Ajouter une catégorie</button><textarea class="privilege-menu-config" name="menu_config_json" hidden>{{ item.menu_config_json }}</textarea><p class="muted">{% if item.menu_kind == "autres" %}Chaque catégorie et chaque service ouvre un ticket privé. Les services déjà en place conservent leur traitement particulier.{% else %}Chaque catégorie et chaque option peut être ajoutée, modifiée ou supprimée ici. Le message d’une option est envoyé en privé après sa sélection.{% endif %}</p></div></details>{% endif %}<div class="embed-editor-grid">''',
+        '''{% if item.menu_enabled %}<details class="privilege-menu-editor" data-menu-kind="{{ item.menu_kind }}"><summary><span>Menus sous l’embed {{ item.menu_title }}</span><span class="menu-editor-chevron" aria-hidden="true">›</span></summary><div class="menu-editor-body"><div class="privilege-menu-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Couleur HTML du bouton<input name="menu_button_color" class="button-color-code" pattern="#[0-9A-Fa-f]{6}" maxlength="7" value="{{ item.menu_button_color }}" placeholder="#5865F2"></label><label>Texte du premier menu<input name="menu_placeholder" maxlength="150" value="{{ item.menu_placeholder }}"></label></div><div class="privilege-menu-list"></div><button class="privilege-add-category" type="button">＋ Ajouter une catégorie</button><textarea class="privilege-menu-config" name="menu_config_json" hidden>{{ item.menu_config_json }}</textarea><p class="muted">{% if item.menu_kind == "autres" %}Chaque catégorie et chaque service ouvre un ticket privé. Les services déjà en place conservent leur traitement particulier.{% else %}Chaque catégorie et chaque option peut être ajoutée, modifiée ou supprimée ici. Le message d’une option est envoyé en privé après sa sélection.{% endif %} Discord appliquera automatiquement la couleur autorisée la plus proche.</p></div></details>{% endif %}<div class="embed-editor-grid">''',
         1,
     )
     .replace(
         '<div class="embed-editor-grid">',
-        '''{% if item.launcher_only %}<details class="privilege-menu-editor"><summary><span>Menu sous l’embed {{ item.menu_title }}</span><span class="menu-editor-chevron" aria-hidden="true">›</span></summary><div class="menu-editor-body"><div class="privilege-menu-settings launcher-only-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Couleur du bouton<select name="menu_button_style"><option value="primary"{% if item.menu_button_style == "primary" %} selected{% endif %}>Bleu</option><option value="secondary"{% if item.menu_button_style == "secondary" %} selected{% endif %}>Gris</option><option value="success"{% if item.menu_button_style == "success" %} selected{% endif %}>Vert</option><option value="danger"{% if item.menu_button_style == "danger" %} selected{% endif %}>Rouge</option></select></label></div><p class="muted">Les options d’achat restent synchronisées avec les onglets Prix et Stock afin de conserver les débits et livraisons automatiques.</p></div></details>{% endif %}<div class="embed-editor-grid">''',
+        '''{% if item.launcher_only %}<details class="privilege-menu-editor"><summary><span>Menu sous l’embed {{ item.menu_title }}</span><span class="menu-editor-chevron" aria-hidden="true">›</span></summary><div class="menu-editor-body"><div class="privilege-menu-settings launcher-only-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Couleur HTML du bouton<input name="menu_button_color" class="button-color-code" pattern="#[0-9A-Fa-f]{6}" maxlength="7" value="{{ item.menu_button_color }}" placeholder="#248046"></label></div><p class="muted">Les options d’achat restent synchronisées avec les onglets Prix et Stock. Discord appliquera automatiquement la couleur autorisée la plus proche.</p></div></details>{% endif %}<div class="embed-editor-grid">''',
+        1,
+    )
+    .replace(
+        '<div class="embed-editor-grid">',
+        '''{% if item.component_buttons %}<details class="privilege-menu-editor component-buttons-editor"><summary><span>Tous les boutons sous cet embed</span><span class="menu-editor-chevron" aria-hidden="true">›</span></summary><div class="menu-editor-body"><div class="component-button-editor-list">{% for button in item.component_buttons %}<section class="component-button-card" data-button-key="{{ button.key }}"><strong>{{ button.name }}</strong><div class="privilege-menu-settings launcher-only-settings"><label>Texte du bouton<input name="component_label__{{ button.key }}" maxlength="80" value="{{ button.label }}"></label><label>Emoji du bouton<input name="component_emoji__{{ button.key }}" value="{{ button.emoji }}"></label><label>Couleur HTML<input name="component_color__{{ button.key }}" class="button-color-code" pattern="#[0-9A-Fa-f]{6}" maxlength="7" value="{{ button.color }}" placeholder="#5865F2"></label></div></section>{% endfor %}</div><p class="muted">Format accepté : <code>#RRGGBB</code>. L’aperçu du panel utilise exactement cette couleur ; Discord emploie automatiquement son style autorisé le plus proche.</p></div></details>{% endif %}<div class="embed-editor-grid">''',
         1,
     )
 )
@@ -7639,6 +7977,15 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   gap: 12px;
 }
 .launcher-only-settings { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.component-button-editor-list { display: grid; gap: 12px; }
+.component-button-card {
+  padding: 13px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(10,10,14,.42);
+}
+.component-button-card > strong { display: block; margin-bottom: 10px; color: #ffb6da; }
+.button-color-code:invalid { border-color: #da373c !important; box-shadow: 0 0 0 2px rgba(218,55,60,.16); }
 .privilege-menu-settings label, .privilege-field {
   display: flex;
   flex-direction: column;
@@ -8095,18 +8442,33 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     }
     card.appendChild(inner);
     content.appendChild(card);
+    const components = make("div", "preview-components");
+    const appendButtonPreview = (label, emoji, color) => {
+      if (!label) return;
+      const button = makeRich(
+        "div",
+        "preview-component-button",
+        [emoji, label].filter(Boolean).join(" "),
+      );
+      if (/^#[0-9a-f]{6}$/i.test(color || "")) button.style.backgroundColor = color;
+      else button.style.backgroundColor = "#4E5058";
+      components.appendChild(button);
+    };
     const menuButtonLabel = form.querySelector('[name="menu_button_label"]')?.value?.trim();
     if (menuButtonLabel) {
       const buttonEmoji = form.querySelector('[name="menu_button_emoji"]')?.value?.trim() || "";
-      const buttonStyle = form.querySelector('[name="menu_button_style"]')?.value || "primary";
-      const components = make("div", "preview-components");
-      components.appendChild(makeRich(
-        "div",
-        `preview-component-button preview-button-${buttonStyle}`,
-        [buttonEmoji, menuButtonLabel].filter(Boolean).join(" "),
-      ));
-      content.appendChild(components);
+      const buttonColor = form.querySelector('[name="menu_button_color"]')?.value?.trim() || "#5865F2";
+      appendButtonPreview(menuButtonLabel, buttonEmoji, buttonColor);
     }
+    form.querySelectorAll(".component-button-card").forEach(cardNode => {
+      const key = cardNode.dataset.buttonKey || "";
+      appendButtonPreview(
+        cardNode.querySelector(`[name="component_label__${key}"]`)?.value?.trim(),
+        cardNode.querySelector(`[name="component_emoji__${key}"]`)?.value?.trim(),
+        cardNode.querySelector(`[name="component_color__${key}"]`)?.value?.trim(),
+      );
+    });
+    if (components.children.length) content.appendChild(components);
     message.appendChild(content);
     preview.replaceChildren(message);
     preview.dataset.state = "valid";
@@ -8132,9 +8494,10 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       render(form);
     });
     form.querySelectorAll(
-      '[name="menu_button_label"], [name="menu_button_emoji"], [name="menu_button_style"]'
+      '[name="menu_button_label"], [name="menu_button_emoji"], [name="menu_button_color"], '
+      + '[name^="component_label__"], [name^="component_emoji__"], [name^="component_color__"]'
     ).forEach(control => {
-      control.addEventListener(control.tagName === "SELECT" ? "change" : "input", () => render(form));
+      control.addEventListener("input", () => render(form));
     });
   });
 })();
@@ -9375,6 +9738,43 @@ PANEL_HIDDEN_EMBED_KEYS = {
 }
 
 
+EMBED_COMPONENT_BUTTON_DEFINITIONS = {
+    "tarifs_embed": [
+        {"key": "confirm_nitro", "label": "Commander Discord Nitro", "emoji": "💎", "style": "success"},
+    ],
+    "cp_embed": [
+        {"key": "start_cp_order", "label": "Commander des COD Points", "emoji": "<:cp:1528128623117205624>", "style": "success"},
+    ],
+    "cp_order_pending_embed": [
+        {"key": "deliver_pending", "label": "Livrer le code", "emoji": "📩", "style": "success"},
+    ],
+    "autres_embed": [
+        {"key": "back_categories", "label": "Retour aux catégories", "emoji": "↩️", "style": "secondary"},
+    ],
+    "privileges_embed": [
+        {"key": "back_categories", "label": "Retour aux catégories", "emoji": "↩️", "style": "secondary"},
+    ],
+    "balance_embed": [
+        {"key": "view_balance", "label": "Voir mes PinkCoins", "emoji": "💰", "style": "secondary"},
+        {"key": "recharge_balance", "label": "Recharger mon PinkWallet", "emoji": "➕", "style": "success"},
+        {"key": "referral_yes", "label": "Oui, j'ai un code", "emoji": "✅", "style": "success"},
+        {"key": "referral_no", "label": "Non", "emoji": "❌", "style": "secondary"},
+    ],
+    "close_ticket_embed": [
+        {"key": "close_ticket", "label": "Close", "emoji": "🔒", "style": "danger"},
+    ],
+    "menu_ticket_embed": [
+        {"key": "open_ticket", "label": "Ouvrir un ticket", "emoji": "🎫", "style": "success"},
+    ],
+    "commande_vp_embed": [
+        {"key": "open_valo_ticket", "label": "Ouvrir un ticket Valorant", "emoji": "🎮", "style": "success"},
+    ],
+    "giveaway_embed": [
+        {"key": "join_giveaway", "label": "Je participe", "emoji": GIVEAWAY_JOIN_EMOJI, "style": "success"},
+    ],
+}
+
+
 def privilege_component_value(label, fallback):
     normalized = unicodedata.normalize("NFD", str(label or "").lower())
     normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
@@ -9548,11 +9948,16 @@ def panel_embeds():
                     request.form.get("menu_button_emoji", "").strip()
                     or "✨"
                 )
-                button_style = request.form.get("menu_button_style", "").strip().lower()
-                embed_data["menu_button_style"] = (
-                    button_style
-                    if button_style in {"primary", "secondary", "success", "danger"}
-                    else "primary"
+                fallback_style = (
+                    "success" if embed_key in {"tarifs_embed", "valo_embed"} else "primary"
+                )
+                raw_button_color = request.form.get("menu_button_color", "").strip()
+                if not re.fullmatch(r"#[0-9A-Fa-f]{6}", raw_button_color):
+                    raise ValueError("La couleur du bouton doit respecter le format #RRGGBB")
+                embed_data["menu_button_color"] = normalize_button_hex(raw_button_color)
+                embed_data["menu_button_style"] = closest_discord_button_style_name(
+                    raw_button_color,
+                    fallback_style,
                 )
             if embed_key in {"privileges_embed", "autres_embed"}:
                 embed_data["menu_placeholder"] = (
@@ -9567,6 +9972,31 @@ def panel_embeds():
                 embed_data["menu_categories"] = menu_parser(
                     request.form.get("menu_config_json", "[]")
                 )
+            component_definitions = EMBED_COMPONENT_BUTTON_DEFINITIONS.get(embed_key, [])
+            if component_definitions:
+                component_buttons = {}
+                for definition in component_definitions:
+                    button_key = definition["key"]
+                    raw_color = request.form.get(f"component_color__{button_key}", "").strip()
+                    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", raw_color):
+                        raise ValueError(
+                            f"La couleur du bouton « {definition['label']} » doit respecter le format #RRGGBB"
+                        )
+                    component_buttons[button_key] = {
+                        "label": (
+                            request.form.get(f"component_label__{button_key}", "").strip()
+                            or definition["label"]
+                        )[:80],
+                        "emoji": (
+                            request.form.get(f"component_emoji__{button_key}", "").strip()
+                            or definition["emoji"]
+                        ),
+                        "color": normalize_button_hex(
+                            raw_color,
+                            DISCORD_BUTTON_COLORS.get(definition["style"], "#4E5058"),
+                        ),
+                    }
+                embed_data["component_buttons"] = component_buttons
             image_file = request.files.get("image_file")
             if image_file and image_file.filename:
                 if BOT_LOOP is None:
@@ -9662,6 +10092,26 @@ def panel_embeds():
             "tarifs_embed": "/tarifs",
             "valo_embed": "/valo",
         }
+        configured_component_buttons = (
+            data[key].get("component_buttons", {})
+            if isinstance(data[key].get("component_buttons"), dict)
+            else {}
+        )
+        component_buttons = []
+        for definition in EMBED_COMPONENT_BUTTON_DEFINITIONS.get(key, []):
+            configured = configured_component_buttons.get(definition["key"], {})
+            if not isinstance(configured, dict):
+                configured = {}
+            component_buttons.append({
+                "key": definition["key"],
+                "name": definition["label"],
+                "label": str(configured.get("label") or definition["label"])[:80],
+                "emoji": str(configured.get("emoji") or definition["emoji"]),
+                "color": normalize_button_hex(
+                    configured.get("color"),
+                    DISCORD_BUTTON_COLORS.get(definition["style"], "#4E5058"),
+                ),
+            })
         embeds.append({
             "key": key,
             "json": json.dumps(data[key], ensure_ascii=False, indent=2),
@@ -9674,7 +10124,12 @@ def panel_embeds():
             "menu_button_label": data[key].get("menu_button_label", "") if launcher_enabled else "",
             "menu_button_emoji": data[key].get("menu_button_emoji", "") if launcher_enabled else "",
             "menu_button_style": data[key].get("menu_button_style", "primary") if launcher_enabled else "primary",
+            "menu_button_color": normalize_button_hex(
+                data[key].get("menu_button_color"),
+                "#248046" if key in {"tarifs_embed", "valo_embed"} else "#5865F2",
+            ) if launcher_enabled else "#5865F2",
             "menu_placeholder": data[key].get("menu_placeholder", "") if menu_enabled else "",
+            "component_buttons": component_buttons,
             "menu_config_json": json.dumps(
                 data[key].get("menu_categories", []),
                 ensure_ascii=False,
