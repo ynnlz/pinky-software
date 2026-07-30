@@ -2030,7 +2030,10 @@ DEFAULT_EMBED_DATA = {
         ],
         "color_rgb": [255, 192, 203],
         "image_url": "",
-        "footer": "PinkGift — Tarifs"
+        "footer": "PinkGift — Tarifs",
+        "menu_button_label": "Commander",
+        "menu_button_emoji": "🛍️",
+        "menu_button_style": "success"
     },
     "valo_embed": {
         "title": "<:vp:1519915966476320901> VALORANT POINTS",
@@ -2046,7 +2049,10 @@ DEFAULT_EMBED_DATA = {
         "dynamic_fields_inline": False,
         "color_rgb": [255, 192, 203],
         "image_url": "",
-        "footer": "PinkGift — Valorant Points"
+        "footer": "PinkGift — Valorant Points",
+        "menu_button_label": "Commander des VP",
+        "menu_button_emoji": "🎮",
+        "menu_button_style": "success"
     },
     "ticket_bienvenue": {
         "title": "🎫 Ticket d achat",
@@ -2327,6 +2333,7 @@ DEFAULT_EMBED_DATA.update({
         "image_url": "",
         "menu_button_label": "Découvrir les privilèges",
         "menu_button_emoji": "✨",
+        "menu_button_style": "primary",
         "menu_placeholder": "Choisis une catégorie",
         "menu_categories": [
             {
@@ -2608,7 +2615,68 @@ DEFAULT_EMBED_DATA.update({
             "**Aucun solde ne sera débité à l'ouverture du ticket.**"
         ],
         "color_rgb": [255, 103, 174],
-        "footer": "PinkGift — Services & abonnements"
+        "footer": "PinkGift — Services & abonnements",
+        "menu_button_label": "Voir les services",
+        "menu_button_emoji": "✨",
+        "menu_button_style": "primary",
+        "menu_placeholder": "Choisis une catégorie",
+        "menu_categories": [
+            {
+                "label": "Autres services",
+                "value": "autres-services",
+                "emoji": "✨",
+                "description": "Basic-Fit et décorations Discord",
+                "placeholder": "Choisis un autre service",
+                "catalog_key": "autres",
+                "options": [
+                    {
+                        "label": "Basic-Fit",
+                        "value": "basic-fit",
+                        "emoji": "<:basicfit:1528704864446578789>",
+                        "description": "Abonnement Basic-Fit",
+                        "service_key": "BASIC_FIT"
+                    },
+                    {
+                        "label": "Décorations Discord",
+                        "value": "decorations-discord",
+                        "emoji": "<:nitro:1528358484972671096>",
+                        "description": "Décorations et cosmétiques Discord",
+                        "service_key": "DISCORD_DECORATIONS"
+                    }
+                ]
+            },
+            {
+                "label": "Abonnements",
+                "value": "abonnements",
+                "emoji": "📺",
+                "description": "Netflix, Spotify et YouTube Premium",
+                "placeholder": "Choisis un abonnement",
+                "catalog_key": "abonnements",
+                "options": [
+                    {
+                        "label": "Netflix",
+                        "value": "netflix",
+                        "emoji": "<:netflix:1528701811215569016>",
+                        "description": "Abonnement Netflix",
+                        "service_key": "NETFLIX"
+                    },
+                    {
+                        "label": "Spotify Premium",
+                        "value": "spotify-premium",
+                        "emoji": "<:spotify:1528703633724674089>",
+                        "description": "Abonnement Spotify Premium",
+                        "service_key": "SPOTIFY"
+                    },
+                    {
+                        "label": "YouTube Premium",
+                        "value": "youtube-premium",
+                        "emoji": "<:youtube:1528704255844946011>",
+                        "description": "Abonnement YouTube Premium",
+                        "service_key": "YOUTUBE_PREMIUM"
+                    }
+                ]
+            }
+        ]
     },
     "subscription_request_ticket_embed": {
         "title": "{emoji} Abonnement — {service}",
@@ -3629,6 +3697,24 @@ def safe_component_emoji(value, fallback="🎁"):
     return cached if cached is not None else fallback
 
 
+def discord_button_style(value, fallback=discord.ButtonStyle.primary):
+    return {
+        "primary": discord.ButtonStyle.primary,
+        "secondary": discord.ButtonStyle.secondary,
+        "success": discord.ButtonStyle.success,
+        "danger": discord.ButtonStyle.danger,
+    }.get(str(value or "").strip().lower(), fallback)
+
+
+def get_menu_launcher_config(embed_key, label, emoji, style="primary"):
+    data = load_embed_texts().get(embed_key, DEFAULT_EMBED_DATA.get(embed_key, {}))
+    return {
+        "label": str(data.get("menu_button_label") or label)[:80],
+        "emoji": str(data.get("menu_button_emoji") or emoji),
+        "style": str(data.get("menu_button_style") or style).lower(),
+    }
+
+
 def stock_partial_emoji(available):
     return safe_component_emoji(
         STOCK_OK_EMOJI if available else STOCK_KO_EMOJI,
@@ -3786,9 +3872,22 @@ class ValoPackView(discord.ui.View):
 class ValoOrderLauncherView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        config = get_menu_launcher_config(
+            "valo_embed",
+            "Commander des VP",
+            "🎮",
+            "success",
+        )
+        button = discord.ui.Button(
+            label=config["label"],
+            emoji=safe_component_emoji(config["emoji"], "🎮"),
+            style=discord_button_style(config["style"], discord.ButtonStyle.success),
+            custom_id="pinkgift_start_valo_order",
+        )
+        button.callback = self.start_valo_order
+        self.add_item(button)
 
-    @discord.ui.button(label="Commander des VP", emoji="🎮", style=discord.ButtonStyle.success, custom_id="pinkgift_start_valo_order")
-    async def start_valo_order(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def start_valo_order(self, interaction: discord.Interaction):
         # Répond immédiatement à Discord avant toute lecture de stock.
         await interaction.response.defer(ephemeral=True, thinking=True)
         await interaction.edit_original_response(
@@ -4266,11 +4365,19 @@ async def repair_discord_decoration_ticket_access():
     return updated
 
 
-async def create_special_request_ticket(interaction, catalog_key, service_key):
+async def create_special_request_ticket(
+    interaction,
+    catalog_key,
+    service_key,
+    service_override=None,
+    catalog_label_override=None,
+):
     guild = interaction.guild
     user = interaction.user
     catalog_label, services = special_service_catalog(catalog_key)
-    service = services.get(service_key)
+    if catalog_label_override:
+        catalog_label = str(catalog_label_override)[:100]
+    service = service_override if isinstance(service_override, dict) else services.get(service_key)
     if guild is None or service is None:
         await interaction.followup.send("❌ Ce service est introuvable. Relance le menu.", ephemeral=True)
         return
@@ -4378,41 +4485,201 @@ async def create_special_request_ticket(interaction, catalog_key, service_key):
     )
 
 
-class OtherServicesSelect(discord.ui.Select):
-    def __init__(self):
-        catalog_services = (
-            ("autres", service_key, service)
-            for service_key, service in OTHER_SERVICES.items()
-        )
-        subscription_services = (
-            ("abonnements", service_key, service)
-            for service_key, service in SUBSCRIPTION_SERVICES.items()
-        )
+def get_other_services_menu_config():
+    data = load_embed_texts().get("autres_embed", DEFAULT_EMBED_DATA["autres_embed"])
+    raw_categories = data.get("menu_categories", [])
+    categories = []
+    used_category_values = set()
+    if isinstance(raw_categories, list):
+        for category_index, raw_category in enumerate(raw_categories[:25], start=1):
+            if not isinstance(raw_category, dict):
+                continue
+            label = str(raw_category.get("label") or f"Catégorie {category_index}")[:100]
+            value = str(raw_category.get("value") or f"categorie-{category_index}")[:100]
+            if value in used_category_values:
+                value = f"{value[:90]}-{category_index}"
+            used_category_values.add(value)
+            catalog_key = str(raw_category.get("catalog_key") or "autres").lower()
+            if catalog_key not in {"autres", "abonnements"}:
+                catalog_key = "autres"
+            options = []
+            used_option_values = set()
+            raw_options = raw_category.get("options", [])
+            if isinstance(raw_options, list):
+                for option_index, raw_option in enumerate(raw_options[:25], start=1):
+                    if not isinstance(raw_option, dict):
+                        continue
+                    option_label = str(raw_option.get("label") or f"Option {option_index}")[:100]
+                    option_value = str(raw_option.get("value") or f"option-{option_index}")[:100]
+                    if option_value in used_option_values:
+                        option_value = f"{option_value[:90]}-{option_index}"
+                    used_option_values.add(option_value)
+                    service_key = str(
+                        raw_option.get("service_key")
+                        or f"CUSTOM_{option_value.upper().replace('-', '_')}"
+                    )[:100]
+                    options.append({
+                        "label": option_label,
+                        "value": option_value,
+                        "emoji": str(raw_option.get("emoji") or "✨"),
+                        "description": str(raw_option.get("description") or "")[:100],
+                        "service_key": service_key,
+                    })
+            if not options:
+                continue
+            categories.append({
+                "label": label,
+                "value": value,
+                "emoji": str(raw_category.get("emoji") or "📁"),
+                "description": str(raw_category.get("description") or f"Ouvrir {label}")[:100],
+                "placeholder": str(raw_category.get("placeholder") or f"Choisis une option — {label}")[:150],
+                "catalog_key": catalog_key,
+                "options": options,
+            })
+    if not categories:
+        categories = [
+            {
+                "label": "Autres services",
+                "value": "autres-services",
+                "emoji": "✨",
+                "description": "Basic-Fit et décorations Discord",
+                "placeholder": "Choisis un autre service",
+                "catalog_key": "autres",
+                "options": [
+                    {"value": key.lower().replace("_", "-"), "service_key": key, **service}
+                    for key, service in OTHER_SERVICES.items()
+                ],
+            },
+            {
+                "label": "Abonnements",
+                "value": "abonnements",
+                "emoji": "📺",
+                "description": "Netflix, Spotify et YouTube Premium",
+                "placeholder": "Choisis un abonnement",
+                "catalog_key": "abonnements",
+                "options": [
+                    {"value": key.lower().replace("_", "-"), "service_key": key, **service}
+                    for key, service in SUBSCRIPTION_SERVICES.items()
+                ],
+            },
+        ]
+    return {
+        "button_label": str(data.get("menu_button_label") or "Voir les services")[:80],
+        "button_emoji": str(data.get("menu_button_emoji") or "✨"),
+        "button_style": str(data.get("menu_button_style") or "primary").lower(),
+        "placeholder": str(data.get("menu_placeholder") or "Choisis une catégorie")[:150],
+        "categories": categories,
+    }
+
+
+class OtherServiceItemSelect(discord.ui.Select):
+    def __init__(self, category):
+        self.category = category
         options = [
             discord.SelectOption(
-                label=service["label"],
-                value=f"{catalog_key}:{service_key}",
-                emoji=safe_component_emoji(service["emoji"], "✨"),
-                description=service["description"],
+                label=option["label"],
+                value=option["value"],
+                emoji=safe_component_emoji(option.get("emoji"), "✨"),
+                description=option.get("description") or None,
             )
-            for catalog_key, service_key, service in (*catalog_services, *subscription_services)
+            for option in category["options"]
         ]
         super().__init__(
-            placeholder="Choisis un service ou un abonnement",
-            custom_id="pinkgift_other_services_select",
+            placeholder=category["placeholder"],
+            custom_id=f"pinkgift_other_service_items_{category['value']}"[:100],
             options=options,
         )
 
     async def callback(self, interaction: discord.Interaction):
+        option = next(
+            (item for item in self.category["options"] if item["value"] == self.values[0]),
+            None,
+        )
+        if option is None:
+            await interaction.response.send_message("❌ Ce service n’existe plus.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        catalog_key, service_key = self.values[0].split(":", 1)
-        await create_special_request_ticket(interaction, catalog_key, service_key)
+        await create_special_request_ticket(
+            interaction,
+            self.category["catalog_key"],
+            option["service_key"],
+            service_override=option,
+            catalog_label_override=self.category["label"],
+        )
+
+
+class OtherServiceItemView(discord.ui.View):
+    def __init__(self, category):
+        super().__init__(timeout=300)
+        self.add_item(OtherServiceItemSelect(category))
+
+    @discord.ui.button(label="Retour aux catégories", emoji="↩️", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            content="Choisis une catégorie de services :",
+            view=OtherServicesCategoryView(),
+        )
+
+
+class OtherServicesCategorySelect(discord.ui.Select):
+    def __init__(self):
+        menu = get_other_services_menu_config()
+        self.categories = menu["categories"]
+        options = [
+            discord.SelectOption(
+                label=category["label"],
+                value=category["value"],
+                emoji=safe_component_emoji(category.get("emoji"), "📁"),
+                description=category.get("description") or None,
+            )
+            for category in self.categories
+        ]
+        super().__init__(
+            placeholder=menu["placeholder"],
+            custom_id="pinkgift_other_services_categories",
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        category = next(
+            (item for item in self.categories if item["value"] == self.values[0]),
+            None,
+        )
+        if category is None:
+            await interaction.response.send_message("❌ Cette catégorie n’existe plus.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"{category['emoji']} **{category['label']}** — choisis un service :",
+            view=OtherServiceItemView(category),
+            ephemeral=True,
+        )
+
+
+class OtherServicesCategoryView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+        self.add_item(OtherServicesCategorySelect())
 
 
 class OtherServicesView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(OtherServicesSelect())
+        menu = get_other_services_menu_config()
+        button = discord.ui.Button(
+            label=menu["button_label"],
+            emoji=safe_component_emoji(menu["button_emoji"], "✨"),
+            style=discord_button_style(menu["button_style"]),
+            custom_id="pinkgift_open_other_services_menu",
+        )
+        button.callback = self.open_other_services_menu
+        self.add_item(button)
+
+    async def open_other_services_menu(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            "Choisis une catégorie de services :",
+            view=OtherServicesCategoryView(),
+            ephemeral=True,
+        )
 
 
 class UberEatsAmountSelect(discord.ui.Select):
@@ -4564,14 +4831,22 @@ class ProductSelectView(discord.ui.View):
 class OrderLauncherView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        config = get_menu_launcher_config(
+            "tarifs_embed",
+            "Commander",
+            "🛍️",
+            "success",
+        )
+        button = discord.ui.Button(
+            label=config["label"],
+            emoji=safe_component_emoji(config["emoji"], "🛍️"),
+            style=discord_button_style(config["style"], discord.ButtonStyle.success),
+            custom_id="pinkgift_start_order",
+        )
+        button.callback = self.start_order
+        self.add_item(button)
 
-    @discord.ui.button(
-        label="Commander",
-        emoji="🛍️",
-        style=discord.ButtonStyle.success,
-        custom_id="pinkgift_start_order"
-    )
-    async def start_order(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def start_order(self, interaction: discord.Interaction):
         try:
             # Le menu est désormais entièrement local et peut être envoyé directement.
             await interaction.response.send_message(
@@ -4675,6 +4950,7 @@ def get_privileges_menu_config():
     return {
         "button_label": str(data.get("menu_button_label") or "Découvrir les privilèges")[:80],
         "button_emoji": str(data.get("menu_button_emoji") or "✨"),
+        "button_style": str(data.get("menu_button_style") or "primary").lower(),
         "placeholder": str(data.get("menu_placeholder") or "Choisis une catégorie")[:150],
         "categories": categories,
     }
@@ -4772,7 +5048,7 @@ class PrivilegesLauncherView(discord.ui.View):
         button = discord.ui.Button(
             label=menu["button_label"],
             emoji=safe_component_emoji(menu["button_emoji"], "✨"),
-            style=discord.ButtonStyle.primary,
+            style=discord_button_style(menu["button_style"]),
             custom_id="pinkgift_open_privileges_menu",
         )
         button.callback = self.open_privileges_menu
@@ -7305,7 +7581,12 @@ PANEL_EMBEDS_TEMPLATE = (
     )
     .replace(
         '<div class="embed-editor-grid">',
-        '''{% if item.key == "privileges_embed" %}<section class="privilege-menu-editor"><h3>Menus sous l’embed Privilèges</h3><div class="privilege-menu-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Texte du premier menu<input name="menu_placeholder" maxlength="150" value="{{ item.menu_placeholder }}"></label></div><div class="privilege-menu-list"></div><button class="privilege-add-category" type="button">＋ Ajouter une catégorie</button><textarea class="privilege-menu-config" name="menu_config_json" hidden>{{ item.menu_config_json }}</textarea><p class="muted">Chaque catégorie et chaque option peut être ajoutée, modifiée ou supprimée ici. Le message d’une option est envoyé en privé après sa sélection.</p></section>{% endif %}<div class="embed-editor-grid">''',
+        '''{% if item.menu_enabled %}<details class="privilege-menu-editor" data-menu-kind="{{ item.menu_kind }}"><summary><span>Menus sous l’embed {{ item.menu_title }}</span><span class="menu-editor-chevron" aria-hidden="true">›</span></summary><div class="menu-editor-body"><div class="privilege-menu-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Couleur du bouton<select name="menu_button_style"><option value="primary"{% if item.menu_button_style == "primary" %} selected{% endif %}>Bleu</option><option value="secondary"{% if item.menu_button_style == "secondary" %} selected{% endif %}>Gris</option><option value="success"{% if item.menu_button_style == "success" %} selected{% endif %}>Vert</option><option value="danger"{% if item.menu_button_style == "danger" %} selected{% endif %}>Rouge</option></select></label><label>Texte du premier menu<input name="menu_placeholder" maxlength="150" value="{{ item.menu_placeholder }}"></label></div><div class="privilege-menu-list"></div><button class="privilege-add-category" type="button">＋ Ajouter une catégorie</button><textarea class="privilege-menu-config" name="menu_config_json" hidden>{{ item.menu_config_json }}</textarea><p class="muted">{% if item.menu_kind == "autres" %}Chaque catégorie et chaque service ouvre un ticket privé. Les services déjà en place conservent leur traitement particulier.{% else %}Chaque catégorie et chaque option peut être ajoutée, modifiée ou supprimée ici. Le message d’une option est envoyé en privé après sa sélection.{% endif %}</p></div></details>{% endif %}<div class="embed-editor-grid">''',
+        1,
+    )
+    .replace(
+        '<div class="embed-editor-grid">',
+        '''{% if item.launcher_only %}<details class="privilege-menu-editor"><summary><span>Menu sous l’embed {{ item.menu_title }}</span><span class="menu-editor-chevron" aria-hidden="true">›</span></summary><div class="menu-editor-body"><div class="privilege-menu-settings launcher-only-settings"><label>Texte du bouton<input name="menu_button_label" maxlength="80" value="{{ item.menu_button_label }}"></label><label>Emoji du bouton<input name="menu_button_emoji" value="{{ item.menu_button_emoji }}"></label><label>Couleur du bouton<select name="menu_button_style"><option value="primary"{% if item.menu_button_style == "primary" %} selected{% endif %}>Bleu</option><option value="secondary"{% if item.menu_button_style == "secondary" %} selected{% endif %}>Gris</option><option value="success"{% if item.menu_button_style == "success" %} selected{% endif %}>Vert</option><option value="danger"{% if item.menu_button_style == "danger" %} selected{% endif %}>Rouge</option></select></label></div><p class="muted">Les options d’achat restent synchronisées avec les onglets Prix et Stock afin de conserver les débits et livraisons automatiques.</p></div></details>{% endif %}<div class="embed-editor-grid">''',
         1,
     )
 )
@@ -7319,17 +7600,45 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
 }
 .privilege-menu-editor {
   margin: 0 0 18px;
-  padding: 16px;
+  padding: 0;
   border: 1px solid rgba(255,143,200,.24);
   border-radius: 12px;
   background: rgba(255,143,200,.05);
+  overflow: hidden;
 }
-.privilege-menu-editor h3 { margin: 0 0 12px; color: #ff9dce; }
+.privilege-menu-editor > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  list-style: none;
+  color: #ff9dce;
+  font-size: 16px;
+  font-weight: 800;
+  user-select: none;
+}
+.privilege-menu-editor > summary::-webkit-details-marker { display: none; }
+.menu-editor-chevron {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: #ffd3e9;
+  background: rgba(255,143,200,.11);
+  font-size: 26px;
+  line-height: 1;
+  transition: transform .18s ease;
+}
+.privilege-menu-editor[open] .menu-editor-chevron { transform: rotate(90deg); }
+.menu-editor-body { padding: 0 16px 16px; }
 .privilege-menu-settings {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
+.launcher-only-settings { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .privilege-menu-settings label, .privilege-field {
   display: flex;
   flex-direction: column;
@@ -7338,7 +7647,7 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   font-size: 13px;
   font-weight: 700;
 }
-.privilege-menu-settings input { box-sizing: border-box; width: 100%; margin: 0; }
+.privilege-menu-settings input, .privilege-menu-settings select { box-sizing: border-box; width: 100%; margin: 0; }
 .privilege-menu-list { display: grid; gap: 14px; margin-top: 16px; }
 .privilege-category-card {
   padding: 14px;
@@ -7361,7 +7670,7 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   gap: 10px;
 }
 .privilege-option-grid { grid-template-columns: minmax(150px, 1fr) minmax(80px, .3fr) minmax(180px, 1.2fr); }
-.privilege-field input, .privilege-field textarea {
+.privilege-field input, .privilege-field textarea, .privilege-field select {
   box-sizing: border-box;
   width: 100%;
   margin: 0;
@@ -7381,6 +7690,7 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   font-weight: 750;
 }
 .privilege-remove { padding: 7px 10px; background: rgba(255,88,120,.16); color: #ff9fb2; border: 1px solid rgba(255,88,120,.3); }
+.privilege-remove:disabled { opacity: .4; cursor: not-allowed; }
 .privilege-add-option { margin-top: 10px !important; background: rgba(88,101,242,.18); color: #c9ceff; border: 1px solid rgba(88,101,242,.32); }
 .privilege-add-category { margin-top: 14px !important; background: linear-gradient(135deg,#e8509a,#9e4dff); }
 .privilege-menu-empty { padding: 18px; border: 1px dashed rgba(255,255,255,.14); border-radius: 10px; color: #aa98a4; text-align: center; }
@@ -7447,6 +7757,22 @@ PANEL_EMBEDS_PREVIEW_CSS = r"""
   color: #dbdee1;
   background: #2b2d31;
 }
+.preview-components { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.preview-component-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 2px 14px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+}
+.preview-button-primary { background: #5865f2; }
+.preview-button-secondary { background: #4e5058; }
+.preview-button-success { background: #248046; }
+.preview-button-danger { background: #da373c; }
+.preview-component-button .preview-custom-emoji { width: 18px; height: 18px; }
 .discord-embed-inner { display: flow-root; padding: 13px 16px 14px; }
 .preview-author { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #f2f3f5; font-size: 13px; font-weight: 650; }
 .preview-author-icon { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
@@ -7769,6 +8095,18 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
     }
     card.appendChild(inner);
     content.appendChild(card);
+    const menuButtonLabel = form.querySelector('[name="menu_button_label"]')?.value?.trim();
+    if (menuButtonLabel) {
+      const buttonEmoji = form.querySelector('[name="menu_button_emoji"]')?.value?.trim() || "";
+      const buttonStyle = form.querySelector('[name="menu_button_style"]')?.value || "primary";
+      const components = make("div", "preview-components");
+      components.appendChild(makeRich(
+        "div",
+        `preview-component-button preview-button-${buttonStyle}`,
+        [buttonEmoji, menuButtonLabel].filter(Boolean).join(" "),
+      ));
+      content.appendChild(components);
+    }
     message.appendChild(content);
     preview.replaceChildren(message);
     preview.dataset.state = "valid";
@@ -7793,6 +8131,11 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       else localImagePreviews.delete(form);
       render(form);
     });
+    form.querySelectorAll(
+      '[name="menu_button_label"], [name="menu_button_emoji"], [name="menu_button_style"]'
+    ).forEach(control => {
+      control.addEventListener(control.tagName === "SELECT" ? "change" : "input", () => render(form));
+    });
   });
 })();
 </script>
@@ -7801,7 +8144,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
 PANEL_PRIVILEGE_MENU_EDITOR_SCRIPT = r"""
 <script>
 (() => {
-  const editors = [...document.querySelectorAll(".privilege-menu-editor")];
+  const editors = [...document.querySelectorAll(".privilege-menu-editor[data-menu-kind]")];
   const create = (tag, className, text) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -7818,24 +8161,41 @@ PANEL_PRIVILEGE_MENU_EDITOR_SCRIPT = r"""
     wrapper.appendChild(input);
     return wrapper;
   };
-  const newOption = () => ({
-    label: "Nouvelle option",
-    emoji: "✨",
-    description: "",
-    response: "",
-  });
-  const newCategory = () => ({
-    label: "Nouvelle catégorie",
-    emoji: "📁",
-    description: "",
-    placeholder: "Choisis une option",
-    options: [newOption()],
-  });
+  const selectField = (label, value, choices, onChange) => {
+    const wrapper = create("label", "privilege-field");
+    wrapper.appendChild(create("span", "", label));
+    const select = create("select");
+    choices.forEach(choice => {
+      const option = create("option", "", choice.label);
+      option.value = choice.value;
+      option.selected = choice.value === value;
+      select.appendChild(option);
+    });
+    select.addEventListener("change", () => onChange(select.value));
+    wrapper.appendChild(select);
+    return wrapper;
+  };
 
   editors.forEach(editor => {
+    const menuKind = editor.dataset.menuKind || "privileges";
     const list = editor.querySelector(".privilege-menu-list");
     const storage = editor.querySelector(".privilege-menu-config");
     const addCategoryButton = editor.querySelector(".privilege-add-category");
+    const newOption = () => ({
+      label: menuKind === "autres" ? "Nouveau service" : "Nouvelle option",
+      emoji: "✨",
+      description: "",
+      response: "",
+      ...(menuKind === "autres" ? {service_key: ""} : {}),
+    });
+    const newCategory = () => ({
+      label: "Nouvelle catégorie",
+      emoji: "📁",
+      description: "",
+      placeholder: "Choisis une option",
+      ...(menuKind === "autres" ? {catalog_key: "autres"} : {}),
+      options: [newOption()],
+    });
     let categories = [];
     try {
       const parsed = JSON.parse(storage.value || "[]");
@@ -7861,6 +8221,7 @@ PANEL_PRIVILEGE_MENU_EDITOR_SCRIPT = r"""
         head.appendChild(create("strong", "", `Catégorie ${categoryIndex + 1}`));
         const removeCategory = create("button", "privilege-remove", "Supprimer la catégorie");
         removeCategory.type = "button";
+        removeCategory.disabled = categories.length <= 1;
         removeCategory.addEventListener("click", () => {
           categories.splice(categoryIndex, 1);
           sync();
@@ -7874,6 +8235,17 @@ PANEL_PRIVILEGE_MENU_EDITOR_SCRIPT = r"""
         categoryGrid.appendChild(field("Emoji", category.emoji, value => { category.emoji = value; sync(); }));
         categoryGrid.appendChild(field("Description du menu", category.description, value => { category.description = value; sync(); }, false, 100));
         categoryGrid.appendChild(field("Texte du second menu", category.placeholder, value => { category.placeholder = value; sync(); }, false, 150));
+        if (menuKind === "autres") {
+          categoryGrid.appendChild(selectField(
+            "Type de ticket",
+            category.catalog_key || "autres",
+            [
+              {value: "autres", label: "Autre service"},
+              {value: "abonnements", label: "Abonnement"},
+            ],
+            value => { category.catalog_key = value; sync(); },
+          ));
+        }
         card.appendChild(categoryGrid);
 
         const options = create("div", "privilege-options");
@@ -7896,7 +8268,9 @@ PANEL_PRIVILEGE_MENU_EDITOR_SCRIPT = r"""
           optionGrid.appendChild(field("Nom", option.label, value => { option.label = value; sync(); }, false, 100));
           optionGrid.appendChild(field("Emoji", option.emoji, value => { option.emoji = value; sync(); }));
           optionGrid.appendChild(field("Description dans le menu", option.description, value => { option.description = value; sync(); }, false, 100));
-          optionGrid.appendChild(field("Message envoyé après sélection", option.response, value => { option.response = value; sync(); }, true));
+          if (menuKind === "privileges") {
+            optionGrid.appendChild(field("Message envoyé après sélection", option.response, value => { option.response = value; sync(); }, true));
+          }
           optionCard.appendChild(optionGrid);
           options.appendChild(optionCard);
         });
@@ -9074,6 +9448,75 @@ def parse_privilege_menu_config(raw_text):
     return categories
 
 
+def parse_other_services_menu_config(raw_text):
+    try:
+        raw_categories = json.loads(str(raw_text or "[]"))
+    except json.JSONDecodeError as error:
+        raise ValueError("La configuration visuelle du menu Autres est invalide") from error
+    if not isinstance(raw_categories, list):
+        raise ValueError("La configuration du menu Autres doit contenir une liste de catégories")
+    if not raw_categories:
+        raise ValueError("Ajoute au moins une catégorie au menu Autres")
+    if len(raw_categories) > 25:
+        raise ValueError("Le menu Autres accepte au maximum 25 catégories")
+
+    categories = []
+    used_category_values = set()
+    for category_index, raw_category in enumerate(raw_categories, start=1):
+        if not isinstance(raw_category, dict):
+            raise ValueError(f"La catégorie {category_index} est invalide")
+        label = str(raw_category.get("label") or "").strip()[:100]
+        if not label:
+            raise ValueError(f"La catégorie {category_index} doit avoir un nom")
+        category_value = privilege_component_value(label, f"categorie-{category_index}")
+        if category_value in used_category_values:
+            category_value = f"{category_value[:90]}-{category_index}"
+        used_category_values.add(category_value)
+        catalog_key = str(raw_category.get("catalog_key") or "autres").strip().lower()
+        if catalog_key not in {"autres", "abonnements"}:
+            raise ValueError(f"Le type de ticket de la catégorie {label} est invalide")
+
+        raw_options = raw_category.get("options", [])
+        if not isinstance(raw_options, list) or not raw_options:
+            raise ValueError(f"Ajoute au moins un service à la catégorie {label}")
+        if len(raw_options) > 25:
+            raise ValueError(f"La catégorie {label} accepte au maximum 25 services")
+        options = []
+        used_option_values = set()
+        for option_index, raw_option in enumerate(raw_options, start=1):
+            if not isinstance(raw_option, dict):
+                raise ValueError(f"Le service {option_index} de {label} est invalide")
+            option_label = str(raw_option.get("label") or "").strip()[:100]
+            if not option_label:
+                raise ValueError(f"Le service {option_index} de {label} doit avoir un nom")
+            option_value = privilege_component_value(option_label, f"service-{option_index}")
+            if option_value in used_option_values:
+                option_value = f"{option_value[:90]}-{option_index}"
+            used_option_values.add(option_value)
+            service_key = str(raw_option.get("service_key") or "").strip().upper()
+            if not service_key:
+                service_key = f"CUSTOM_{option_value.upper().replace('-', '_')}"
+            options.append({
+                "label": option_label,
+                "value": option_value,
+                "emoji": str(raw_option.get("emoji") or "✨").strip(),
+                "description": str(raw_option.get("description") or "").strip()[:100],
+                "service_key": service_key[:100],
+            })
+        categories.append({
+            "label": label,
+            "value": category_value,
+            "emoji": str(raw_category.get("emoji") or "📁").strip(),
+            "description": str(raw_category.get("description") or f"Ouvrir {label}").strip()[:100],
+            "placeholder": str(
+                raw_category.get("placeholder") or f"Choisis un service — {label}"
+            ).strip()[:150],
+            "catalog_key": catalog_key,
+            "options": options,
+        })
+    return categories
+
+
 @app.route("/panel/embeds", methods=["GET", "POST"])
 @panel_required
 def panel_embeds():
@@ -9089,20 +9532,39 @@ def panel_embeds():
             embed_data = json.loads(request.form.get("embed_json", "{}"))
             if not isinstance(embed_data, dict):
                 raise ValueError("Le contenu doit être un objet JSON")
-            if embed_key == "privileges_embed":
+            menu_launcher_defaults = {
+                "privileges_embed": "Découvrir les privilèges",
+                "autres_embed": "Voir les services",
+                "tarifs_embed": "Commander",
+                "valo_embed": "Commander des VP",
+            }
+            if embed_key in menu_launcher_defaults:
+                default_button_label = menu_launcher_defaults[embed_key]
                 embed_data["menu_button_label"] = (
                     request.form.get("menu_button_label", "").strip()
-                    or "Découvrir les privilèges"
+                    or default_button_label
                 )[:80]
                 embed_data["menu_button_emoji"] = (
                     request.form.get("menu_button_emoji", "").strip()
                     or "✨"
                 )
+                button_style = request.form.get("menu_button_style", "").strip().lower()
+                embed_data["menu_button_style"] = (
+                    button_style
+                    if button_style in {"primary", "secondary", "success", "danger"}
+                    else "primary"
+                )
+            if embed_key in {"privileges_embed", "autres_embed"}:
                 embed_data["menu_placeholder"] = (
                     request.form.get("menu_placeholder", "").strip()
                     or "Choisis une catégorie"
                 )[:150]
-                embed_data["menu_categories"] = parse_privilege_menu_config(
+                menu_parser = (
+                    parse_privilege_menu_config
+                    if embed_key == "privileges_embed"
+                    else parse_other_services_menu_config
+                )
+                embed_data["menu_categories"] = menu_parser(
                     request.form.get("menu_config_json", "[]")
                 )
             image_file = request.files.get("image_file")
@@ -9179,9 +9641,10 @@ def panel_embeds():
         print(f"Erreur préparation aperçus dynamiques du panel : {error}")
     embed_help = {
         "emojis": "Catalogue central des emojis custom. Toute modification est reprise par les menus et les embeds concernés sans redémarrage.",
-        "tarifs_embed": "La liste des marques est modifiable ici. Les prix restent synchronisés avec l'onglet Prix et le parcours de commande.",
-        "valo_embed": "Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
+        "tarifs_embed": "La liste des marques est modifiable ici. Le texte, l’emoji et la couleur du bouton sont configurables ; les prix restent synchronisés avec l'onglet Prix et le parcours de commande.",
+        "valo_embed": "Le bouton est personnalisable. Les régions, emojis et packs sont générés avec les prix en direct. Variables : {emoji}, {region}, {region_key}, {pack}, {pack_key}, {price} et {official}.",
         "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit de PinkCoins.",
+        "autres_embed": "Publié avec /autres. Le bouton, sa couleur, les catégories et tous les services se configurent ici sans redémarrer le bot.",
         "privileges_embed": "Publié avec /privilèges. L’embed, le bouton, les catégories et les sous-options se configurent ici sans redémarrer le bot.",
         "team_embed": "Publié avec /teams. Ajoute les membres du staff dans les champs correspondant à leurs grades.",
     }
@@ -9190,18 +9653,32 @@ def panel_embeds():
         key for key, value in data.items()
         if isinstance(value, dict) and key not in PANEL_HIDDEN_EMBED_KEYS
     ):
+        menu_enabled = key in {"privileges_embed", "autres_embed"}
+        launcher_only = key in {"tarifs_embed", "valo_embed"}
+        launcher_enabled = menu_enabled or launcher_only
+        menu_titles = {
+            "autres_embed": "/autres",
+            "privileges_embed": "Privilèges",
+            "tarifs_embed": "/tarifs",
+            "valo_embed": "/valo",
+        }
         embeds.append({
             "key": key,
             "json": json.dumps(data[key], ensure_ascii=False, indent=2),
             "preview_context": json.dumps(preview_contexts.get(key, {}), ensure_ascii=False),
             "help": embed_help.get(key, ""),
-            "menu_button_label": data[key].get("menu_button_label", "") if key == "privileges_embed" else "",
-            "menu_button_emoji": data[key].get("menu_button_emoji", "") if key == "privileges_embed" else "",
-            "menu_placeholder": data[key].get("menu_placeholder", "") if key == "privileges_embed" else "",
+            "menu_enabled": menu_enabled,
+            "launcher_only": launcher_only,
+            "menu_kind": "autres" if key == "autres_embed" else "privileges",
+            "menu_title": menu_titles.get(key, key),
+            "menu_button_label": data[key].get("menu_button_label", "") if launcher_enabled else "",
+            "menu_button_emoji": data[key].get("menu_button_emoji", "") if launcher_enabled else "",
+            "menu_button_style": data[key].get("menu_button_style", "primary") if launcher_enabled else "primary",
+            "menu_placeholder": data[key].get("menu_placeholder", "") if menu_enabled else "",
             "menu_config_json": json.dumps(
                 data[key].get("menu_categories", []),
                 ensure_ascii=False,
-            ) if key == "privileges_embed" else "[]",
+            ) if menu_enabled else "[]",
         })
     return render_template_string(PANEL_EMBEDS_TEMPLATE, embeds=embeds)
 

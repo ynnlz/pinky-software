@@ -94,7 +94,10 @@
       203
     ],
     "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525630636923158620/carte_cadeau.jpg?ex=6a5415c0&is=6a52c440&hm=3ad3f843fe840ad6019e67ff75c1457f46749b8c25c79247839f43084498b556&=&format=webp&width=1872&height=802",
-    "footer": "PinkGift — PinkShop"
+    "footer": "PinkGift — PinkShop",
+    "menu_button_label": "Commander",
+    "menu_button_emoji": "🛍️",
+    "menu_button_style": "success"
   },
   "valo_embed": {
     "title": "<:vp:1519915966476320901> VALORANT POINTS",
@@ -117,7 +120,10 @@
       203
     ],
     "image_url": "https://media.discordapp.net/attachments/1521796381142945912/1525631364710531202/Valorant.jpg?ex=6a54166e&is=6a52c4ee&hm=553b860bfce2649a454fc22601c0e4f3fec7521a6b1280cf3afb51becc20f0a5&=&format=webp&width=1872&height=802",
-    "footer": "PinkGift — Valorant Points"
+    "footer": "PinkGift — Valorant Points",
+    "menu_button_label": "Commander des VP",
+    "menu_button_emoji": "🎮",
+    "menu_button_style": "success"
   },
   "ticket_bienvenue": {
     "title": "🎫 Ticket d'achat",
@@ -429,6 +435,7 @@
     "image_url": "",
     "menu_button_label": "Découvrir les privilèges",
     "menu_button_emoji": "✨",
+    "menu_button_style": "primary",
     "menu_placeholder": "Choisis une catégorie",
     "menu_categories": [
       {
@@ -735,7 +742,68 @@
       103,
       174
     ],
-    "footer": "PinkGift — Services & abonnements"
+    "footer": "PinkGift — Services & abonnements",
+    "menu_button_label": "Voir les services",
+    "menu_button_emoji": "✨",
+    "menu_button_style": "primary",
+    "menu_placeholder": "Choisis une catégorie",
+    "menu_categories": [
+      {
+        "label": "Autres services",
+        "value": "autres-services",
+        "emoji": "✨",
+        "description": "Basic-Fit et décorations Discord",
+        "placeholder": "Choisis un autre service",
+        "catalog_key": "autres",
+        "options": [
+          {
+            "label": "Basic-Fit",
+            "value": "basic-fit",
+            "emoji": "<:basicfit:1528704864446578789>",
+            "description": "Abonnement Basic-Fit",
+            "service_key": "BASIC_FIT"
+          },
+          {
+            "label": "Décorations Discord",
+            "value": "decorations-discord",
+            "emoji": "<:nitro:1528358484972671096>",
+            "description": "Décorations et cosmétiques Discord",
+            "service_key": "DISCORD_DECORATIONS"
+          }
+        ]
+      },
+      {
+        "label": "Abonnements",
+        "value": "abonnements",
+        "emoji": "📺",
+        "description": "Netflix, Spotify et YouTube Premium",
+        "placeholder": "Choisis un abonnement",
+        "catalog_key": "abonnements",
+        "options": [
+          {
+            "label": "Netflix",
+            "value": "netflix",
+            "emoji": "<:netflix:1528701811215569016>",
+            "description": "Abonnement Netflix",
+            "service_key": "NETFLIX"
+          },
+          {
+            "label": "Spotify Premium",
+            "value": "spotify-premium",
+            "emoji": "<:spotify:1528703633724674089>",
+            "description": "Abonnement Spotify Premium",
+            "service_key": "SPOTIFY"
+          },
+          {
+            "label": "YouTube Premium",
+            "value": "youtube-premium",
+            "emoji": "<:youtube:1528704255844946011>",
+            "description": "Abonnement YouTube Premium",
+            "service_key": "YOUTUBE_PREMIUM"
+          }
+        ]
+      }
+    ]
   },
   "subscription_request_ticket_embed": {
     "title": "{emoji} Abonnement — {service}",
