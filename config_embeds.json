@@ -97,8 +97,7 @@
     "footer": "PinkGift — PinkShop",
     "menu_button_label": "Commander",
     "menu_button_emoji": "🛍️",
-    "menu_button_style": "success",
-    "menu_button_color": "#248046"
+    "menu_button_style": "success"
   },
   "valo_embed": {
     "title": "<:vp:1519915966476320901> VALORANT POINTS",
@@ -124,8 +123,7 @@
     "footer": "PinkGift — Valorant Points",
     "menu_button_label": "Commander des VP",
     "menu_button_emoji": "🎮",
-    "menu_button_style": "success",
-    "menu_button_color": "#248046"
+    "menu_button_style": "success"
   },
   "ticket_bienvenue": {
     "title": "🎫 Ticket d'achat",
@@ -438,7 +436,6 @@
     "menu_button_label": "Découvrir les privilèges",
     "menu_button_emoji": "✨",
     "menu_button_style": "primary",
-    "menu_button_color": "#5865F2",
     "menu_placeholder": "Choisis une catégorie",
     "menu_categories": [
       {
@@ -749,7 +746,6 @@
     "menu_button_label": "Voir les services",
     "menu_button_emoji": "✨",
     "menu_button_style": "primary",
-    "menu_button_color": "#5865F2",
     "menu_placeholder": "Choisis une catégorie",
     "menu_categories": [
       {
