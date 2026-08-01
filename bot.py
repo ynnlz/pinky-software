@@ -1193,6 +1193,43 @@ def get_balance_ticket_user_id(channel):
         return None
 
 
+def resolve_ticket_client_id(channel, configured_client_id=0):
+    """Retrouve le client d'un ticket, y compris après un redémarrage du bot."""
+    try:
+        configured_client_id = int(configured_client_id or 0)
+    except (TypeError, ValueError):
+        configured_client_id = 0
+    if configured_client_id > 0:
+        return configured_client_id
+
+    balance_user_id = get_balance_ticket_user_id(channel)
+    if balance_user_id:
+        return balance_user_id
+
+    topic = str(getattr(channel, "topic", "") or "")
+    ticket_topic_prefixes = (
+        "pinkgift-cp-manual:",
+        "pinkgift-cp-owner:",
+        "pinkgift-special:",
+    )
+    if topic.startswith(ticket_topic_prefixes):
+        matches = re.findall(r"\d{15,25}", topic)
+        if matches:
+            return int(matches[-1])
+
+    guild = getattr(channel, "guild", None)
+    overwrites = getattr(channel, "overwrites", {}) or {}
+    staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
+    candidates = []
+    for target in overwrites:
+        if not isinstance(target, discord.Member) or target.bot:
+            continue
+        if staff_role and staff_role in target.roles:
+            continue
+        candidates.append(target.id)
+    return candidates[0] if len(candidates) == 1 else 0
+
+
 def balance_ticket_marked_credited(channel) -> bool:
     return is_balance_ticket(channel) and channel.topic.endswith(":credited")
 
@@ -5466,49 +5503,84 @@ class CloseTicketView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         channel = interaction.channel
-        if isinstance(channel, discord.Thread):
-            await interaction.response.edit_message(view=None)
-            return
-        client = guild.get_member(self.client_id) if guild and self.client_id else None
         staff_role = guild.get_role(STAFF_ROLE_ID) if guild else None
         is_staff = staff_role in interaction.user.roles if hasattr(interaction.user, "roles") and staff_role else False
         if not is_staff:
             await send_single_ephemeral(interaction, "❌ Seul le staff peut fermer ce ticket.")
             return
-        if client:
-            await channel.set_permissions(client, view_channel=False, send_messages=False, read_message_history=False)
-        elif guild:
-            for target, overwrite in channel.overwrites.items():
-                if isinstance(target, discord.Member):
+        if guild is None or channel is None:
+            await send_single_ephemeral(interaction, "❌ Ce bouton doit être utilisé dans un ticket serveur.")
+            return
+        if isinstance(channel, discord.Thread):
+            await send_single_ephemeral(
+                interaction,
+                "ℹ️ Les fils de commande ne se ferment pas avec ce bouton.",
+            )
+            return
+
+        # Discord attend une réponse en moins de trois secondes. On accuse
+        # réception avant les changements de permissions et de catégorie.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await clear_previous_ephemeral(interaction)
+        ACTIVE_EPHEMERAL_RESPONSES[ephemeral_response_key(interaction)] = (time.time(), interaction)
+
+        client_id = resolve_ticket_client_id(channel, self.client_id)
+        client = guild.get_member(client_id) if client_id else None
+        try:
+            if client:
+                await channel.set_permissions(
+                    client,
+                    view_channel=False,
+                    send_messages=False,
+                    read_message_history=False,
+                    reason=f"Ticket fermé par {interaction.user}",
+                )
+            else:
+                for target in list(channel.overwrites):
+                    if not isinstance(target, discord.Member):
+                        continue
                     has_staff_role = staff_role in target.roles if staff_role else False
                     if not target.bot and not has_staff_role:
-                        await channel.set_permissions(target, view_channel=False, send_messages=False, read_message_history=False)
-        if is_balance_ticket(channel):
-            balance_user_id = get_balance_ticket_user_id(channel)
-            credited = balance_ticket_marked_credited(channel)
-            if not credited and balance_user_id and guild:
-                try:
-                    credited = balance_was_added_after(guild.id, balance_user_id, channel.created_at)
-                except Exception as error:
-                    print(f"Erreur verification credit ticket solde {channel.id}: {error}")
-            if not credited:
-                await send_single_ephemeral(
-                    interaction,
-                    "🗑️ Ticket fermé sans recharge du PinkWallet : suppression du salon.",
-                )
-                await channel.delete(reason=f"Ticket PinkWallet sans recharge fermé par {interaction.user}")
-                return
+                        await channel.set_permissions(
+                            target,
+                            view_channel=False,
+                            send_messages=False,
+                            read_message_history=False,
+                            reason=f"Ticket fermé par {interaction.user}",
+                        )
 
-        closed_category = guild.get_channel(CLOSED_TICKET_CATEGORY_ID) if guild else None
-        await interaction.response.send_message("🔒 Ticket ferme : le client n a plus acces a ce salon.")
-        try:
+            if is_balance_ticket(channel):
+                balance_user_id = get_balance_ticket_user_id(channel)
+                credited = balance_ticket_marked_credited(channel)
+                if not credited and balance_user_id:
+                    try:
+                        credited = balance_was_added_after(guild.id, balance_user_id, channel.created_at)
+                    except Exception as error:
+                        print(f"Erreur verification credit ticket solde {channel.id}: {error}")
+                if not credited:
+                    await finish_ephemeral_flow(
+                        interaction,
+                        "🗑️ Ticket fermé sans recharge du PinkWallet : suppression du salon.",
+                    )
+                    await channel.delete(reason=f"Ticket PinkWallet sans recharge fermé par {interaction.user}")
+                    return
+
+            closed_category = guild.get_channel(CLOSED_TICKET_CATEGORY_ID)
             new_name = channel.name if channel.name.startswith("closed-") else f"closed-{channel.name}"
             if closed_category:
                 await channel.edit(name=new_name, category=closed_category, reason=f"Ticket ferme par {interaction.user}")
             else:
                 await channel.edit(name=new_name, reason=f"Ticket ferme par {interaction.user}")
-        except:
-            pass
+            await finish_ephemeral_flow(
+                interaction,
+                "🔒 Ticket fermé : le client n'a plus accès à ce salon.",
+            )
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
+            print(f"Erreur fermeture ticket {getattr(channel, 'id', '?')}: {error}")
+            await finish_ephemeral_flow(
+                interaction,
+                "❌ Discord n'a pas pu fermer ce ticket. Vérifie les permissions du bot.",
+            )
 
 
 class PendingOrderActionsView(CloseTicketView):
@@ -6332,8 +6404,10 @@ async def on_ready():
     # chaque on_ready peut créer des doublons après une reconnexion.
     if not PUBLIC_VIEWS_REPAIRED:
         try:
+            balance_repaired = await repair_balance_ticket_opening_embeds()
+            print(f"✅ {balance_repaired} embed(s) d'ouverture PinkWallet restauré(s).")
             repaired = await repair_public_launcher_views()
-            print(f"✅ {repaired} panneau(x) Tarifs/Valorant réparé(s).")
+            print(f"✅ {repaired} panneau(x) public(s) réparé(s).")
         except Exception as error:
             print(f"Erreur réparation automatique des boutons publics : {error}")
         PUBLIC_VIEWS_REPAIRED = True
@@ -6870,6 +6944,63 @@ def public_embed_builders():
     ]
 
 
+async def repair_balance_ticket_opening_embeds():
+    """Restaure l'embed et le bouton Close des tickets PinkWallet actifs."""
+    repaired = 0
+    for guild in bot.guilds:
+        me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+        if me is None:
+            continue
+        for channel in guild.text_channels:
+            if not is_balance_ticket(channel) or channel.name.startswith("closed-"):
+                continue
+            permissions = channel.permissions_for(me)
+            if not permissions.view_channel or not permissions.read_message_history:
+                continue
+
+            user_id = get_balance_ticket_user_id(channel)
+            if not user_id:
+                continue
+            opening_message = None
+            fallback_message = None
+            try:
+                async for message in channel.history(limit=100, oldest_first=True):
+                    if message.author.id != bot.user.id or not message.embeds:
+                        continue
+                    if fallback_message is None:
+                        fallback_message = message
+                    component_ids = {
+                        getattr(component, "custom_id", None)
+                        for row in message.components
+                        for component in getattr(row, "children", [])
+                    }
+                    if message.pinned or component_ids.intersection({
+                        "pinkgift_close_ticket",
+                        "pinkgift_view_balance",
+                        "pinkgift_recharge_balance",
+                    }):
+                        opening_message = message
+                        break
+                opening_message = opening_message or fallback_message
+                if opening_message is None:
+                    continue
+
+                embed = build_json_embed("balance_ticket_embed", {
+                    "user": f"<@{user_id}>",
+                    "balance": pinkcoin_number(get_balance(guild.id, user_id)),
+                })
+                await opening_message.edit(embed=embed, view=CloseTicketView(user_id))
+                await pin_first_bot_ticket_message(channel, opening_message)
+                repaired += 1
+            except (discord.Forbidden, discord.NotFound):
+                continue
+            except discord.HTTPException as error:
+                print(f"Erreur restauration embed PinkWallet dans {channel}: {error}")
+            except Exception as error:
+                print(f"Erreur inattendue restauration PinkWallet dans {channel}: {error}")
+    return repaired
+
+
 async def repair_public_launcher_views():
     """Réattache les boutons actuels aux anciens panneaux publics du bot."""
     repaired = 0
@@ -6887,6 +7018,10 @@ async def repair_public_launcher_views():
         if me is None:
             continue
         for channel in guild.text_channels:
+            # Un ticket de recharge peut contenir « PinkWallet » dans son titre.
+            # Il ne doit jamais être confondu avec le panneau public /pinkcoins.
+            if is_balance_ticket(channel):
+                continue
             permissions = channel.permissions_for(me)
             if not permissions.view_channel or not permissions.read_message_history:
                 continue
@@ -7010,10 +7145,17 @@ async def debug_embed(ctx, embed_name: str = "tarifs_embed"):
 
 @bot.hybrid_command(name="close_button", description="Envoyer le bouton de fermeture dans un ticket")
 @discord.app_commands.default_permissions(manage_messages=True)
+@commands.guild_only()
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_close_button(ctx):
+    if isinstance(ctx.channel, discord.Thread):
+        await ctx.send("ℹ️ Les fils de commande ne se ferment pas avec ce bouton.", ephemeral=True)
+        return
     embed = build_json_embed("close_ticket_embed")
-    await ctx.send(embed=embed, view=CloseTicketView())
+    await ctx.send(
+        embed=embed,
+        view=CloseTicketView(resolve_ticket_client_id(ctx.channel)),
+    )
 
 @bot.hybrid_command(name="tarifs", description="Publier le PinkShop et ses commandes")
 @discord.app_commands.default_permissions(manage_messages=True)
