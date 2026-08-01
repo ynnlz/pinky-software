@@ -1567,6 +1567,7 @@ VALO_TICKET_CATEGORY_ID = 1519913523440779404
 CP_TICKET_CATEGORY_ID = 1528115477501706300
 GIFT_CARD_THREAD_CHANNEL_ID = int(os.environ.get("GIFT_CARD_THREAD_CHANNEL_ID", "1517855734195290213"))
 VALORANT_THREAD_CHANNEL_ID = int(os.environ.get("VALORANT_THREAD_CHANNEL_ID", "1517609836026532022"))
+PRIVATE_ORDER_THREAD_AUTO_ARCHIVE_MINUTES = 10080
 SPECIAL_TICKET_CATEGORY_ID = int(os.environ.get("SPECIAL_TICKET_CATEGORY_ID", "1528329867790123041"))
 BALANCE_CATEGORY_ID = int(os.environ.get("BALANCE_CATEGORY_ID", TICKET_CATEGORY_ID))
 CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
@@ -3469,10 +3470,14 @@ async def reusable_private_order_thread(guild, user, parent):
         ):
             continue
         try:
+            edit_options = {}
             if thread.archived or thread.locked:
-                edit_options = {"archived": False}
+                edit_options["archived"] = False
                 if thread.locked:
                     edit_options["locked"] = False
+            if thread.auto_archive_duration != PRIVATE_ORDER_THREAD_AUTO_ARCHIVE_MINUTES:
+                edit_options["auto_archive_duration"] = PRIVATE_ORDER_THREAD_AUTO_ARCHIVE_MINUTES
+            if edit_options:
                 await thread.edit(
                     **edit_options,
                     reason=f"Nouvelle commande PinkGift de {user}",
@@ -3513,7 +3518,7 @@ async def create_private_order_thread(guild, user, parent_channel_id: int, order
     thread = await parent.create_thread(
         name=f"{thread_prefix}{thread_user}"[:100],
         type=discord.ChannelType.private_thread,
-        auto_archive_duration=1440,
+        auto_archive_duration=PRIVATE_ORDER_THREAD_AUTO_ARCHIVE_MINUTES,
         invitable=False,
         reason=f"Commande privée PinkGift de {user}",
     )
