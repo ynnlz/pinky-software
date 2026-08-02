@@ -50,6 +50,8 @@ class PinkGiftBot(commands.Bot):
             CPPendingOrderView(),
             PendingOrderActionsView(),
             BalanceView(),
+            ReferralApplicationView(),
+            RecruitmentApplicationView(),
             PrivilegesLauncherView(),
             OpenTicketView(),
             ValoTicketButton(),
@@ -1181,6 +1183,17 @@ def is_balance_ticket(channel) -> bool:
     return bool(getattr(channel, "topic", "") and channel.topic.startswith("pinkgift-balance:"))
 
 
+def is_managed_private_ticket(channel) -> bool:
+    topic = str(getattr(channel, "topic", "") or "")
+    return topic.startswith((
+        "pinkgift-balance:",
+        "pinkgift-cp-manual:",
+        "pinkgift-cp-owner:",
+        "pinkgift-special:",
+        "pinkgift-application:",
+    ))
+
+
 def get_balance_ticket_user_id(channel):
     if not is_balance_ticket(channel):
         return None
@@ -1211,6 +1224,7 @@ def resolve_ticket_client_id(channel, configured_client_id=0):
         "pinkgift-cp-manual:",
         "pinkgift-cp-owner:",
         "pinkgift-special:",
+        "pinkgift-application:",
     )
     if topic.startswith(ticket_topic_prefixes):
         matches = re.findall(r"\d{15,25}", topic)
@@ -1606,6 +1620,7 @@ GIFT_CARD_THREAD_CHANNEL_ID = int(os.environ.get("GIFT_CARD_THREAD_CHANNEL_ID", 
 VALORANT_THREAD_CHANNEL_ID = int(os.environ.get("VALORANT_THREAD_CHANNEL_ID", "1517609836026532022"))
 PRIVATE_ORDER_THREAD_AUTO_ARCHIVE_MINUTES = 10080
 SPECIAL_TICKET_CATEGORY_ID = int(os.environ.get("SPECIAL_TICKET_CATEGORY_ID", "1528329867790123041"))
+COMMUNITY_APPLICATION_CATEGORY_ID = int(os.environ.get("COMMUNITY_APPLICATION_CATEGORY_ID", "1526152407376068699"))
 BALANCE_CATEGORY_ID = int(os.environ.get("BALANCE_CATEGORY_ID", TICKET_CATEGORY_ID))
 CLOSED_TICKET_CATEGORY_ID = 1517526916549181612
 EMBED_CONFIG_URL = os.environ.get("EMBED_CONFIG_URL", "https://raw.githubusercontent.com/ynnlz/pinky-software/main/config_embeds.json")
@@ -2340,6 +2355,49 @@ DEFAULT_EMBED_DATA.update({
         "color_rgb": [255, 192, 203],
         "footer": "PinkGift — Programme de parrainage",
         "image_url": ""
+    },
+    "parrainage_ticket_embed": {
+        "title": "🤝 Candidature au programme de parrainage",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Merci pour ton intérêt envers le programme de parrainage PinkGift.",
+            "Présente ton activité, ta communauté et les réseaux sur lesquels tu crées du contenu.",
+            "",
+            "Indique également tes statistiques principales et la manière dont tu souhaites promouvoir PinkGift.",
+            "L'équipe étudiera ensuite ta demande avec toi dans ce ticket."
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Candidature parrainage"
+    },
+    "recrutement_embed": {
+        "title": "📋 RECRUTEMENT PINKGIFT",
+        "description": [
+            "Tu souhaites rejoindre l'équipe PinkGift ?",
+            "",
+            "Nous recherchons des personnes sérieuses, disponibles et motivées pour accompagner la communauté et participer au développement du shop.",
+            "",
+            "Clique sur le bouton ci-dessous pour ouvrir ta candidature."
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Recrutement"
+    },
+    "recrutement_ticket_embed": {
+        "title": "📋 Candidature au recrutement PinkGift",
+        "description": [
+            "Bonjour {user} !",
+            "",
+            "Pour que l'équipe puisse étudier ta candidature, indique :",
+            "• ton âge ;",
+            "• tes disponibilités ;",
+            "• ton expérience sur Discord ;",
+            "• le poste ou les missions qui t'intéressent ;",
+            "• tes motivations pour rejoindre PinkGift.",
+            "",
+            "Une réponse te sera apportée directement dans ce ticket."
+        ],
+        "color_rgb": [255, 192, 203],
+        "footer": "PinkGift — Candidature recrutement"
     },
     "privileges_embed": {
         "title": "✨ PRIVILÈGES PINKGIFT",
@@ -4568,6 +4626,156 @@ async def repair_discord_decoration_ticket_access():
                     except (discord.Forbidden, discord.NotFound, discord.HTTPException) as error:
                         print(f"Erreur retrait accès décoration pour {revoked_member} dans {channel}: {error}")
     return updated
+
+
+COMMUNITY_APPLICATION_TYPES = {
+    "parrainage": {
+        "label": "parrainage",
+        "channel_prefix": "🤝・parrainage",
+        "ticket_embed": "parrainage_ticket_embed",
+    },
+    "recrutement": {
+        "label": "recrutement",
+        "channel_prefix": "📋・recrutement",
+        "ticket_embed": "recrutement_ticket_embed",
+    },
+}
+
+
+async def create_community_application_ticket(interaction, application_type):
+    guild = interaction.guild
+    user = interaction.user
+    config = COMMUNITY_APPLICATION_TYPES.get(application_type)
+    if guild is None or config is None:
+        await finish_ephemeral_flow(interaction, "❌ Cette candidature est introuvable.")
+        return
+
+    category = guild.get_channel(COMMUNITY_APPLICATION_CATEGORY_ID)
+    if not isinstance(category, discord.CategoryChannel):
+        await finish_ephemeral_flow(
+            interaction,
+            "❌ La catégorie des candidatures est introuvable ou mal configurée.",
+        )
+        return
+
+    lock = ORDER_LOCKS.setdefault(
+        (guild.id, user.id, f"application:{application_type}"),
+        asyncio.Lock(),
+    )
+    async with lock:
+        topic = f"pinkgift-application:{application_type}:{user.id}"
+        ticket_channel = next(
+            (
+                channel for channel in category.text_channels
+                if channel.topic == topic and not channel.name.startswith("closed-")
+            ),
+            None,
+        )
+        if ticket_channel is not None:
+            await finish_ephemeral_flow(
+                interaction,
+                f"ℹ️ Ta demande de {config['label']} existe déjà : {ticket_channel.mention}",
+            )
+            return
+
+        staff_role = guild.get_role(STAFF_ROLE_ID)
+        me = guild.me or (guild.get_member(bot.user.id) if bot.user else None)
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+            ),
+        }
+        if me:
+            overwrites[me] = bot_ticket_permission_overwrite()
+        if staff_role:
+            overwrites[staff_role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+            )
+
+        safe_user = re.sub(r"[^a-z0-9-]", "", user.name.lower().replace(" ", "-")) or str(user.id)
+        ticket_channel = None
+        try:
+            ticket_channel = await guild.create_text_channel(
+                name=f"{config['channel_prefix']}-{safe_user}"[:95],
+                category=category,
+                topic=topic,
+                overwrites=overwrites,
+                reason=f"Candidature {config['label']} de {user}",
+            )
+            opening_message = await ticket_channel.send(
+                content=f"{user.mention} | <@&{STAFF_ROLE_ID}>",
+                embed=build_json_embed(config["ticket_embed"], {"user": user.mention}),
+                view=CloseTicketView(user.id),
+            )
+            await pin_first_bot_ticket_message(ticket_channel, opening_message)
+        except discord.HTTPException as error:
+            print(f"Erreur création ticket {application_type} pour {user}: {error}")
+            if ticket_channel is not None:
+                try:
+                    await ticket_channel.delete(reason="Candidature PinkGift incomplète")
+                except discord.HTTPException:
+                    pass
+            await finish_ephemeral_flow(
+                interaction,
+                "❌ Discord ne peut pas créer cette candidature actuellement.",
+            )
+            return
+
+        await finish_ephemeral_flow(
+            interaction,
+            f"✅ Ta demande de {config['label']} est ouverte : {ticket_channel.mention}",
+        )
+
+
+class ReferralApplicationView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "parrainages_embed",
+            "open_referral_ticket",
+            "Devenir parrain",
+            "🤝",
+            "success",
+        )
+
+    @discord.ui.button(
+        label="Devenir parrain",
+        emoji="🤝",
+        style=discord.ButtonStyle.success,
+        custom_id="pinkgift_open_referral_application",
+    )
+    async def open_referral_application(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await defer_single_ephemeral(interaction)
+        await create_community_application_ticket(interaction, "parrainage")
+
+
+class RecruitmentApplicationView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        apply_component_button_config(
+            self.children[0],
+            "recrutement_embed",
+            "open_recruitment_ticket",
+            "Postuler",
+            "📩",
+            "primary",
+        )
+
+    @discord.ui.button(
+        label="Postuler",
+        emoji="📩",
+        style=discord.ButtonStyle.primary,
+        custom_id="pinkgift_open_recruitment_application",
+    )
+    async def open_recruitment_application(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await defer_single_ephemeral(interaction)
+        await create_community_application_ticket(interaction, "recrutement")
 
 
 async def create_special_request_ticket(
@@ -6935,7 +7143,8 @@ def public_embed_builders():
         (["CALL OF DUTY POINTS", "COD POINTS"], build_cp_embed, CPOrderLauncherView()),
         (["AUTRES SERVICES", "ABONNEMENTS"], lambda: build_json_embed("autres_embed"), OtherServicesView()),
         (["PinkWallet", "PinkCoins", "Solde PinkGift", "Solde & paiements"], lambda: build_json_embed("balance_embed"), BalanceView()),
-        (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), None),
+        (["PARRAINAGES PINKGIFT", "Programme de parrainage"], lambda: build_json_embed("parrainages_embed"), ReferralApplicationView()),
+        (["RECRUTEMENT PINKGIFT", "Recrutement"], lambda: build_json_embed("recrutement_embed"), RecruitmentApplicationView()),
         (["PRIVILÈGES PINKGIFT", "PRIVILEGES PINKGIFT"], lambda: build_json_embed("privileges_embed"), PrivilegesLauncherView()),
         (["ÉQUIPE PINKGIFT", "EQUIPE PINKGIFT"], lambda: build_json_embed("team_embed"), None),
         (["Règlement", "REGLEMENT", "RÈGLEMENT"], lambda: build_json_embed("rules_embed"), None),
@@ -7010,6 +7219,8 @@ async def repair_public_launcher_views():
         (("call of duty points", "cod points"), build_cp_embed, CPOrderLauncherView),
         (("autres services", "abonnements"), lambda: build_json_embed("autres_embed"), OtherServicesView),
         (("solde & paiements", "solde pinkgift", "pinkwallet", "pinkcoins"), lambda: build_json_embed("balance_embed"), BalanceView),
+        (("parrainages pinkgift", "programme de parrainage"), lambda: build_json_embed("parrainages_embed"), ReferralApplicationView),
+        (("recrutement pinkgift",), lambda: build_json_embed("recrutement_embed"), RecruitmentApplicationView),
         (("privilèges pinkgift", "privileges pinkgift"), lambda: build_json_embed("privileges_embed"), PrivilegesLauncherView),
     )
 
@@ -7020,7 +7231,7 @@ async def repair_public_launcher_views():
         for channel in guild.text_channels:
             # Un ticket de recharge peut contenir « PinkWallet » dans son titre.
             # Il ne doit jamais être confondu avec le panneau public /pinkcoins.
-            if is_balance_ticket(channel):
+            if is_managed_private_ticket(channel):
                 continue
             permissions = channel.permissions_for(me)
             if not permissions.view_channel or not permissions.read_message_history:
@@ -7046,7 +7257,7 @@ async def update_public_embeds_in_current_channel(ctx):
     builders = public_embed_builders()
     updated_count = 0
     channel = ctx.channel
-    if is_balance_ticket(channel):
+    if is_managed_private_ticket(channel):
         return 0
     permissions = channel.permissions_for(ctx.guild.me or ctx.guild.default_role)
     if not permissions.read_message_history or not permissions.view_channel:
@@ -9904,6 +10115,12 @@ EMBED_COMPONENT_BUTTON_DEFINITIONS = {
         {"key": "referral_yes", "label": "Oui, j'ai un code", "emoji": "✅", "style": "success"},
         {"key": "referral_no", "label": "Non", "emoji": "❌", "style": "secondary"},
     ],
+    "parrainages_embed": [
+        {"key": "open_referral_ticket", "label": "Devenir parrain", "emoji": "🤝", "style": "success"},
+    ],
+    "recrutement_embed": [
+        {"key": "open_recruitment_ticket", "label": "Postuler", "emoji": "📩", "style": "primary"},
+    ],
     "close_ticket_embed": [
         {"key": "close_ticket", "label": "Close", "emoji": "🔒", "style": "danger"},
     ],
@@ -10220,6 +10437,8 @@ def panel_embeds():
         "cp_embed": "Les packs et prix restent affichés dans l'embed. Le bouton ouvre toutefois un ticket manuel sans lecture ni débit de PinkCoins.",
         "autres_embed": "Publié avec /autres. Le bouton, sa couleur, les catégories et tous les services se configurent ici sans redémarrer le bot.",
         "privileges_embed": "Publié avec /privilèges. L’embed, le bouton, les catégories et les sous-options se configurent ici sans redémarrer le bot.",
+        "parrainages_embed": "Publié avec /parrainages. Le bouton ouvre une candidature privée dans la catégorie Parrainage/Recrutement.",
+        "recrutement_embed": "Publié avec /recrutement. Le bouton ouvre une candidature privée dans la catégorie Parrainage/Recrutement.",
         "team_embed": "Publié avec /teams. Ajoute les membres du staff dans les champs correspondant à leurs grades.",
     }
     embeds = []
@@ -10838,7 +11057,20 @@ async def cmd_faq(ctx):
 @discord.app_commands.default_permissions(manage_messages=True)
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_parrainages(ctx):
-    await ctx.send(embed=build_json_embed("parrainages_embed"))
+    await ctx.send(
+        embed=build_json_embed("parrainages_embed"),
+        view=ReferralApplicationView(),
+    )
+
+
+@bot.hybrid_command(name="recrutement", description="Publier le panneau de recrutement PinkGift")
+@discord.app_commands.default_permissions(manage_messages=True)
+@commands.has_role(STAFF_ROLE_ID)
+async def cmd_recrutement(ctx):
+    await ctx.send(
+        embed=build_json_embed("recrutement_embed"),
+        view=RecruitmentApplicationView(),
+    )
 
 
 @bot.hybrid_command(name="privilèges", aliases=["privileges"], description="Publier les privilèges PinkGift")

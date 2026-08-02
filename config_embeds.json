@@ -401,6 +401,49 @@
     "footer": "PinkGift — Programme de parrainage",
     "image_url": ""
   },
+  "parrainage_ticket_embed": {
+    "title": "🤝 Candidature au programme de parrainage",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Merci pour ton intérêt envers le programme de parrainage PinkGift.",
+      "Présente ton activité, ta communauté et les réseaux sur lesquels tu crées du contenu.",
+      "",
+      "Indique également tes statistiques principales et la manière dont tu souhaites promouvoir PinkGift.",
+      "L'équipe étudiera ensuite ta demande avec toi dans ce ticket."
+    ],
+    "color_rgb": [255, 192, 203],
+    "footer": "PinkGift — Candidature parrainage"
+  },
+  "recrutement_embed": {
+    "title": "📋 RECRUTEMENT PINKGIFT",
+    "description": [
+      "Tu souhaites rejoindre l'équipe PinkGift ?",
+      "",
+      "Nous recherchons des personnes sérieuses, disponibles et motivées pour accompagner la communauté et participer au développement du shop.",
+      "",
+      "Clique sur le bouton ci-dessous pour ouvrir ta candidature."
+    ],
+    "color_rgb": [255, 192, 203],
+    "footer": "PinkGift — Recrutement"
+  },
+  "recrutement_ticket_embed": {
+    "title": "📋 Candidature au recrutement PinkGift",
+    "description": [
+      "Bonjour {user} !",
+      "",
+      "Pour que l'équipe puisse étudier ta candidature, indique :",
+      "• ton âge ;",
+      "• tes disponibilités ;",
+      "• ton expérience sur Discord ;",
+      "• le poste ou les missions qui t'intéressent ;",
+      "• tes motivations pour rejoindre PinkGift.",
+      "",
+      "Une réponse te sera apportée directement dans ce ticket."
+    ],
+    "color_rgb": [255, 192, 203],
+    "footer": "PinkGift — Candidature recrutement"
+  },
   "privileges_embed": {
     "title": "✨ PRIVILÈGES PINKGIFT",
     "description": [
