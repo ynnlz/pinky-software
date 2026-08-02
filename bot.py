@@ -358,7 +358,13 @@ def customer_top_user_id(guild, spending_totals):
     return min(user_id for total, user_id in candidates if total == highest_total)
 
 
-async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None, spending_totals=None):
+async def sync_customer_roles(
+    guild,
+    target_user_id=None,
+    deposit_totals=None,
+    spending_totals=None,
+    target_member=None,
+):
     """Sérialise les mises à jour afin qu'une ancienne suppression ne gagne pas sur une nouvelle vente."""
     if guild is None:
         return await _sync_customer_roles_unlocked(
@@ -366,6 +372,7 @@ async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None, s
             target_user_id,
             deposit_totals,
             spending_totals,
+            target_member,
         )
     lock = CUSTOMER_ROLE_SYNC_LOCKS.setdefault(int(guild.id), asyncio.Lock())
     async with lock:
@@ -374,17 +381,31 @@ async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None, s
             target_user_id,
             deposit_totals,
             spending_totals,
+            target_member,
         )
 
 
-async def _sync_customer_roles_unlocked(guild, target_user_id=None, deposit_totals=None, spending_totals=None):
+async def _sync_customer_roles_unlocked(
+    guild,
+    target_user_id=None,
+    deposit_totals=None,
+    spending_totals=None,
+    target_member=None,
+):
     """Synchronise les paliers de dépôts nets et le rôle du meilleur acheteur."""
     if guild is None:
-        return {"total_added": 0.0, "total_spent": 0.0, "tier": customer_highest_tier(0), "is_top": False}
+        return {
+            "total_added": 0.0,
+            "total_spent": 0.0,
+            "tier": customer_highest_tier(0),
+            "is_top": False,
+            "errors": ["Serveur Discord introuvable"],
+        }
     deposit_totals = deposit_totals if isinstance(deposit_totals, dict) else get_customer_deposit_totals(guild.id)
     spending_totals = spending_totals if isinstance(spending_totals, dict) else get_customer_spending_totals(guild.id)
     leader_id = customer_top_user_id(guild, spending_totals)
     managed_tier_ids = {CUSTOMER_ROLE_ID, *(role_id for _, role_id in CUSTOMER_SPENDING_ROLE_THRESHOLDS)}
+    sync_errors = []
 
     if target_user_id is None:
         target_ids = set(deposit_totals)
@@ -398,22 +419,61 @@ async def _sync_customer_roles_unlocked(guild, target_user_id=None, deposit_tota
         target_ids.add(leader_id)
 
     for user_id in target_ids:
-        member = guild.get_member(int(user_id))
-        if member is None or member.bot:
+        member = target_member if target_member is not None and int(target_member.id) == int(user_id) else guild.get_member(int(user_id))
+        if member is None:
+            try:
+                member = await guild.fetch_member(int(user_id))
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as error:
+                if int(user_id) == int(target_user_id or 0):
+                    sync_errors.append(f"Membre Discord introuvable ou inaccessible ({error})")
+                continue
+        if member.bot:
             continue
         desired_ids = customer_deposit_role_ids(deposit_totals.get(int(user_id), 0))
         current_ids = {role.id for role in member.roles}
+        missing_role_ids = [role_id for role_id in desired_ids if guild.get_role(role_id) is None]
+        if missing_role_ids and int(user_id) == int(target_user_id or 0):
+            sync_errors.append(
+                "Rôle(s) Discord configuré(s) introuvable(s) : "
+                + ", ".join(str(role_id) for role_id in sorted(missing_role_ids))
+            )
         roles_to_add = [guild.get_role(role_id) for role_id in desired_ids - current_ids]
         roles_to_remove = [guild.get_role(role_id) for role_id in (current_ids & managed_tier_ids) - desired_ids]
         roles_to_add = [role for role in roles_to_add if role is not None]
         roles_to_remove = [role for role in roles_to_remove if role is not None]
+        bot_member = getattr(guild, "me", None)
+        permissions = getattr(bot_member, "guild_permissions", None)
+        if (roles_to_add or roles_to_remove) and permissions is not None and not (
+            getattr(permissions, "administrator", False)
+            or getattr(permissions, "manage_roles", False)
+        ):
+            if int(user_id) == int(target_user_id or 0):
+                sync_errors.append("Le bot n'a pas la permission Gérer les rôles")
+            continue
+        manageable_add = []
+        manageable_remove = []
+        for role, destination in (
+            *((role, manageable_add) for role in roles_to_add),
+            *((role, manageable_remove) for role in roles_to_remove),
+        ):
+            if getattr(role, "managed", False):
+                if int(user_id) == int(target_user_id or 0):
+                    sync_errors.append(f"Le rôle {role.id} est géré par une intégration")
+                continue
+            if bot_member is not None and role >= bot_member.top_role:
+                if int(user_id) == int(target_user_id or 0):
+                    sync_errors.append(f"Le rôle {role.id} est placé au-dessus du rôle du bot")
+                continue
+            destination.append(role)
         try:
-            if roles_to_add:
-                await member.add_roles(*roles_to_add, reason="Palier de dépôts PinkGift atteint")
-            if roles_to_remove:
-                await member.remove_roles(*roles_to_remove, reason="Synchronisation des paliers PinkGift")
+            if manageable_add:
+                await member.add_roles(*manageable_add, reason="Palier de dépôts PinkGift atteint")
+            if manageable_remove:
+                await member.remove_roles(*manageable_remove, reason="Synchronisation des paliers PinkGift")
         except discord.HTTPException as error:
             print(f"Erreur synchronisation rôles client {user_id}: {error}")
+            if int(user_id) == int(target_user_id or 0):
+                sync_errors.append(f"Discord a refusé la modification des rôles ({error})")
 
     top_role = guild.get_role(TOP_CUSTOMER_ROLE_ID)
     if top_role is not None:
@@ -423,12 +483,16 @@ async def _sync_customer_roles_unlocked(guild, target_user_id=None, deposit_tota
                     await member.remove_roles(top_role, reason="Nouveau meilleur client PinkGift")
                 except discord.HTTPException as error:
                     print(f"Erreur retrait rôle meilleur client {member.id}: {error}")
+                    if member.id == int(target_user_id or 0):
+                        sync_errors.append(f"Impossible de retirer le rôle meilleur client ({error})")
         leader = guild.get_member(leader_id) if leader_id else None
         if leader is not None and top_role not in leader.roles:
             try:
                 await leader.add_roles(top_role, reason="Meilleur total d'achats PinkGift")
             except discord.HTTPException as error:
                 print(f"Erreur attribution rôle meilleur client {leader.id}: {error}")
+                if leader.id == int(target_user_id or 0):
+                    sync_errors.append(f"Impossible d'attribuer le rôle meilleur client ({error})")
 
     target_id = int(target_user_id or 0)
     total_added = float(deposit_totals.get(target_id, 0) or 0)
@@ -437,6 +501,7 @@ async def _sync_customer_roles_unlocked(guild, target_user_id=None, deposit_tota
         "total_spent": float(spending_totals.get(target_id, 0) or 0),
         "tier": customer_highest_tier(total_added),
         "is_top": bool(target_id and target_id == leader_id),
+        "errors": sync_errors,
     }
 
 
@@ -454,12 +519,34 @@ def schedule_customer_role_sync(guild_id, target_user_id=None):
 
     def log_sync_error(done):
         try:
-            done.result()
+            result = done.result()
+            errors = result.get("errors", []) if isinstance(result, dict) else []
+            if errors:
+                print("Erreur recalcul automatique des rôles clients : " + " ; ".join(errors))
         except Exception as error:
             print(f"Erreur recalcul automatique des rôles clients : {error}")
 
     future.add_done_callback(log_sync_error)
     return future
+
+
+def sync_customer_roles_from_panel(guild_id, target_user_id=None, timeout=25):
+    """Attend la réponse Discord afin que le panel ne confirme jamais une fausse synchronisation."""
+    loop = BOT_LOOP
+    if loop is None or not loop.is_running():
+        raise RuntimeError("Le bot Discord n'est pas connecté")
+
+    async def run_sync():
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            raise RuntimeError("Serveur Discord introuvable")
+        return await sync_customer_roles(guild, target_user_id)
+
+    result = asyncio.run_coroutine_threadsafe(run_sync(), loop).result(timeout=timeout)
+    errors = result.get("errors", []) if isinstance(result, dict) else []
+    if errors:
+        raise RuntimeError(" ; ".join(str(error) for error in errors))
+    return result
 
 
 def decode_setting_value(value, default=None):
@@ -7919,6 +8006,10 @@ async def cmd_vente(
                 })
             except Exception as rollback_error:
                 print(f"ERREUR rollback complet vente manuelle de {user}: {rollback_error}")
+        try:
+            await sync_customer_roles(guild, user.id, target_member=user)
+        except Exception as role_rollback_error:
+            print(f"Erreur resynchronisation rôles après rollback vente de {user}: {role_rollback_error}")
         print(f"Erreur création vente manuelle par {interaction.user}: {error}")
         await interaction.followup.send(
             "❌ La vente n'a pas pu être enregistrée. Le PinkWallet du client n'a pas été modifié.",
@@ -7927,7 +8018,7 @@ async def cmd_vente(
         return
 
     try:
-        role_summary = await sync_customer_roles(guild, user.id)
+        role_summary = await sync_customer_roles(guild, user.id, target_member=user)
     except Exception as error:
         print(f"Erreur rôles après vente manuelle pour {user}: {error}")
         try:
@@ -7941,8 +8032,16 @@ async def cmd_vente(
             "total_spent": total_spent,
             "tier": customer_highest_tier(0),
             "is_top": False,
+            "errors": [str(error)],
         }
     profit = round(prix_value - cout_value, 2)
+    role_errors = role_summary.get("errors", [])
+    role_status = (
+        "\n⚠️ **Vente enregistrée, mais rôles Discord non synchronisés :** "
+        + " ; ".join(str(error) for error in role_errors)
+        if role_errors
+        else "\n✅ Les rôles Discord du client ont été synchronisés."
+    )
     await interaction.followup.send(
         f"✅ Vente **#{order_id}** enregistrée pour {user.mention}.\n"
         f"**Produit :** {discord.utils.escape_markdown(produit)}\n"
@@ -7950,7 +8049,8 @@ async def cmd_vente(
         f"**Bénéfice :** {profit:.2f} €\n"
         f"**Total dépensé :** {role_summary['total_spent']:.2f} € · "
         f"**Dépôts nets :** {role_summary['total_added']:.2f} €\n"
-        f"Le PinkWallet reste à **{format_pinkcoins(wallet)}**.",
+        f"Le PinkWallet reste à **{format_pinkcoins(wallet)}**."
+        f"{role_status}",
         ephemeral=True,
     )
 
@@ -10753,16 +10853,23 @@ def panel_remove_client_deposit(guild_id, user_id):
             float(amount),
             0,
         )
-        schedule_customer_role_sync(guild_id, user_id)
-        flash(
-            f"{float(amount):.2f} € retirés des dépôts nets du client {user_id}. "
-            f"Reste : {remaining:.2f} €. Le PinkWallet n'a pas été modifié."
-        )
     except ValueError as error:
         flash(f"Correction impossible : {error}.")
+        return redirect(url_for("panel_orders", tab="clients"))
     except Exception as error:
         print(f"Erreur correction dépôts nets panel pour {user_id}: {error}")
         flash("La correction des dépôts nets a échoué.")
+        return redirect(url_for("panel_orders", tab="clients"))
+    try:
+        sync_customer_roles_from_panel(guild_id, user_id)
+        sync_message = " Rôles Discord synchronisés."
+    except Exception as error:
+        print(f"Erreur synchronisation rôles après correction panel pour {user_id}: {error}")
+        sync_message = f" Attention : rôles Discord non synchronisés ({error})."
+    flash(
+        f"{float(amount):.2f} € retirés des dépôts nets du client {user_id}. "
+        f"Reste : {remaining:.2f} €. Le PinkWallet n'a pas été modifié.{sync_message}"
+    )
     return redirect(url_for("panel_orders", tab="clients"))
 
 
@@ -10782,9 +10889,15 @@ def panel_refund_order(order_id):
                 asyncio.run_coroutine_threadsafe(show_order_refund_on_discord(order, new_balance), BOT_LOOP).result(timeout=25)
             except Exception as discord_error:
                 print(f"Erreur mise à jour ticket après remboursement commande #{order_id}: {discord_error}")
+        try:
+            sync_customer_roles_from_panel(order["guild_id"], order["user_id"])
+            sync_message = " Rôles Discord synchronisés."
+        except Exception as role_error:
+            print(f"Erreur synchronisation rôles après remboursement #{order_id}: {role_error}")
+            sync_message = f" Attention : rôles Discord non synchronisés ({role_error})."
         flash(
             f"Commande #{order_id} annulée : {format_price(order.get('paid') or 0)} € "
-            f"recrédités au client. La commission de parrainage a été retirée."
+            f"recrédités au client. La commission de parrainage a été retirée.{sync_message}"
         )
     except Exception as error:
         print(f"Erreur remboursement commande {order_id}: {error}")
@@ -10844,7 +10957,12 @@ def panel_delete_order(order_id):
     except Exception as error:
         print(f"Erreur synchronisation parrainage après suppression commande {order_id}: {error}")
         flash("Commande supprimée, mais la synchronisation du parrainage a échoué.")
-    schedule_customer_role_sync(order["guild_id"], order["user_id"])
+    try:
+        sync_customer_roles_from_panel(order["guild_id"], order["user_id"])
+        flash("Les rôles Discord du client ont été synchronisés.")
+    except Exception as error:
+        print(f"Erreur synchronisation rôles après suppression commande #{order_id}: {error}")
+        flash(f"Commande supprimée, mais rôles Discord non synchronisés : {error}")
     return panel_filter_redirect()
 
 
