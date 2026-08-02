@@ -27,6 +27,7 @@
     "PAYSAFECARD": "<:paysafe:1528698901836726354>",
     "VALORANT": "<:vp:1519915966476320901>",
     "CP": "<:cp:1528128623117205624>",
+    "PINKCOIN": "<:coin:1532554094567227564>",
     "QUESTION": "<:questionmark:1525869342506614784>",
     "CATEGORY_GAMING": "<:gaming:1528336678450892852>",
     "CATEGORY_MODE_BEAUTE": "<:robe:1528337986096336947>",
@@ -112,7 +113,7 @@
       "TURQUIE": "🇹🇷"
     },
     "region_field_name_template": "{emoji} {region}",
-    "pack_line_template": "<:vp:1519915966476320901> **{pack}** — **{price} PC** · origine ≈ ~~{official} €~~",
+    "pack_line_template": "<:vp:1519915966476320901> **{pack}** — **{price} <:coin:1532554094567227564>** · origine ≈ ~~{official} €~~",
     "dynamic_fields_inline": false,
     "color_rgb": [
       255,
@@ -171,12 +172,12 @@
       },
       {
         "name": "PinkCoins débités",
-        "value": "**{paid} PC**",
+        "value": "**{paid} <:coin:1532554094567227564>**",
         "inline": true
       },
       {
         "name": "PinkWallet restant",
-        "value": "**{balance} PC**",
+        "value": "**{balance} <:coin:1532554094567227564>**",
         "inline": false
       }
     ],
@@ -274,7 +275,7 @@
       },
       {
         "name": "PinkCoins débités",
-        "value": "**{amount} PC**",
+        "value": "**{amount} <:coin:1532554094567227564>**",
         "inline": true
       },
       {
@@ -284,7 +285,7 @@
       },
       {
         "name": "PinkWallet restant",
-        "value": "**{balance} PC**",
+        "value": "**{balance} <:coin:1532554094567227564>**",
         "inline": false
       }
     ],
@@ -573,7 +574,7 @@
       },
       {
         "name": "PinkCoins débités",
-        "value": "**{paid} PC**",
+        "value": "**{paid} <:coin:1532554094567227564>**",
         "inline": true
       },
       {
@@ -583,7 +584,7 @@
       },
       {
         "name": "PinkWallet restant",
-        "value": "**{balance} PC**",
+        "value": "**{balance} <:coin:1532554094567227564>**",
         "inline": false
       }
     ],
@@ -610,12 +611,12 @@
       },
       {
         "name": "PinkCoins débités",
-        "value": "**{paid} PC**",
+        "value": "**{paid} <:coin:1532554094567227564>**",
         "inline": true
       },
       {
         "name": "PinkWallet restant",
-        "value": "**{balance} PC**",
+        "value": "**{balance} <:coin:1532554094567227564>**",
         "inline": true
       }
     ],
@@ -707,12 +708,12 @@
       },
       {
         "name": "PinkCoins débités",
-        "value": "**{paid} PC**",
+        "value": "**{paid} <:coin:1532554094567227564>**",
         "inline": true
       },
       {
         "name": "PinkWallet restant",
-        "value": "**{balance} PC**",
+        "value": "**{balance} <:coin:1532554094567227564>**",
         "inline": true
       },
       {
@@ -742,12 +743,12 @@
       },
       {
         "name": "PinkCoins débités",
-        "value": "**{paid} PC**",
+        "value": "**{paid} <:coin:1532554094567227564>**",
         "inline": true
       },
       {
         "name": "PinkWallet restant",
-        "value": "**{balance} PC**",
+        "value": "**{balance} <:coin:1532554094567227564>**",
         "inline": true
       },
       {

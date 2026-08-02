@@ -1943,6 +1943,7 @@ def format_price(value):
 
 
 PINKCOINS_PER_EURO = 100
+PINKCOIN_EMOJI = "<:coin:1532554094567227564>"
 
 
 def euros_to_pinkcoins(value):
@@ -1978,7 +1979,9 @@ def parse_pinkcoin_amount(value):
 
 def format_pinkcoins(value, short=False):
     amount = f"{euros_to_pinkcoins(value):,}".replace(",", " ")
-    return f"{amount} {'PC' if short else 'PinkCoins'}"
+    # Les labels des composants Discord ne rendent pas les mentions d'émojis
+    # personnalisés : on y conserve le nom complet au lieu d'afficher le code brut.
+    return f"{amount} PinkCoins"
 
 
 def pinkcoin_number(value):
@@ -3044,10 +3047,11 @@ def normalize_embed_configuration(data):
         embed_data = migrate_value(embed_data)
         def migrate_pinkcoin_units(value):
             if isinstance(value, str):
-                value = value.replace("{paid} €", "{paid} PC")
-                value = value.replace("{paid}€", "{paid} PC")
-                value = value.replace("{balance} €", "{balance} PC")
-                value = value.replace("{amount}€", "{amount} PC")
+                value = re.sub(r"\bPC\b", PINKCOIN_EMOJI, value)
+                value = value.replace("{paid} €", f"{{paid}} {PINKCOIN_EMOJI}")
+                value = value.replace("{paid}€", f"{{paid}} {PINKCOIN_EMOJI}")
+                value = value.replace("{balance} €", f"{{balance}} {PINKCOIN_EMOJI}")
+                value = value.replace("{amount}€", f"{{amount}} {PINKCOIN_EMOJI}")
                 return value
             if isinstance(value, list):
                 return [migrate_pinkcoin_units(item) for item in value]
@@ -3072,9 +3076,9 @@ def normalize_embed_configuration(data):
     tarifs_data = data.get("tarifs_embed")
     if isinstance(tarifs_data, dict):
         tarifs_data["title"] = "🎟️ PINKSHOP — COMMANDES"
-        tarifs_data["gift_card_line_template"] = "**{amount} € reçus** → **{price} PC**"
-        tarifs_data["uber_eats_line_template"] = "**{drop} € estimés** → **{price} PC**"
-        tarifs_data["nitro_value_template"] = "**{price} PC**"
+        tarifs_data["gift_card_line_template"] = f"**{{amount}} € reçus** → **{{price}} {PINKCOIN_EMOJI}**"
+        tarifs_data["uber_eats_line_template"] = f"**{{drop}} € estimés** → **{{price}} {PINKCOIN_EMOJI}**"
+        tarifs_data["nitro_value_template"] = f"**{{price}} {PINKCOIN_EMOJI}**"
 
     emoji_catalog = data.get("emojis", {}) if isinstance(data.get("emojis"), dict) else {}
     # Ces identifiants sont la source officielle PinkGift : ils remplacent aussi
@@ -3099,6 +3103,7 @@ def normalize_embed_configuration(data):
         "YOUTUBE_PREMIUM": SUBSCRIPTION_SERVICES["YOUTUBE_PREMIUM"]["emoji"],
     })
     emoji_catalog.setdefault("CP", "<:cp:1528128623117205624>")
+    emoji_catalog["PINKCOIN"] = PINKCOIN_EMOJI
     emoji_catalog.setdefault("QUESTION", "<:questionmark:1525869342506614784>")
     data["emojis"] = emoji_catalog
 
@@ -3139,7 +3144,8 @@ def normalize_embed_configuration(data):
     if isinstance(valo, dict):
         valo.setdefault("region_emojis", {"EUROPE": "🇪🇺", "TURQUIE": "🇹🇷"})
         template = str(valo.get("pack_line_template") or "")
-        template = re.sub(r"\{price\}\s*€", "{price} PC", template)
+        template = re.sub(r"\bPC\b", PINKCOIN_EMOJI, template)
+        template = re.sub(r"\{price\}\s*€", f"{{price}} {PINKCOIN_EMOJI}", template)
         if "{official}" not in template:
             valo["pack_line_template"] = f"{template} · origine ≈ ~~{{official}} €~~".strip()
         else:
@@ -7151,9 +7157,9 @@ def build_tarifs_embed():
     if not bool(texts.get("show_dynamic_fields", False)):
         return embed
     prices = get_pricing_config()
-    gift_template = texts.get("gift_card_line_template", "**{amount} € reçus** → **{price} PC**")
-    uber_template = texts.get("uber_eats_line_template", "**{drop} € estimés** → **{price} PC**")
-    nitro_template = texts.get("nitro_value_template", "**{price} PC**")
+    gift_template = texts.get("gift_card_line_template", f"**{{amount}} € reçus** → **{{price}} {PINKCOIN_EMOJI}**")
+    uber_template = texts.get("uber_eats_line_template", f"**{{drop}} € estimés** → **{{price}} {PINKCOIN_EMOJI}**")
+    nitro_template = texts.get("nitro_value_template", f"**{{price}} {PINKCOIN_EMOJI}**")
     gift_lines = [
         format_embed_text(gift_template, {
             "amount": amount,
@@ -7208,7 +7214,7 @@ def build_valo_embed():
     field_name_template = texts.get("region_field_name_template", "{emoji} {region}")
     pack_line_template = texts.get(
         "pack_line_template",
-        "<:vp:1519915966476320901> **{pack}** — **{price} PC** · origine ≈ ~~{official} €~~",
+        f"<:vp:1519915966476320901> **{{pack}}** — **{{price}} {PINKCOIN_EMOJI}** · origine ≈ ~~{{official}} €~~",
     )
     region_emojis = texts.get("region_emojis", {}) if isinstance(texts.get("region_emojis"), dict) else {}
     dynamic_inline = bool(texts.get("dynamic_fields_inline", False))
@@ -7834,7 +7840,7 @@ async def cmd_ajouter_pinkcoins(ctx, member: discord.Member, montant_euros: floa
 
 @bot.hybrid_command(name="retirer_pinkcoins", description="Retirer des PinkCoins du PinkWallet d'un client")
 @discord.app_commands.default_permissions(manage_messages=True)
-@discord.app_commands.describe(member="Client concerné", montant_pinkcoins="Exemple : 1250, 1 250 ou 1,25k PC")
+@discord.app_commands.describe(member="Client concerné", montant_pinkcoins="Exemple : 1250, 1 250 ou 1,25k PinkCoins")
 @commands.has_role(STAFF_ROLE_ID)
 async def cmd_retirer_pinkcoins(ctx, member: discord.Member, montant_pinkcoins: str):
     await remove_pinkcoins(ctx, member, montant_pinkcoins)
@@ -8710,9 +8716,9 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
         inline,
       });
     } else if (key === "tarifs_embed" && data.show_dynamic_fields === true) {
-      const giftTemplate = data.gift_card_line_template || "**{amount} € reçus** → **{price} PC**";
-      const uberTemplate = data.uber_eats_line_template || "**{drop} € estimés** → **{price} PC**";
-      const nitroTemplate = data.nitro_value_template || "**{price} PC**";
+      const giftTemplate = data.gift_card_line_template || "**{amount} € reçus** → **{price} <:coin:1532554094567227564>**";
+      const uberTemplate = data.uber_eats_line_template || "**{drop} € estimés** → **{price} <:coin:1532554094567227564>**";
+      const nitroTemplate = data.nitro_value_template || "**{price} <:coin:1532554094567227564>**";
       if (Array.isArray(context.gift_cards)) fields.push({
         name: data.gift_cards_field_name || "<:carte:1528346097276420271> Cartes cadeaux — toutes les marques",
         value: context.gift_cards.map(item => fillTokens(giftTemplate, item)).join("\n"), inline,
@@ -8727,7 +8733,7 @@ PANEL_EMBEDS_PREVIEW_SCRIPT = r"""
       });
     } else if (key === "valo_embed" && Array.isArray(context.regions)) {
       const nameTemplate = data.region_field_name_template || "{emoji} {region}";
-      const packTemplate = data.pack_line_template || "<:vp:1519915966476320901> **{pack}** — **{price} PC** · origine ≈ ~~{official} €~~";
+      const packTemplate = data.pack_line_template || "<:vp:1519915966476320901> **{pack}** — **{price} <:coin:1532554094567227564>** · origine ≈ ~~{official} €~~";
       const regionEmojis = data.region_emojis && typeof data.region_emojis === "object" ? data.region_emojis : {};
       context.regions.forEach(region => {
         const regionValues = {...region, emoji: regionEmojis[region.region_key] || region.emoji};
@@ -9627,7 +9633,10 @@ def migrate_panel_pinkcoin_copy(template):
 
 PANEL_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_TEMPLATE)
 PANEL_STOCK_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_STOCK_TEMPLATE)
-PANEL_STOCK_TEMPLATE = PANEL_STOCK_TEMPLATE.replace("{{ item.price }} €", "{{ item.price }} PC")
+PANEL_STOCK_TEMPLATE = PANEL_STOCK_TEMPLATE.replace(
+    "{{ item.price }} €",
+    '{{ item.price }} <img src="https://cdn.discordapp.com/emojis/1532554094567227564.webp?size=32&quality=lossless" alt="PinkCoins" title="PinkCoins" style="width:1.1em;height:1.1em;vertical-align:-.18em">',
+)
 PANEL_CP_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_CP_TEMPLATE)
 PANEL_PRICES_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_PRICES_TEMPLATE)
 PANEL_FINANCES_TEMPLATE = migrate_panel_pinkcoin_copy(PANEL_FINANCES_TEMPLATE)
