@@ -9582,6 +9582,98 @@ PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
     '<input name="code" required placeholder="Code cadeau" value="{{ order.code or \'\' }}">',
     '''{% if order.is_nitro %}<input name="supplier" required maxlength="100" placeholder="Fournisseur Nitro" value="{{ order.supplier or '' }}">{% endif %}<input name="code" required placeholder="{{ 'Lien Nitro' if order.is_nitro else 'Code cadeau' }}" value="{{ order.code or '' }}">''',
 )
+
+PANEL_ORDER_ACTIONS_CSS = r"""
+.order-actions-cell {
+  min-width: 700px;
+  vertical-align: middle;
+}
+.order-actions {
+  display: grid;
+  grid-template-columns: minmax(430px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+.order-actions form {
+  margin: 0;
+}
+.order-delivery-form {
+  display: grid;
+  grid-template-columns: minmax(145px, .8fr) minmax(190px, 1.2fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.order-delivery-form input {
+  width: 100%;
+  min-width: 0;
+}
+.order-actions button {
+  min-height: 46px;
+  margin: 0;
+  white-space: nowrap;
+}
+.order-refund-form,
+.order-delete-form {
+  display: flex;
+}
+@media (max-width: 1500px) {
+  .order-actions-cell {
+    min-width: 500px;
+  }
+  .order-actions {
+    grid-template-columns: 1fr auto auto;
+  }
+  .order-delivery-form {
+    grid-column: 1 / -1;
+  }
+  .order-refund-form {
+    grid-column: 2;
+  }
+  .order-delete-form {
+    grid-column: 3;
+  }
+}
+@media (max-width: 800px) {
+  .order-actions-cell {
+    min-width: 0;
+  }
+  .order-actions {
+    grid-template-columns: 1fr;
+  }
+  .order-delivery-form {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+  .order-delivery-form button,
+  .order-refund-form button,
+  .order-delete-form button {
+    width: 100%;
+  }
+  .order-refund-form,
+  .order-delete-form {
+    grid-column: auto;
+  }
+}
+"""
+
+PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
+    '''<td>{% if order.status == 'pending' %}<form method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}" style="display:inline">''',
+    '''<td class="order-actions-cell"><div class="order-actions">{% if order.status == 'pending' %}<form class="order-delivery-form" method="post" action="{{ url_for('panel_set_code', order_id=order.id) }}">''',
+).replace(
+    '''{% if order.status == 'pending' %}<form method="post" action="{{ url_for('panel_refund_order', order_id=order.id) }}" style="display:inline"''',
+    '''{% if order.status == 'pending' %}<form class="order-refund-form" method="post" action="{{ url_for('panel_refund_order', order_id=order.id) }}"''',
+).replace(
+    '''<form method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}" style="display:inline"''',
+    '''<form class="order-delete-form" method="post" action="{{ url_for('panel_delete_order', order_id=order.id) }}"''',
+).replace(
+    '''<button class="delete" type="submit" title="Supprimer">Supprimer</button></form></td></tr>{% else %}<tr><td colspan="7">''',
+    '''<button class="delete" type="submit" title="Supprimer">Supprimer</button></form></div></td></tr>{% else %}<tr><td colspan="7">''',
+).replace(
+    "</style>",
+    PANEL_ORDER_ACTIONS_CSS + "</style>",
+    1,
+)
 PANEL_STOCK_TEMPLATE = apply_panel_theme(PANEL_STOCK_TEMPLATE)
 PANEL_CP_TEMPLATE = apply_panel_theme(PANEL_CP_TEMPLATE)
 PANEL_PRICES_TEMPLATE = apply_panel_theme(PANEL_PRICES_TEMPLATE)
