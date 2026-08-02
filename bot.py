@@ -98,6 +98,7 @@ CUSTOMER_SPENDING_ROLE_THRESHOLDS = (
     (2000.0, 1525604772487630858),
 )
 CUSTOMER_ROLES_SYNCED = False
+CUSTOMER_ROLE_SYNC_LOCKS = {}
 AUTO_REACTION_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
 AUTO_REACTION_EMOJIS = ("<:verify:1525796690899108000>", "<:waylaylove:1517582297736413284>")
 VERIFIED_REVIEWS_CHANNEL_IDS = {1525601407825084436, 1517525842111234088}
@@ -358,6 +359,25 @@ def customer_top_user_id(guild, spending_totals):
 
 
 async def sync_customer_roles(guild, target_user_id=None, deposit_totals=None, spending_totals=None):
+    """Sérialise les mises à jour afin qu'une ancienne suppression ne gagne pas sur une nouvelle vente."""
+    if guild is None:
+        return await _sync_customer_roles_unlocked(
+            guild,
+            target_user_id,
+            deposit_totals,
+            spending_totals,
+        )
+    lock = CUSTOMER_ROLE_SYNC_LOCKS.setdefault(int(guild.id), asyncio.Lock())
+    async with lock:
+        return await _sync_customer_roles_unlocked(
+            guild,
+            target_user_id,
+            deposit_totals,
+            spending_totals,
+        )
+
+
+async def _sync_customer_roles_unlocked(guild, target_user_id=None, deposit_totals=None, spending_totals=None):
     """Synchronise les paliers de dépôts nets et le rôle du meilleur acheteur."""
     if guild is None:
         return {"total_added": 0.0, "total_spent": 0.0, "tier": customer_highest_tier(0), "is_top": False}
@@ -1953,6 +1973,52 @@ def save_order_purchase_cost(message_id, cost):
     set_panel_setting(f"order_cost:{int(message_id)}", {"cost": valid_purchase_cost(cost), "saved_at": utc_now().isoformat()})
 
 
+def normalize_order_supplier(value):
+    return " ".join(str(value or "").split())[:100]
+
+
+def save_order_supplier(message_id, supplier):
+    supplier = normalize_order_supplier(supplier)
+    if not supplier:
+        raise ValueError("Le nom du fournisseur est obligatoire pour une livraison Nitro")
+    set_panel_setting(
+        f"order_supplier:{int(message_id)}",
+        {"name": supplier, "saved_at": utc_now().isoformat()},
+    )
+    return supplier
+
+
+def load_order_suppliers():
+    suppliers = {}
+    if USE_SUPABASE:
+        items = []
+        offset = 0
+        while True:
+            prefix = urllib.parse.quote("order_supplier:", safe="")
+            page = supabase_request(
+                "GET",
+                f"panel_settings?key=like.{prefix}*&select=key,value&order=key&limit=1000&offset={offset}",
+            ) or []
+            items.extend(page)
+            if len(page) < 1000:
+                break
+            offset += len(page)
+    else:
+        items = list_panel_settings("order_supplier:")
+    for item in items:
+        try:
+            message_id = int(str(item.get("key", "")).split(":", 1)[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        value = item.get("value", {})
+        if not isinstance(value, dict):
+            continue
+        supplier = normalize_order_supplier(value.get("name"))
+        if supplier:
+            suppliers[message_id] = supplier
+    return suppliers
+
+
 def normalize_cp_code(value):
     return str(value or "").strip()[:500]
 
@@ -1975,6 +2041,13 @@ def get_order_record(message_id=None, order_id=None):
                 row = db.execute("SELECT * FROM orders WHERE message_id=?", (int(message_id),)).fetchone()
             order = dict(row) if row else None
     return order
+
+
+def is_nitro_order(order):
+    return (
+        str((order or {}).get("service") or "").strip().upper()
+        == PRODUCT_CONFIG["DISCORD_NITRO"]["display"].upper()
+    )
 
 
 def get_cp_order(message_id=None, order_id=None):
@@ -9502,6 +9575,13 @@ PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
     '''</span>{% endif %}</td></tr>{% else %}<tr><td colspan="7">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>''',
     '''</span>{% endif %}</td><td>{% if client.total_added > 0 %}<form method="post" action="{{ url_for('panel_remove_client_deposit', guild_id=client.guild_id, user_id=client.user_id) }}" style="display:flex;gap:6px;align-items:center" onsubmit="return confirm('Retirer ce montant des dépôts nets ? Le PinkWallet restera inchangé.')"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="number" name="amount" min="0.01" max="{{ '%.2f'|format(client.total_added) }}" step="0.01" required placeholder="Montant €" style="min-width:105px;width:105px"><button class="delete" type="submit">Retirer</button></form>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% else %}<tr><td colspan="8">Aucun client enregistré.</td></tr>{% endfor %}</tbody></table>''',
 )
+PANEL_TEMPLATE = PANEL_TEMPLATE.replace(
+    "<td>{{ order.service }}</td>",
+    '<td>{{ order.service }}{% if order.supplier %}<div class="muted">Fournisseur : {{ order.supplier }}</div>{% endif %}</td>',
+).replace(
+    '<input name="code" required placeholder="Code cadeau" value="{{ order.code or \'\' }}">',
+    '''{% if order.is_nitro %}<input name="supplier" required maxlength="100" placeholder="Fournisseur Nitro" value="{{ order.supplier or '' }}">{% endif %}<input name="code" required placeholder="{{ 'Lien Nitro' if order.is_nitro else 'Code cadeau' }}" value="{{ order.code or '' }}">''',
+)
 PANEL_STOCK_TEMPLATE = apply_panel_theme(PANEL_STOCK_TEMPLATE)
 PANEL_CP_TEMPLATE = apply_panel_theme(PANEL_CP_TEMPLATE)
 PANEL_PRICES_TEMPLATE = apply_panel_theme(PANEL_PRICES_TEMPLATE)
@@ -9598,6 +9678,14 @@ def panel_orders():
         flash("Connexion à Supabase impossible. Vérifie la configuration et le script SQL.")
         orders = []
     all_orders = orders
+    try:
+        order_suppliers = load_order_suppliers()
+    except Exception as error:
+        print(f"Erreur chargement fournisseurs Nitro : {error}")
+        order_suppliers = {}
+    for order in all_orders:
+        order["is_nitro"] = is_nitro_order(order)
+        order["supplier"] = order_suppliers.get(int(order.get("message_id") or 0), "")
     service_filter = request.args.get("service", "").strip()
     amount_filter = request.args.get("amount", "").strip()
     region_filter = request.args.get("region", "").strip()
@@ -10508,15 +10596,12 @@ async def deliver_order_from_panel(order, code):
     if not message.embeds:
         raise RuntimeError("Embed Discord introuvable")
     old = message.embeds[0]
-    is_nitro_order = (
-        str(order.get("service") or "").strip().upper()
-        == PRODUCT_CONFIG["DISCORD_NITRO"]["display"].upper()
-    )
+    nitro_order = is_nitro_order(order)
     finish_data = load_embed_texts().get("commande_finalisee", DEFAULT_EMBED_DATA["commande_finalisee"])
     rgb = finish_data.get("color_rgb", [46, 204, 113])
     finish_description_raw = finish_data.get("description", [])
     finish_description = "\n".join(finish_description_raw) if isinstance(finish_description_raw, list) else str(finish_description_raw or "")
-    if is_nitro_order:
+    if nitro_order:
         finish_description = (
             "Ta commande Discord Nitro a été livrée automatiquement.\n"
             "Ton lien Nitro est envoyé dans un message séparé ci-dessous.\n\n"
@@ -10531,16 +10616,16 @@ async def deliver_order_from_panel(order, code):
     code_found = False
     for field in old.fields:
         if "code" in field.name.lower():
-            if not is_nitro_order:
+            if not nitro_order:
                 updated.add_field(name=finish_data.get("code_field_name", field.name), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
             code_found = True
         else:
             updated.add_field(name=field.name, value=field.value, inline=field.inline)
-    if not code_found and not is_nitro_order:
+    if not code_found and not nitro_order:
         updated.add_field(name=finish_data.get("code_field_name", "Code"), value=(chr(96) * 3) + "\n" + code + "\n" + (chr(96) * 3), inline=False)
     updated.set_footer(text=finish_data.get("footer", "PinkGift — Commande finalisée"))
     await message.edit(embed=updated, view=None)
-    if is_nitro_order:
+    if nitro_order:
         await channel.send(
             f"<@{int(order['user_id'])}> voici ton lien Discord Nitro :\n{str(code).strip()}",
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
@@ -10651,6 +10736,10 @@ def panel_delete_order(order_id):
     except Exception as error:
         print(f"Erreur nettoyage coût commande {order_id}: {error}")
     try:
+        delete_panel_setting(f"order_supplier:{int(order['message_id'])}")
+    except Exception as error:
+        print(f"Erreur nettoyage fournisseur Nitro {order_id}: {error}")
+    try:
         referral_sync = remove_referral_purchase(order["guild_id"], order["user_id"], order["message_id"])
         removed_commission = referral_sync["commission"]
         if referral_sync["events"]:
@@ -10684,17 +10773,24 @@ def panel_set_code(order_id):
     if not order or not code or str(order.get("status") or "pending").lower() != "pending":
         flash("Commande ou code invalide.")
         return panel_filter_redirect()
+    supplier = normalize_order_supplier(request.form.get("supplier", ""))
+    if is_nitro_order(order) and not supplier:
+        flash("Le nom du fournisseur est obligatoire pour livrer un Nitro.")
+        return panel_filter_redirect()
     if BOT_LOOP is None:
         flash("Le bot Discord n'est pas encore prêt.")
         return panel_filter_redirect()
     try:
+        if is_nitro_order(order):
+            save_order_supplier(order["message_id"], supplier)
         asyncio.run_coroutine_threadsafe(deliver_order_from_panel(order, code), BOT_LOOP).result(timeout=25)
         if USE_SUPABASE:
             supabase_request("PATCH", f"orders?id=eq.{order_id}", {"code": code, "status": "done", "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()})
         else:
             with db_connect() as db:
                 db.execute("UPDATE orders SET code=?, status='done', updated_at=CURRENT_TIMESTAMP WHERE id=?", (code, order_id))
-        flash(f"Commande #{order_id} livrée et embed Discord mis à jour.")
+        supplier_note = f" Fournisseur interne : {supplier}." if is_nitro_order(order) else ""
+        flash(f"Commande #{order_id} livrée et embed Discord mis à jour.{supplier_note}")
     except Exception as error:
         flash(f"Erreur Discord : {error}")
     return panel_filter_redirect()
