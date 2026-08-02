@@ -233,8 +233,59 @@ def stored_discord_bot_user_id():
         return 0
 
 
+MANUAL_SALE_CODE_PREFIX = "manual_sale:"
+
+
+def get_manual_sale_deposit_totals(guild_id):
+    """Retourne les dépôts nets portés par les ventes manuelles encore actives."""
+    guild_id = int(guild_id)
+    totals_cents = {}
+    if USE_SUPABASE:
+        offset = 0
+        page_size = 1000
+        while True:
+            rows = supabase_request(
+                "GET",
+                f"orders?guild_id=eq.{guild_id}"
+                f"&select=id,user_id,paid,status,code&order=id.asc&limit={page_size}&offset={offset}",
+            ) or []
+            for row in rows:
+                code = str(row.get("code") or "")
+                if not code.startswith(MANUAL_SALE_CODE_PREFIX) or not order_counts_as_purchase(row):
+                    continue
+                try:
+                    user_id = int(row.get("user_id") or 0)
+                    paid_cents = round(float(row.get("paid") or 0) * 100)
+                except (TypeError, ValueError):
+                    continue
+                if user_id > 0 and paid_cents > 0:
+                    totals_cents[user_id] = totals_cents.get(user_id, 0) + paid_cents
+            if len(rows) < page_size:
+                break
+            offset += page_size
+    else:
+        with db_connect() as db:
+            rows = db.execute(
+                "SELECT user_id, paid, status, code FROM orders "
+                "WHERE guild_id=? AND code LIKE ?",
+                (guild_id, f"{MANUAL_SALE_CODE_PREFIX}%"),
+            ).fetchall()
+        for raw_row in rows:
+            row = dict(raw_row)
+            if not order_counts_as_purchase(row):
+                continue
+            try:
+                user_id = int(row.get("user_id") or 0)
+                paid_cents = round(float(row.get("paid") or 0) * 100)
+            except (TypeError, ValueError):
+                continue
+            if user_id > 0 and paid_cents > 0:
+                totals_cents[user_id] = totals_cents.get(user_id, 0) + paid_cents
+    return totals_cents
+
+
 def get_customer_deposit_totals(guild_id):
-    """Calcule les dépôts staff nets, retraits compris, sans les achats/remboursements du bot."""
+    """Calcule les dépôts staff nets et les ventes manuelles encore actives."""
     guild_id = int(guild_id)
     bot_user_id = stored_discord_bot_user_id()
     totals_cents = {}
@@ -274,6 +325,8 @@ def get_customer_deposit_totals(guild_id):
                 totals_cents[int(row["user_id"])] = max(0, int(row["total_cents"] or 0))
             except (TypeError, ValueError):
                 continue
+    for user_id, cents in get_manual_sale_deposit_totals(guild_id).items():
+        totals_cents[user_id] = totals_cents.get(user_id, 0) + cents
     return {
         user_id: round(max(0, cents) / 100, 2)
         for user_id, cents in totals_cents.items()
@@ -1638,9 +1691,6 @@ def save_order(guild_id, channel_id, message_id, user_id, service, amount, paid,
     return order_id
 
 
-MANUAL_SALE_CODE_PREFIX = "manual_sale:"
-
-
 def delete_order_record(order_id):
     order_id = int(order_id)
     if USE_SUPABASE:
@@ -1655,62 +1705,6 @@ def delete_order_record(order_id):
         cursor = db.execute("DELETE FROM orders WHERE id=?", (order_id,))
         if cursor.rowcount == 0:
             raise RuntimeError("Commande introuvable")
-
-
-def manual_sale_staff_id(order):
-    code = str((order or {}).get("code") or "")
-    if not code.startswith(MANUAL_SALE_CODE_PREFIX):
-        return None
-    try:
-        staff_id = int(code[len(MANUAL_SALE_CODE_PREFIX):])
-    except (TypeError, ValueError):
-        return None
-    return staff_id if staff_id > 0 else None
-
-
-def apply_manual_sale_deposit(guild_id, user_id, amount, staff_id):
-    """Ajoute un dépôt client consommé immédiatement, sans modifier son PinkWallet."""
-    guild_id = int(guild_id)
-    user_id = int(user_id)
-    staff_id = int(staff_id)
-    amount = round(float(amount), 2)
-    bot_user_id = stored_discord_bot_user_id()
-    if bot_user_id <= 0:
-        raise RuntimeError("L'identité Discord du bot n'est pas encore disponible")
-    change_balance(guild_id, user_id, amount, staff_id)
-    try:
-        wallet = change_balance(guild_id, user_id, -amount, bot_user_id)
-    except Exception:
-        try:
-            change_balance(guild_id, user_id, -amount, staff_id)
-        except Exception as rollback_error:
-            print(f"ERREUR rollback dépôt vente manuelle {user_id}: {rollback_error}")
-        raise
-    return wallet
-
-
-def reverse_manual_sale_deposit(order):
-    """Retire le dépôt synthétique lié à une vente manuelle, sans toucher au PinkWallet."""
-    staff_id = manual_sale_staff_id(order)
-    if staff_id is None:
-        return False
-    guild_id = int(order["guild_id"])
-    user_id = int(order["user_id"])
-    amount = round(float(order.get("paid") or 0), 2)
-    bot_user_id = stored_discord_bot_user_id()
-    if amount <= 0 or bot_user_id <= 0:
-        raise RuntimeError("Vente manuelle invalide ou bot Discord indisponible")
-    change_balance(guild_id, user_id, amount, bot_user_id)
-    try:
-        change_balance(guild_id, user_id, -amount, staff_id)
-    except Exception:
-        try:
-            change_balance(guild_id, user_id, -amount, bot_user_id)
-        except Exception as rollback_error:
-            print(f"ERREUR rollback suppression vente manuelle {user_id}: {rollback_error}")
-        raise
-    return True
-
 
 
 init_database()
@@ -7972,10 +7966,8 @@ async def cmd_vente(
     staff_id = interaction.user.id
     message_id = -time.time_ns()
     order_id = None
-    deposit_applied = False
     try:
-        wallet = apply_manual_sale_deposit(guild.id, user.id, prix_value, staff_id)
-        deposit_applied = True
+        wallet = get_balance(guild.id, user.id)
         order_id = save_order(
             guild.id,
             interaction.channel_id or 0,
@@ -7996,16 +7988,6 @@ async def cmd_vente(
                 delete_panel_setting(f"order_cost:{message_id}")
             except Exception as cleanup_error:
                 print(f"Erreur nettoyage vente manuelle #{order_id}: {cleanup_error}")
-        if deposit_applied:
-            try:
-                reverse_manual_sale_deposit({
-                    "guild_id": guild.id,
-                    "user_id": user.id,
-                    "paid": prix_value,
-                    "code": f"{MANUAL_SALE_CODE_PREFIX}{staff_id}",
-                })
-            except Exception as rollback_error:
-                print(f"ERREUR rollback complet vente manuelle de {user}: {rollback_error}")
         try:
             await sync_customer_roles(guild, user.id, target_member=user)
         except Exception as role_rollback_error:
@@ -10916,23 +10898,11 @@ def panel_delete_order(order_id):
         flash("Commande en attente : utilise « Rembourser » pour recréditer le client avant de la supprimer.")
         return panel_filter_redirect()
     order = existing_order
-    manual_deposit_reversed = False
     try:
         if order is None:
             raise RuntimeError("Commande introuvable")
-        manual_deposit_reversed = reverse_manual_sale_deposit(order)
         delete_order_record(order_id)
     except Exception as error:
-        if manual_deposit_reversed:
-            try:
-                apply_manual_sale_deposit(
-                    order["guild_id"],
-                    order["user_id"],
-                    order["paid"],
-                    manual_sale_staff_id(order),
-                )
-            except Exception as rollback_error:
-                print(f"ERREUR restauration vente manuelle #{order_id}: {rollback_error}")
         print(f"Erreur suppression commande {order_id}: {error}")
         flash("La suppression a échoué.")
         return panel_filter_redirect()
