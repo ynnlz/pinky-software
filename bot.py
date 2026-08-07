@@ -1444,9 +1444,10 @@ def get_balance_ticket_referral(channel):
     return data if isinstance(data, dict) and normalize_referral_code(data.get("code")) else None
 
 
-def track_referral_balance_credit(guild, user_id, amount, staff_id):
+def track_referral_balance_credit(guild, user_id, amount, staff_id, referral_override=None):
+    """Ajoute une recharge au suivi parrainage, depuis le ticket ou un code staff."""
     channel = find_balance_ticket(guild, user_id)
-    referral = get_balance_ticket_referral(channel)
+    referral = referral_override or get_balance_ticket_referral(channel)
     if not referral:
         return None
     amount = round(float(amount), 2)
@@ -1456,7 +1457,7 @@ def track_referral_balance_credit(guild, user_id, amount, staff_id):
     ledger = get_referral_ledger(guild.id, user_id)
     lot = {
         "id": f"{int(time.time() * 1000)}-{secrets.token_hex(3)}",
-        "channel_id": channel.id,
+        "channel_id": int(getattr(channel, "id", 0) or 0),
         "user_id": int(user_id),
         "staff_id": int(staff_id or 0),
         "code": normalize_referral_code(referral.get("code")),
@@ -7758,14 +7759,30 @@ async def cmd_solde(ctx):
     await publish_pinkwallet_panel(ctx)
 
 
-async def add_pinkcoins_from_euros(ctx, member, montant_euros):
+async def add_pinkcoins_from_euros(ctx, member, montant_euros, code_parrainage=""):
     if montant_euros <= 0:
         await ctx.send("❌ Le montant doit être positif.", delete_after=5)
         return
+    referral_override = None
+    raw_referral_code = str(code_parrainage or "").strip()
+    if raw_referral_code:
+        referral_override = get_active_referral_code(raw_referral_code)
+        if referral_override is None:
+            await ctx.send("❌ Ce code de parrainage est invalide ou désactivé.", delete_after=8)
+            return
+        if str(referral_override.get("sponsor_id") or "") == str(member.id):
+            await ctx.send("❌ Un client ne peut pas utiliser son propre code de parrainage.", delete_after=8)
+            return
     wallet = change_balance(ctx.guild.id, member.id, montant_euros, ctx.author.id)
     referral_lot = None
     try:
-        referral_lot = track_referral_balance_credit(ctx.guild, member.id, montant_euros, ctx.author.id)
+        referral_lot = track_referral_balance_credit(
+            ctx.guild,
+            member.id,
+            montant_euros,
+            ctx.author.id,
+            referral_override=referral_override,
+        )
     except Exception as error:
         print(f"Erreur tracking PinkCoins parrainés pour {member}: {error}")
     await mark_balance_ticket_credited(ctx.guild, member.id)
@@ -7832,10 +7849,19 @@ async def remove_pinkcoins(ctx, member, montant_pinkcoins):
 
 @bot.hybrid_command(name="ajouter_pinkcoins", description="Convertir un dépôt en euros et créditer le PinkWallet")
 @discord.app_commands.default_permissions(manage_messages=True)
-@discord.app_commands.describe(member="Client concerné", montant_euros="Dépôt reçu en euros (1 € = 100 PinkCoins)")
+@discord.app_commands.describe(
+    member="Client concerné",
+    montant_euros="Dépôt reçu en euros (1 € = 100 PinkCoins)",
+    code_parrainage="Facultatif : code de parrainage à attribuer à cette recharge",
+)
 @commands.has_role(STAFF_ROLE_ID)
-async def cmd_ajouter_pinkcoins(ctx, member: discord.Member, montant_euros: float):
-    await add_pinkcoins_from_euros(ctx, member, montant_euros)
+async def cmd_ajouter_pinkcoins(
+    ctx,
+    member: discord.Member,
+    montant_euros: float,
+    code_parrainage: str = "",
+):
+    await add_pinkcoins_from_euros(ctx, member, montant_euros, code_parrainage)
 
 
 @bot.hybrid_command(name="retirer_pinkcoins", description="Retirer des PinkCoins du PinkWallet d'un client")
